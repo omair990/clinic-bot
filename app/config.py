@@ -1,6 +1,8 @@
+"""Centralised, validated configuration. Fails fast on missing required env."""
 import json
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -8,33 +10,56 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 
-WA_ACCESS_TOKEN = os.environ["WA_ACCESS_TOKEN"]
-WA_PHONE_NUMBER_ID = os.environ["WA_PHONE_NUMBER_ID"]
-WA_VERIFY_TOKEN = os.environ["WA_VERIFY_TOKEN"]
-WA_API_VERSION = os.getenv("WA_API_VERSION", "v22.0")
-WA_APP_SECRET = os.environ.get("WA_APP_SECRET", "")
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+def _require(name: str) -> str:
+    val = os.environ.get(name, "").strip()
+    if not val:
+        raise RuntimeError(f"Required environment variable {name} is not set")
+    return val
+
+
+# --- WhatsApp Cloud API ---
+WA_ACCESS_TOKEN = _require("WA_ACCESS_TOKEN")
+WA_PHONE_NUMBER_ID = _require("WA_PHONE_NUMBER_ID")
+WA_VERIFY_TOKEN = _require("WA_VERIFY_TOKEN")
+WA_API_VERSION = os.getenv("WA_API_VERSION", "v22.0")
+WA_APP_SECRET = os.environ.get("WA_APP_SECRET", "").strip()
+
+# --- LLM providers ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
 AI_PROVIDERS = [
     p.strip() for p in os.environ.get("AI_PROVIDERS", "gemini,groq,deepseek").split(",") if p.strip()
 ]
 
-ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "")
+# Max tool-calling round-trips per user turn before we hand off to staff.
+AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "6"))
 
+# --- Operations ---
+ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "").strip()
 PORT = int(os.getenv("PORT", "8000"))
-
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-please-rotate")
 
-# Outbound webhooks (n8n etc) — leave blank to disable
-N8N_NEW_APPOINTMENT_URL = os.environ.get("N8N_NEW_APPOINTMENT_URL", "")
-N8N_EMERGENCY_URL = os.environ.get("N8N_EMERGENCY_URL", "")
+# --- Database (Postgres) ---
+# Railway/Heroku style URLs use the `postgres://` scheme; psycopg wants `postgresql://`.
+DATABASE_URL = _require("DATABASE_URL")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 
-DB_PATH = Path(os.environ.get("DB_PATH", BASE_DIR.parent / "clinic.db"))
+DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
+DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
+
+# --- Clinic domain data & timezone ---
 CLINIC_DATA_PATH = BASE_DIR / "clinic_data.json"
-
-with open(CLINIC_DATA_PATH) as f:
+with open(CLINIC_DATA_PATH, encoding="utf-8") as f:
     CLINIC_DATA = json.load(f)
+
+TIMEZONE = os.getenv("CLINIC_TIMEZONE", "Asia/Riyadh")
+TZ = ZoneInfo(TIMEZONE)
+
+_policy = CLINIC_DATA.get("appointment_policy", {})
+BOOKING_LEAD_HOURS = int(_policy.get("booking_lead_time_hours", 2))
+SLOT_GRANULARITY_MIN = int(os.getenv("SLOT_GRANULARITY_MIN", "15"))

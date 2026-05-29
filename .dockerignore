@@ -1,0 +1,11 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.env
+.DS_Store
+.idea
+clinic.db
+tests
+*.md

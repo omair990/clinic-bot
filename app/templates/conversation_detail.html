@@ -16,7 +16,7 @@
     <div class="flex justify-start">
       <div class="max-w-md">
         <div class="px-3 py-2 rounded-lg rounded-tl-sm bg-slate-100 text-slate-900 text-sm whitespace-pre-wrap">{{ m.message }}</div>
-        <div class="text-[10px] text-slate-400 mt-1">{{ m.created_at[:19].replace('T',' ') }} UTC</div>
+        <div class="text-[10px] text-slate-400 mt-1">{{ m.created_at | fmt_dt }}</div>
       </div>
     </div>
     {% else %}
@@ -24,7 +24,7 @@
       <div class="max-w-md">
         <div class="px-3 py-2 rounded-lg rounded-tr-sm bg-emerald-600 text-white text-sm whitespace-pre-wrap">{{ m.message }}</div>
         <div class="text-[10px] text-slate-400 mt-1 text-right">
-          {{ m.created_at[:19].replace('T',' ') }} UTC
+          {{ m.created_at | fmt_dt }}
           {% if m.intent %}<span class="ml-1 text-slate-500">· {{ m.intent }}</span>{% endif %}
           {% if m.needs_human %}<span class="ml-1 text-red-500">· flag</span>{% endif %}
         </div>
