@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set active = 'appt' %}
+{% block title %}Appointments{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-xl font-semibold text-slate-900">Appointments</h1>
+  <div class="text-xs space-x-2">
+    <a href="/admin/appointments" class="px-2 py-1 rounded {% if not filter_status %}bg-slate-900 text-white{% else %}bg-white border{% endif %}">All</a>
+    <a href="/admin/appointments?status=pending" class="px-2 py-1 rounded {% if filter_status=='pending' %}bg-slate-900 text-white{% else %}bg-white border{% endif %}">Pending</a>
+    <a href="/admin/appointments?status=confirmed" class="px-2 py-1 rounded {% if filter_status=='confirmed' %}bg-slate-900 text-white{% else %}bg-white border{% endif %}">Confirmed</a>
+    <a href="/admin/appointments?status=cancelled" class="px-2 py-1 rounded {% if filter_status=='cancelled' %}bg-slate-900 text-white{% else %}bg-white border{% endif %}">Cancelled</a>
+  </div>
+</div>
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+      <tr>
+        <th class="text-left px-4 py-2">#</th>
+        <th class="text-left px-4 py-2">User</th>
+        <th class="text-left px-4 py-2">Patient</th>
+        <th class="text-left px-4 py-2">Service</th>
+        <th class="text-left px-4 py-2">Doctor</th>
+        <th class="text-left px-4 py-2">When</th>
+        <th class="text-left px-4 py-2">Created</th>
+        <th class="text-left px-4 py-2">Status</th>
+        <th class="text-left px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for a in rows %}
+      <tr>
+        <td class="px-4 py-3 text-slate-500">{{ a.id }}</td>
+        <td class="px-4 py-3"><a class="hover:underline" href="/admin/conversations/{{ a.wa_user }}">+{{ a.wa_user }}</a></td>
+        <td class="px-4 py-3">{{ a.patient_name or '—' }}</td>
+        <td class="px-4 py-3">{{ a.service or '—' }}</td>
+        <td class="px-4 py-3">{{ a.doctor or '—' }}</td>
+        <td class="px-4 py-3">{{ a.requested_datetime or '—' }}</td>
+        <td class="px-4 py-3 text-slate-500 text-xs">{{ a.created_at[:19].replace('T',' ') }}</td>
+        <td class="px-4 py-3">
+          {% set color = {'pending':'amber','confirmed':'emerald','cancelled':'slate'}.get(a.status, 'slate') %}
+          <span class="inline-block px-2 py-0.5 text-xs rounded bg-{{color}}-100 text-{{color}}-700">{{ a.status }}</span>
+        </td>
+        <td class="px-4 py-3 text-xs">
+          <form method="post" action="/admin/appointments/{{ a.id }}/status" class="inline">
+            {% if a.status != 'confirmed' %}<button name="status" value="confirmed" class="text-emerald-700 hover:underline mr-2">Confirm</button>{% endif %}
+            {% if a.status != 'cancelled' %}<button name="status" value="cancelled" class="text-slate-500 hover:underline">Cancel</button>{% endif %}
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="px-4 py-8 text-center text-slate-400 text-sm">No appointments</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

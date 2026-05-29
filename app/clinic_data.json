@@ -1,0 +1,101 @@
+{
+  "clinic": {
+    "name": "Al-Shifa Family Clinic",
+    "address": "Olaya Street, Al-Olaya District, Riyadh, Saudi Arabia",
+    "phone": "+966-11-234-5678",
+    "whatsapp": "+966-50-123-4567",
+    "email": "info@alshifa-clinic.sa",
+    "website": "https://alshifa-clinic.sa",
+    "languages": ["Arabic", "English"]
+  },
+  "timings": {
+    "sunday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",
+    "monday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",
+    "tuesday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",
+    "wednesday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",
+    "thursday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",
+    "friday": "4:00 PM - 11:00 PM",
+    "saturday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",
+    "notes": "Weekly closure: Friday mornings only (for Jummah prayer). Last appointment 30 minutes before closing. Two shifts daily with a midday break."
+  },
+  "services": [
+    {"name": "General Consultation", "price_sar": 150, "duration_min": 20},
+    {"name": "Pediatric Consultation", "price_sar": 200, "duration_min": 30},
+    {"name": "Dental Checkup", "price_sar": 250, "duration_min": 30},
+    {"name": "Dental Cleaning", "price_sar": 400, "duration_min": 45},
+    {"name": "Cavity Filling", "price_sar": 350, "duration_min": 45},
+    {"name": "Dermatology Consultation", "price_sar": 300, "duration_min": 30},
+    {"name": "Lab Test - CBC", "price_sar": 80, "duration_min": 10},
+    {"name": "Lab Test - Blood Sugar", "price_sar": 50, "duration_min": 10},
+    {"name": "Vaccination (per dose)", "price_sar": 150, "duration_min": 15},
+    {"name": "ECG", "price_sar": 180, "duration_min": 20}
+  ],
+  "doctors": [
+    {
+      "name": "Dr. Khalid Al-Otaibi",
+      "specialty": "General Physician",
+      "qualifications": "MBBS, SBFM (Saudi Board of Family Medicine)",
+      "available_days": ["Sunday", "Monday", "Tuesday", "Wednesday", "Saturday"],
+      "available_hours": "10:00 AM - 1:00 PM, 5:00 PM - 9:00 PM",
+      "languages": ["Arabic", "English"]
+    },
+    {
+      "name": "Dr. Sara Al-Subaie",
+      "specialty": "Pediatrician",
+      "qualifications": "MBBS, MD (Pediatrics), Member of Saudi Pediatric Society",
+      "available_days": ["Sunday", "Tuesday", "Thursday"],
+      "available_hours": "4:00 PM - 9:00 PM",
+      "languages": ["Arabic", "English"]
+    },
+    {
+      "name": "Dr. Hassan Al-Qahtani",
+      "specialty": "Dentist",
+      "qualifications": "BDS, SBOD (Saudi Board of Operative Dentistry)",
+      "available_days": ["Monday", "Wednesday", "Saturday"],
+      "available_hours": "11:00 AM - 1:00 PM, 5:00 PM - 10:00 PM",
+      "languages": ["Arabic", "English"]
+    },
+    {
+      "name": "Dr. Layla Al-Ghamdi",
+      "specialty": "Dermatologist",
+      "qualifications": "MBBS, SBD (Saudi Board of Dermatology)",
+      "available_days": ["Wednesday", "Saturday"],
+      "available_hours": "5:00 PM - 9:00 PM",
+      "languages": ["Arabic", "English"]
+    }
+  ],
+  "appointment_policy": {
+    "booking_lead_time_hours": 2,
+    "cancellation_notice_hours": 4,
+    "walk_ins_accepted": true,
+    "walk_in_note": "Walk-ins are welcome but booked appointments take priority. Wait time may exceed 1 hour during peak evening hours.",
+    "payment_methods": ["Cash", "Card", "mada", "Apple Pay", "STC Pay", "Tabby (BNPL)"]
+  },
+  "faqs": [
+    {
+      "q": "Do you accept insurance?",
+      "a": "Yes, we accept most major Saudi health insurance plans including Bupa Arabia, Tawuniya, MedGulf, Al Etihad, and Al Rajhi Takaful. Please bring your insurance card and Iqama on visit."
+    },
+    {
+      "q": "How do I cancel or reschedule?",
+      "a": "Send us a WhatsApp message at least 4 hours before your appointment. There is no cancellation fee with proper notice."
+    },
+    {
+      "q": "Do you provide home services?",
+      "a": "Yes, we offer home consultations and sample collection for an additional SAR 100 within Riyadh city limits."
+    },
+    {
+      "q": "Can I get a prescription refill without a visit?",
+      "a": "For ongoing prescriptions, our doctors can issue refills via WhatsApp after a brief consultation. Charge: SAR 50."
+    },
+    {
+      "q": "Do you have parking?",
+      "a": "Yes, free covered parking is available on-site for up to 20 vehicles."
+    },
+    {
+      "q": "Do you treat non-Saudis / expats?",
+      "a": "Absolutely. We welcome all residents and visitors. Please bring your Iqama or passport for registration."
+    }
+  ],
+  "emergency_guidance": "For severe symptoms (chest pain, difficulty breathing, heavy bleeding, loss of consciousness, suspected stroke or heart attack), do NOT wait. Call 911 (Saudi unified emergency) or 997 (Red Crescent ambulance) immediately, or go to the nearest emergency room. We will notify our on-call doctor to follow up."
+}

@@ -1,0 +1,62 @@
+{
+  "name": "Clinic — New Appointment → Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clinic-new-appointment",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "8b1f6e10-1a2b-4c3d-9e4f-aaaaaaaaaaaa",
+      "name": "Webhook — New Appointment",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "clinic-new-appointment"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.body.appointment_id }}",
+            "received_at": "={{ $now.toISO() }}",
+            "wa_user": "={{ $json.body.wa_user }}",
+            "patient_name": "={{ $json.body.patient_name }}",
+            "doctor": "={{ $json.body.doctor }}",
+            "service": "={{ $json.body.service }}",
+            "requested_datetime": "={{ $json.body.requested_datetime }}",
+            "notes": "={{ $json.body.notes }}"
+          },
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "8b1f6e10-1a2b-4c3d-9e4f-bbbbbbbbbbbb",
+      "name": "Append to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [540, 300]
+    }
+  ],
+  "connections": {
+    "Webhook — New Appointment": {
+      "main": [[{ "node": "Append to Sheet", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": []
+}

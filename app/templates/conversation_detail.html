@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set active = 'conv' %}
+{% block title %}+{{ wa_user }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <div class="text-xs text-slate-500"><a href="/admin/conversations" class="hover:underline">← Conversations</a></div>
+    <h1 class="text-xl font-semibold text-slate-900 mt-1">+{{ wa_user }}</h1>
+  </div>
+  <div class="text-xs text-slate-500">{{ messages|length }} messages</div>
+</div>
+
+<div class="bg-white rounded-lg shadow p-4 space-y-3 max-h-[70vh] overflow-auto">
+  {% for m in messages %}
+    {% if m.direction == 'in' %}
+    <div class="flex justify-start">
+      <div class="max-w-md">
+        <div class="px-3 py-2 rounded-lg rounded-tl-sm bg-slate-100 text-slate-900 text-sm whitespace-pre-wrap">{{ m.message }}</div>
+        <div class="text-[10px] text-slate-400 mt-1">{{ m.created_at[:19].replace('T',' ') }} UTC</div>
+      </div>
+    </div>
+    {% else %}
+    <div class="flex justify-end">
+      <div class="max-w-md">
+        <div class="px-3 py-2 rounded-lg rounded-tr-sm bg-emerald-600 text-white text-sm whitespace-pre-wrap">{{ m.message }}</div>
+        <div class="text-[10px] text-slate-400 mt-1 text-right">
+          {{ m.created_at[:19].replace('T',' ') }} UTC
+          {% if m.intent %}<span class="ml-1 text-slate-500">· {{ m.intent }}</span>{% endif %}
+          {% if m.needs_human %}<span class="ml-1 text-red-500">· flag</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  {% else %}
+  <div class="text-center text-slate-400 text-sm py-8">No messages</div>
+  {% endfor %}
+</div>
+{% endblock %}

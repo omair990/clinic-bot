@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Clinic Admin{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+  <style>
+    .pulse-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 1.6s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+{% if request.session.get('admin') %}
+<div class="flex min-h-screen">
+  <aside class="w-60 bg-slate-900 text-slate-200 flex flex-col">
+    <div class="px-5 py-5 border-b border-slate-800">
+      <div class="text-sm font-semibold tracking-wide text-slate-100">Clinic Admin</div>
+      <div class="text-xs text-slate-400 mt-1"><span class="pulse-dot mr-1"></span>Live</div>
+    </div>
+    <nav class="flex-1 px-2 py-3 space-y-1 text-sm">
+      <a href="/admin/" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='home' %}bg-slate-800 text-white{% endif %}">Dashboard</a>
+      <a href="/admin/conversations" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='conv' %}bg-slate-800 text-white{% endif %}">Conversations</a>
+      <a href="/admin/appointments" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='appt' %}bg-slate-800 text-white{% endif %}">Appointments</a>
+    </nav>
+    <div class="px-3 py-3 border-t border-slate-800 text-xs text-slate-400">
+      <form method="post" action="/admin/logout"><button class="hover:text-white">Sign out</button></form>
+    </div>
+  </aside>
+  <main class="flex-1 overflow-auto">
+    <div class="max-w-7xl mx-auto p-6">{% block content %}{% endblock %}</div>
+  </main>
+</div>
+{% else %}
+  {% block anon %}{% endblock %}
+{% endif %}
+</body>
+</html>
