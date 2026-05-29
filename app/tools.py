@@ -78,6 +78,10 @@ TOOL_SPECS: list[ToolSpec] = [
                  "date": {"type": "string", "description": "YYYY-MM-DD or 'today'/'tomorrow'."},
                  "time": {"type": "string", "description": "Start time, e.g. '17:00' or '5:00 PM'."}},
               "required": ["patient_name", "doctor", "service", "date", "time"]}),
+    ToolSpec("get_faqs",
+             "Clinic FAQs: insurance, parking, home service, prescription refills, "
+             "cancellation/reschedule policy, treating non-Saudis.",
+             {"type": "object", "properties": {}}),
     ToolSpec("get_my_appointments", "List this patient's upcoming appointments (with ids).",
              {"type": "object", "properties": {}}),
     ToolSpec("reschedule_appointment", "Move an existing appointment to a new date/time.",
@@ -190,6 +194,12 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
             "doctor": doctor["name"], "service": service["name"], "when": _fmt(start)}
 
 
+def _get_faqs(args: dict, ctx: AgentContext) -> dict:
+    from app.config import CLINIC_DATA
+    return {"faqs": CLINIC_DATA.get("faqs", []),
+            "policy": CLINIC_DATA.get("appointment_policy", {})}
+
+
 def _get_my_appointments(args: dict, ctx: AgentContext) -> dict:
     rows = db.upcoming_appointments(ctx.wa_user, _now())
     return {"appointments": [
@@ -260,6 +270,7 @@ _HANDLERS = {
     "list_doctors": _list_doctors,
     "check_availability": _check_availability,
     "book_appointment": _book_appointment,
+    "get_faqs": _get_faqs,
     "get_my_appointments": _get_my_appointments,
     "reschedule_appointment": _reschedule_appointment,
     "cancel_appointment": _cancel_appointment,
