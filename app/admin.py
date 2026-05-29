@@ -1,12 +1,13 @@
 import asyncio
 import html
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from app.config import ADMIN_PASSWORD, BASE_DIR
+from app.config import ADMIN_PASSWORD, BASE_DIR, TZ
 from app.db import (
     conversation_thread,
     list_appointments,
@@ -19,6 +20,25 @@ from app.events import subscribe, unsubscribe
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+APPOINTMENT_STATUSES = {"confirmed", "cancelled", "completed", "no_show"}
+
+
+def _fmt_dt(value) -> str:
+    """Render a timestamp (datetime or ISO string) in clinic local time."""
+    if value is None:
+        return "—"
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    if isinstance(value, datetime):
+        return value.astimezone(TZ).strftime("%Y-%m-%d %H:%M")
+    return str(value)
+
+
+templates.env.filters["fmt_dt"] = _fmt_dt
 
 
 def _require_auth(request: Request) -> None:
@@ -86,7 +106,7 @@ async def appointments(request: Request, status: str | None = None):
 @router.post("/appointments/{appointment_id}/status")
 async def update_appointment(request: Request, appointment_id: int, status: str = Form(...)):
     _require_auth(request)
-    if status not in {"pending", "confirmed", "cancelled"}:
+    if status not in APPOINTMENT_STATUSES:
         raise HTTPException(400, "bad status")
     set_appointment_status(appointment_id, status)
     referrer = request.headers.get("referer", "/admin/appointments")

@@ -25,7 +25,7 @@
           <span class="text-xs text-slate-400 mr-1">{{ '←' if r.last_direction=='in' else '→' }}</span>{{ r.last_message }}
         </td>
         <td class="px-4 py-3">{{ r.msg_count }}</td>
-        <td class="px-4 py-3 text-slate-500 text-xs">{{ r.last_at[:19].replace('T',' ') }}</td>
+        <td class="px-4 py-3 text-slate-500 text-xs">{{ r.last_at | fmt_dt }}</td>
         <td class="px-4 py-3">
           {% if r.needs_human %}<span class="inline-block px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">needs human</span>{% endif %}
         </td>
