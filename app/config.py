@@ -30,11 +30,14 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
 AI_PROVIDERS = [
-    p.strip() for p in os.environ.get("AI_PROVIDERS", "claude,gemini,groq,deepseek").split(",")
+    p.strip()
+    for p in os.environ.get("AI_PROVIDERS", "gemini,openrouter,claude,groq,deepseek").split(",")
     if p.strip()
 ]
 

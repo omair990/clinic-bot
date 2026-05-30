@@ -5,6 +5,7 @@ from app.providers import _openai_compat as _oai
 NAME = "deepseek"
 MODEL = "deepseek-chat"
 ENDPOINT = "https://api.deepseek.com/chat/completions"
+ENABLED = bool(DEEPSEEK_API_KEY)
 
 is_transient = _oai.is_transient
 is_rate_limit = _oai.is_rate_limit

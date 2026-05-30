@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 
 NAME = "claude"
 MODEL = CLAUDE_MODEL
+ENABLED = bool(ANTHROPIC_API_KEY)
 
 # Cap the request well below the SDK default (600s) so a hung call can't pin a
 # worker thread; the fallback chain takes over instead.

@@ -36,7 +36,7 @@ anything out of scope are escalated to staff via WhatsApp.
 | `app/tools.py` | Tool specs + handlers + per-turn `AgentContext` |
 | `app/scheduling.py` | Slot generation / availability (pure, unit-tested) |
 | `app/llm.py` | Neutral message/tool types + multi-provider fallback |
-| `app/providers/` | `claude` (Anthropic tool use + prompt caching), `gemini` (manual function calling), `groq`/`deepseek` (OpenAI-compatible) |
+| `app/providers/` | `claude` (Anthropic tool use + prompt caching), `gemini` (manual function calling), `groq`/`deepseek`/`openrouter` (OpenAI-compatible) |
 | `app/prompts.py` | System prompt (rebuilt per turn with current clinic time) |
 | `app/db.py` | Postgres pool + repository functions |
 | `app/webhook.py` | WhatsApp verify, signature check, message routing |
@@ -96,10 +96,12 @@ pytest -q          # scheduling logic (no DB/network needed)
 
 ## Configuration notes
 
-- **`AI_PROVIDERS`** sets the fallback order (default `claude,gemini,groq,deepseek`). A
-  provider is skipped if its API key is missing. Claude is paid but has no free-tier daily
-  caps; the others have free tiers that exhaust quickly. Set `CLAUDE_MODEL` to override the
-  Claude model (default `claude-haiku-4-5-20251001`).
+- **`AI_PROVIDERS`** sets the fallback order (default `gemini,openrouter,claude,groq,deepseek`).
+  A provider listed without its API key is skipped at startup. Each call walks the chain;
+  a provider that fails repeatedly trips a circuit breaker and is skipped for a cooldown
+  (`LLM_BREAKER_THRESHOLD` / `LLM_BREAKER_COOLDOWN_S`), while a rate-limited (429) provider
+  stays in rotation. `LLM_TIMEOUT_S` bounds each call. Set `CLAUDE_MODEL` /
+  `OPENROUTER_MODEL` to choose models (`openai/gpt-4o-mini` by default for OpenRouter).
 - **`WA_APP_SECRET`** must be set in production — inbound webhooks are rejected if the
   HMAC signature is invalid.
 - **`CLINIC_TIMEZONE`** (default `Asia/Riyadh`) governs all slot math and display.

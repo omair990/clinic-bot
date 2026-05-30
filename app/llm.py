@@ -67,12 +67,18 @@ class LLMResult:
 _providers: list = []
 for _name in AI_PROVIDERS:
     try:
-        _providers.append(importlib.import_module(f"app.providers.{_name}"))
+        _mod = importlib.import_module(f"app.providers.{_name}")
     except Exception as e:  # noqa: BLE001
         log.error("Failed to load provider %s: %s", _name, e)
+        continue
+    if not getattr(_mod, "ENABLED", True):
+        log.info("Provider %s listed but has no API key — skipping", _name)
+        continue
+    _providers.append(_mod)
 
 if not _providers:
-    raise RuntimeError("No AI providers configured. Set AI_PROVIDERS in the environment.")
+    raise RuntimeError(
+        "No usable AI providers. Set AI_PROVIDERS and at least one provider's API key.")
 
 log.info("LLM providers loaded: %s", [p.NAME for p in _providers])
 

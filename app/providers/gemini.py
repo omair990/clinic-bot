@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 NAME = "gemini"
 MODEL = "gemini-2.5-flash"
+ENABLED = bool(GEMINI_API_KEY)
 
 # http_options.timeout is in milliseconds.
 _client = (genai.Client(api_key=GEMINI_API_KEY,
