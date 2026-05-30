@@ -269,7 +269,10 @@ def list_conversations(limit: int = 100) -> list[dict]:
                       (SELECT message FROM conversations c2
                         WHERE c2.wa_user = c.wa_user ORDER BY id DESC LIMIT 1) AS last_message,
                       (SELECT direction FROM conversations c3
-                        WHERE c3.wa_user = c.wa_user ORDER BY id DESC LIMIT 1) AS last_direction
+                        WHERE c3.wa_user = c.wa_user ORDER BY id DESC LIMIT 1) AS last_direction,
+                      (SELECT intent FROM conversations c4
+                        WHERE c4.wa_user = c.wa_user AND c4.direction = 'out'
+                          AND c4.intent IS NOT NULL ORDER BY id DESC LIMIT 1) AS last_intent
                FROM conversations c
                GROUP BY c.wa_user
                ORDER BY last_at DESC

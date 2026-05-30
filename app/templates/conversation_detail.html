@@ -23,10 +23,10 @@
     <div class="flex justify-end">
       <div class="max-w-md">
         <div class="px-3 py-2 rounded-lg rounded-tr-sm bg-emerald-600 text-white text-sm whitespace-pre-wrap">{{ m.message }}</div>
-        <div class="text-[10px] text-slate-400 mt-1 text-right">
-          {{ m.created_at | fmt_dt }}
-          {% if m.intent %}<span class="ml-1 text-slate-500">· {{ m.intent }}</span>{% endif %}
-          {% if m.needs_human %}<span class="ml-1 text-red-500">· flag</span>{% endif %}
+        <div class="mt-1 flex items-center justify-end gap-1.5">
+          {% if m.intent %}{{ m.intent | intent_badge }}{% endif %}
+          {% if m.needs_human %}<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset bg-red-100 text-red-700 ring-red-200">flag</span>{% endif %}
+          <span class="text-[10px] text-slate-400">{{ m.created_at | fmt_dt }}</span>
         </div>
       </div>
     </div>

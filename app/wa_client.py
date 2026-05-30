@@ -31,9 +31,21 @@ async def send_text(to: str, body: str) -> dict:
 
 
 async def mark_read(message_id: str) -> None:
-    payload = {"messaging_product": "whatsapp", "status": "read", "message_id": message_id}
+    """Mark the inbound message read AND show a typing indicator.
+
+    The typing bubble stays until we send our reply (or ~25s), so the user sees
+    activity while the agent thinks instead of dead air.
+    """
+    payload = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "text"},
+    }
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            await client.post(f"{BASE_URL}/messages", headers=HEADERS, json=payload)
+            r = await client.post(f"{BASE_URL}/messages", headers=HEADERS, json=payload)
+            if r.status_code >= 400:
+                log.warning("mark_read/typing failed status=%s body=%s", r.status_code, r.text)
         except httpx.HTTPError as e:
             log.warning("mark_read failed: %s", e)

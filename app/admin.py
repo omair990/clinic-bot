@@ -6,6 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 from app.config import ADMIN_PASSWORD, BASE_DIR, TZ
 from app.db import (
@@ -39,6 +40,31 @@ def _fmt_dt(value) -> str:
 
 
 templates.env.filters["fmt_dt"] = _fmt_dt
+
+
+# --- Message classification badges (shared by templates + live SSE feed) ---
+INTENT_BADGES = {
+    "emergency":   ("🚨 Emergency",   "bg-red-100 text-red-700 ring-red-200"),
+    "handover":    ("🙋 Handover",    "bg-amber-100 text-amber-700 ring-amber-200"),
+    "appointment": ("📅 Appointment", "bg-emerald-100 text-emerald-700 ring-emerald-200"),
+    "chat":        ("💬 Chat",        "bg-slate-100 text-slate-600 ring-slate-200"),
+    "error":       ("⚠️ Error",        "bg-red-100 text-red-700 ring-red-200"),
+}
+
+
+def intent_badge_html(intent: str | None) -> str:
+    """A small coloured pill for a message's classification. Returns '' if none."""
+    if not intent:
+        return ""
+    label, classes = INTENT_BADGES.get(
+        intent, (intent.replace("_", " ").title(), "bg-slate-100 text-slate-600 ring-slate-200"))
+    return (
+        f'<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full '
+        f'text-[10px] font-medium ring-1 ring-inset {classes}">{html.escape(label)}</span>'
+    )
+
+
+templates.env.filters["intent_badge"] = lambda i: Markup(intent_badge_html(i))
 
 
 def _require_auth(request: Request) -> None:
@@ -144,9 +170,13 @@ def _render_event(payload_json: str) -> str:
     intent = p.get("intent")
     arrow = "←" if direction == "in" else "→"
     color = "text-slate-700" if direction == "in" else "text-emerald-700"
-    intent_html = f'<span class="text-xs text-slate-400 ml-1">· {html.escape(intent)}</span>' if intent else ""
+    intent_html = f'<span class="ml-2 align-middle">{intent_badge_html(intent)}</span>' if intent else ""
     needs_human = p.get("needs_human")
-    flag_html = '<span class="ml-1 text-red-500 text-xs">· flag</span>' if needs_human else ""
+    flag_html = (
+        '<span class="ml-1 align-middle inline-flex items-center px-2 py-0.5 rounded-full '
+        'text-[10px] font-medium ring-1 ring-inset bg-red-100 text-red-700 ring-red-200">flag</span>'
+        if needs_human else ""
+    )
     html_row = (
         f'<div class="px-4 py-2 hover:bg-slate-50">'
         f'<span class="text-xs text-slate-400 mr-2">{arrow}</span>'
