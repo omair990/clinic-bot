@@ -88,6 +88,11 @@ pytest -q          # scheduling logic (no DB/network needed)
 > number, uvicorn fails to bind, and the service crash-loops (health check times out,
 > hitting `restartPolicyMaxRetries`). Fix: Service → Settings → Deploy → clear **Custom
 > Start Command** and redeploy.
+>
+> As a safety net, the image installs a small `uvicorn` shim (`docker/uvicorn-port-shim`)
+> ahead of the real binary in `PATH` that expands a literal `$PORT` before delegating to
+> uvicorn — so the container boots even if that dashboard command is set. Clearing the
+> command is still the clean fix; the shim is just insurance.
 
 ## Configuration notes
 

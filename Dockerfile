@@ -11,6 +11,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Install a uvicorn shim ahead of the real binary in PATH. It expands a literal
+# "$PORT" arg (which Railway exec-form start commands pass through unexpanded)
+# before delegating to the real uvicorn, so the container boots even if a
+# dashboard "Custom Start Command" is set. See README "Gotcha".
+RUN install -m 0755 docker/uvicorn-port-shim /usr/local/sbin/uvicorn
+ENV PATH="/usr/local/sbin:${PATH}"
+
 EXPOSE 8000
 
 # Honour Railway/Heroku-provided $PORT; default to 8000 locally.

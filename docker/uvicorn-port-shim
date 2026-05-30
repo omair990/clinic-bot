@@ -1,0 +1,26 @@
+#!/bin/sh
+# uvicorn PORT-expansion shim.
+#
+# Railway runs a dashboard "Custom Start Command" in *exec* form for Dockerfile
+# deployments, so a literal "$PORT" in that command reaches uvicorn unexpanded
+# ("Error: Invalid value for '--port': '$PORT' is not a valid integer") and the
+# container crash-loops. This wrapper is installed earlier in PATH than the real
+# uvicorn; it rewrites any literal "$PORT" argument to the actual $PORT value
+# (defaulting to 8000) and then execs the real binary. It is a safe no-op when
+# no literal "$PORT" is present.
+#
+# NOTE: the clean fix is to clear that dashboard Custom Start Command so the
+# Dockerfile CMD drives startup. This shim only makes the image resilient if the
+# command is (re)introduced. See README "Gotcha".
+set -eu
+
+quoted=""
+for arg in "$@"; do
+  if [ "$arg" = '$PORT' ]; then
+    arg="${PORT:-8000}"
+  fi
+  # re-quote each arg so values with spaces survive the eval below
+  quoted="$quoted '$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")'"
+done
+
+eval "exec /usr/local/bin/uvicorn $quoted"
