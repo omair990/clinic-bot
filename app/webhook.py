@@ -150,7 +150,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
     log.info("In  %s: %s", sender, user_text)
     history = await asyncio.to_thread(recent_history, tid, sender, 12)
     await asyncio.to_thread(log_message, tid, sender, "in", user_text)
-    publish("message", {"wa_user": sender, "direction": "in", "text": user_text})
+    publish("message", {"wa_user": sender, "direction": "in", "text": user_text, "tenant_id": tid})
 
     try:
         ctx: AgentContext = await asyncio.to_thread(run_agent, tenant, sender, user_text, history)
@@ -186,7 +186,8 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
     await asyncio.to_thread(log_message, tid, sender, "out", ctx.reply,
                             ctx.derived_intent(), ctx.needs_human)
     publish("message", {"wa_user": sender, "direction": "out", "text": ctx.reply,
-                        "intent": ctx.derived_intent(), "needs_human": ctx.needs_human})
+                        "intent": ctx.derived_intent(), "needs_human": ctx.needs_human,
+                        "tenant_id": tid})
 
     if ctx.needs_human:
         flag = "EMERGENCY" if ctx.emergency else "HANDOVER"

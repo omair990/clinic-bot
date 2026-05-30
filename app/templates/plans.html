@@ -76,6 +76,8 @@
           {% for p in plans %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
         </select>
         <input name="wa_access_token" class="border rounded px-2 py-1" placeholder="WhatsApp access token (optional)">
+        <input name="staff_username" class="border rounded px-2 py-1" placeholder="Staff login username (optional)">
+        <input name="staff_password" type="password" class="border rounded px-2 py-1" placeholder="Staff login password (optional)">
         <textarea name="clinic_data" rows="4" class="border rounded px-2 py-1 md:col-span-2 font-mono text-xs" placeholder='Clinic data JSON (services, doctors, hours, faqs) — optional'></textarea>
         <button class="md:col-span-2 px-3 py-2 rounded bg-emerald-600 text-white">Create clinic</button>
       </form>

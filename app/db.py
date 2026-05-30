@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS tenants (
     wa_phone_number_id TEXT UNIQUE,
     wa_access_token    TEXT,
     clinic_data        JSONB,
+    staff_username     TEXT,
+    staff_password_hash TEXT,
     plan_id            BIGINT REFERENCES plans(id),
     status             TEXT NOT NULL DEFAULT 'active'
                        CHECK (status IN ('active', 'suspended', 'expired')),
@@ -100,6 +102,9 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
+ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_username TEXT;
+ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_password_hash TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tenants_staff_username ON tenants(staff_username);
 CREATE INDEX IF NOT EXISTS idx_conv_tenant ON conversations(tenant_id, created_at);
 -- A patient phone is unique per clinic, not globally (two clinics may share a patient).
 ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_wa_user_key;
@@ -373,65 +378,91 @@ def reschedule(tenant_id: int, appointment_id: int, start_at: datetime,
 
 # --- Admin queries ---
 
-def list_conversations(limit: int = 100) -> list[dict]:
+def list_conversations(limit: int = 100, tenant_id: int | None = None) -> list[dict]:
+    # When scoped to a clinic, the correlated subqueries must also filter by tenant,
+    # or a shared phone would leak another clinic's last message/intent.
+    if tenant_id is not None:
+        sub = "AND c2.tenant_id = %s"
+        sub3 = "AND c3.tenant_id = %s"
+        sub4 = "AND c4.tenant_id = %s"
+        where = "WHERE c.tenant_id = %s"
+        params: tuple = (tenant_id, tenant_id, tenant_id, tenant_id, limit)
+    else:
+        sub = sub3 = sub4 = where = ""
+        params = (limit,)
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT c.wa_user,
+            f"""SELECT c.wa_user,
                       MAX(c.created_at) AS last_at,
                       COUNT(*) AS msg_count,
                       bool_or(c.needs_human) AS needs_human,
                       (SELECT message FROM conversations c2
-                        WHERE c2.wa_user = c.wa_user ORDER BY id DESC LIMIT 1) AS last_message,
+                        WHERE c2.wa_user = c.wa_user {sub} ORDER BY id DESC LIMIT 1) AS last_message,
                       (SELECT direction FROM conversations c3
-                        WHERE c3.wa_user = c.wa_user ORDER BY id DESC LIMIT 1) AS last_direction,
+                        WHERE c3.wa_user = c.wa_user {sub3} ORDER BY id DESC LIMIT 1) AS last_direction,
                       (SELECT intent FROM conversations c4
-                        WHERE c4.wa_user = c.wa_user AND c4.direction = 'out'
+                        WHERE c4.wa_user = c.wa_user {sub4} AND c4.direction = 'out'
                           AND c4.intent IS NOT NULL ORDER BY id DESC LIMIT 1) AS last_intent
-               FROM conversations c
+               FROM conversations c {where}
                GROUP BY c.wa_user
                ORDER BY last_at DESC
                LIMIT %s""",
-            (limit,),
+            params,
         ).fetchall()
     return rows
 
 
-def conversation_thread(wa_user: str, limit: int = 200) -> list[dict]:
+def conversation_thread(wa_user: str, limit: int = 200,
+                        tenant_id: int | None = None) -> list[dict]:
+    sql = ("SELECT id, direction, message, intent, needs_human, created_at "
+           "FROM conversations WHERE wa_user = %s")
+    params: tuple = (wa_user,)
+    if tenant_id is not None:
+        sql += " AND tenant_id = %s"
+        params += (tenant_id,)
+    sql += " ORDER BY id ASC LIMIT %s"
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT id, direction, message, intent, needs_human, created_at "
-            "FROM conversations WHERE wa_user = %s ORDER BY id ASC LIMIT %s",
-            (wa_user, limit),
-        ).fetchall()
+        rows = conn.execute(sql, params + (limit,)).fetchall()
     return rows
 
 
-def list_appointments(status: str | None = None, limit: int = 200) -> list[dict]:
+def list_appointments(status: str | None = None, limit: int = 200,
+                      tenant_id: int | None = None) -> list[dict]:
     sql = ("SELECT id, wa_user, patient_name, doctor, service, start_at, end_at, "
            "status, notes, created_at FROM appointments")
-    params: tuple = ()
+    clauses, params = [], []
+    if tenant_id is not None:
+        clauses.append("tenant_id = %s")
+        params.append(tenant_id)
     if status:
-        sql += " WHERE status = %s"
-        params = (status,)
+        clauses.append("status = %s")
+        params.append(status)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY start_at DESC LIMIT %s"
-    params = params + (limit,)
+    params.append(limit)
     with get_conn() as conn:
-        rows = conn.execute(sql, params).fetchall()
+        rows = conn.execute(sql, tuple(params)).fetchall()
     return rows
 
 
-def stats() -> dict:
+def stats(tenant_id: int | None = None) -> dict:
+    w = "WHERE tenant_id = %s" if tenant_id is not None else ""
+    wa = "AND tenant_id = %s" if tenant_id is not None else ""
+    p = (tenant_id,) if tenant_id is not None else ()
     with get_conn() as conn:
-        msgs = conn.execute("SELECT COUNT(*) AS n FROM conversations").fetchone()["n"]
-        users = conn.execute("SELECT COUNT(DISTINCT wa_user) AS n FROM conversations").fetchone()["n"]
+        msgs = conn.execute(f"SELECT COUNT(*) AS n FROM conversations {w}", p).fetchone()["n"]
+        users = conn.execute(
+            f"SELECT COUNT(DISTINCT wa_user) AS n FROM conversations {w}", p).fetchone()["n"]
         appts = conn.execute(
-            "SELECT COUNT(*) AS n FROM appointments WHERE status = 'confirmed'"
+            f"SELECT COUNT(*) AS n FROM appointments WHERE status = 'confirmed' {wa}", p
         ).fetchone()["n"]
         upcoming = conn.execute(
-            "SELECT COUNT(*) AS n FROM appointments WHERE status = 'confirmed' AND start_at >= now()"
+            f"SELECT COUNT(*) AS n FROM appointments "
+            f"WHERE status = 'confirmed' AND start_at >= now() {wa}", p
         ).fetchone()["n"]
         needs_human = conn.execute(
-            "SELECT COUNT(DISTINCT wa_user) AS n FROM conversations WHERE needs_human = TRUE"
+            f"SELECT COUNT(DISTINCT wa_user) AS n FROM conversations WHERE needs_human = TRUE {wa}", p
         ).fetchone()["n"]
     return {"messages": msgs, "users": users, "appointments": appts,
             "upcoming_appointments": upcoming, "needs_human_users": needs_human}
@@ -574,3 +605,24 @@ def update_tenant_config(tenant_id: int, *, name: str, wa_phone_number_id: str |
 def get_tenant(tenant_id: int) -> dict | None:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
+
+
+def get_tenant_by_username(username: str) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM tenants WHERE staff_username = %s", (username,)
+        ).fetchone()
+
+
+def set_tenant_credentials(tenant_id: int, username: str | None,
+                           password_hash: str | None) -> None:
+    """Set/clear a clinic's staff login. Password hash is only updated when provided."""
+    with get_conn() as conn:
+        if password_hash is not None:
+            conn.execute(
+                "UPDATE tenants SET staff_username = %s, staff_password_hash = %s WHERE id = %s",
+                (username or None, password_hash, tenant_id),
+            )
+        else:
+            conn.execute("UPDATE tenants SET staff_username = %s WHERE id = %s",
+                         (username or None, tenant_id))

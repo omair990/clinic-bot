@@ -11,15 +11,19 @@ from markupsafe import Markup
 import json
 
 from app.config import ADMIN_PASSWORD, BASE_DIR, TZ
+from app.auth import hash_password, verify_password
 from app.db import (
     admin_set_appointment_status,
     conversation_thread,
     create_tenant,
     get_tenant,
+    get_tenant_by_username,
     list_appointments,
     list_conversations,
     list_plans,
     list_tenants,
+    set_appointment_status,
+    set_tenant_credentials,
     set_tenant_plan,
     set_tenant_status,
     stats,
@@ -78,25 +82,57 @@ def intent_badge_html(intent: str | None) -> str:
 templates.env.filters["intent_badge"] = lambda i: Markup(intent_badge_html(i))
 
 
-def _require_auth(request: Request) -> None:
-    if not request.session.get("admin"):
+def _principal(request: Request) -> dict | None:
+    role = request.session.get("role")
+    if not role:
+        return None
+    return {"role": role, "tenant_id": request.session.get("tenant_id"),
+            "tenant_name": request.session.get("tenant_name")}
+
+
+def _require_auth(request: Request) -> dict:
+    p = _principal(request)
+    if not p:
         raise HTTPException(status_code=302, headers={"Location": "/admin/login"})
+    return p
+
+
+def _require_super(request: Request) -> None:
+    if _require_auth(request)["role"] != "super":
+        raise HTTPException(status_code=403, detail="Super-admin only")
+
+
+def _scope(request: Request) -> int | None:
+    """tenant_id to scope queries to, or None for super-admin (sees all)."""
+    p = _require_auth(request)
+    return p["tenant_id"] if p["role"] == "clinic" else None
 
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    if request.session.get("admin"):
+    if request.session.get("role"):
         return RedirectResponse("/admin/", status_code=303)
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
 
 @router.post("/login")
-async def do_login(request: Request, password: str = Form(...)):
-    if password == ADMIN_PASSWORD:
-        request.session["admin"] = True
+async def do_login(request: Request, username: str = Form(""), password: str = Form(...)):
+    username = username.strip()
+    # No username => platform super-admin password.
+    if not username and password == ADMIN_PASSWORD:
+        request.session.clear()
+        request.session["role"] = "super"
         return RedirectResponse("/admin/", status_code=303)
+    # Username => per-clinic staff login.
+    if username:
+        t = get_tenant_by_username(username)
+        if t and verify_password(password, t.get("staff_password_hash")):
+            request.session.clear()
+            request.session.update(
+                {"role": "clinic", "tenant_id": t["id"], "tenant_name": t["name"]})
+            return RedirectResponse("/admin/", status_code=303)
     return templates.TemplateResponse(
-        "login.html", {"request": request, "error": "Wrong password"}, status_code=401
+        "login.html", {"request": request, "error": "Invalid credentials"}, status_code=401
     )
 
 
@@ -110,7 +146,7 @@ async def do_logout(request: Request):
 async def home(request: Request):
     _require_auth(request)
     return templates.TemplateResponse(
-        "home.html", {"request": request, "stats": stats()}
+        "home.html", {"request": request, "stats": stats(_scope(request))}
     )
 
 
@@ -118,7 +154,8 @@ async def home(request: Request):
 async def conversations(request: Request):
     _require_auth(request)
     return templates.TemplateResponse(
-        "conversations.html", {"request": request, "rows": list_conversations()}
+        "conversations.html",
+        {"request": request, "rows": list_conversations(tenant_id=_scope(request))},
     )
 
 
@@ -127,7 +164,8 @@ async def conversation_view(request: Request, wa_user: str):
     _require_auth(request)
     return templates.TemplateResponse(
         "conversation_detail.html",
-        {"request": request, "wa_user": wa_user, "messages": conversation_thread(wa_user)},
+        {"request": request, "wa_user": wa_user,
+         "messages": conversation_thread(wa_user, tenant_id=_scope(request))},
     )
 
 
@@ -136,23 +174,27 @@ async def appointments(request: Request, status: str | None = None):
     _require_auth(request)
     return templates.TemplateResponse(
         "appointments.html",
-        {"request": request, "rows": list_appointments(status), "filter_status": status},
+        {"request": request, "rows": list_appointments(status, tenant_id=_scope(request)),
+         "filter_status": status},
     )
 
 
 @router.post("/appointments/{appointment_id}/status")
 async def update_appointment(request: Request, appointment_id: int, status: str = Form(...)):
-    _require_auth(request)
+    scope = _scope(request)
     if status not in APPOINTMENT_STATUSES:
         raise HTTPException(400, "bad status")
-    admin_set_appointment_status(appointment_id, status)
+    if scope is None:
+        admin_set_appointment_status(appointment_id, status)
+    else:
+        set_appointment_status(scope, appointment_id, status)  # clinic can only touch its own
     referrer = request.headers.get("referer", "/admin/appointments")
     return RedirectResponse(referrer, status_code=303)
 
 
 @router.get("/plans", response_class=HTMLResponse)
 async def plans_page(request: Request):
-    _require_auth(request)
+    _require_super(request)
     period = current_period(str(TZ))
     return templates.TemplateResponse(
         "plans.html",
@@ -175,7 +217,7 @@ async def save_plan(request: Request,
                     price_sar: str = Form(""),
                     voice_enabled: str = Form("off"),
                     is_trial: str = Form("off")):
-    _require_auth(request)
+    _require_super(request)
     upsert_plan(
         name.strip(),
         _int_or_none(monthly_text_quota),
@@ -190,14 +232,14 @@ async def save_plan(request: Request,
 
 @router.post("/tenants/{tenant_id}/plan")
 async def assign_plan(request: Request, tenant_id: int, plan_id: int = Form(...)):
-    _require_auth(request)
+    _require_super(request)
     set_tenant_plan(tenant_id, plan_id)
     return RedirectResponse("/admin/plans", status_code=303)
 
 
 @router.post("/tenants/{tenant_id}/status")
 async def change_tenant_status(request: Request, tenant_id: int, status: str = Form(...)):
-    _require_auth(request)
+    _require_super(request)
     if status in {"active", "suspended", "expired"}:
         set_tenant_status(tenant_id, status)
     return RedirectResponse("/admin/plans", status_code=303)
@@ -224,17 +266,22 @@ async def add_tenant(request: Request,
                      plan_id: int = Form(...),
                      timezone: str = Form("Asia/Riyadh"),
                      wa_access_token: str = Form(""),
-                     clinic_data: str = Form("")):
-    _require_auth(request)
-    create_tenant(name.strip(), slug.strip(), wa_phone_number_id.strip() or None,
-                  plan_id, timezone.strip() or "Asia/Riyadh",
-                  wa_access_token.strip() or None, _parse_clinic_data(clinic_data))
+                     clinic_data: str = Form(""),
+                     staff_username: str = Form(""),
+                     staff_password: str = Form("")):
+    _require_super(request)
+    tid = create_tenant(name.strip(), slug.strip(), wa_phone_number_id.strip() or None,
+                        plan_id, timezone.strip() or "Asia/Riyadh",
+                        wa_access_token.strip() or None, _parse_clinic_data(clinic_data))
+    if staff_username.strip():
+        pw_hash = hash_password(staff_password) if staff_password else None
+        set_tenant_credentials(tid, staff_username.strip(), pw_hash)
     return RedirectResponse("/admin/plans", status_code=303)
 
 
 @router.get("/tenants/{tenant_id}/edit", response_class=HTMLResponse)
 async def edit_tenant_page(request: Request, tenant_id: int):
-    _require_auth(request)
+    _require_super(request)
     tenant = get_tenant(tenant_id)
     if not tenant:
         raise HTTPException(404, "Tenant not found")
@@ -249,28 +296,36 @@ async def edit_tenant(request: Request, tenant_id: int,
                       wa_phone_number_id: str = Form(""),
                       timezone: str = Form("Asia/Riyadh"),
                       wa_access_token: str = Form(""),
-                      clinic_data: str = Form("")):
-    _require_auth(request)
+                      clinic_data: str = Form(""),
+                      staff_username: str = Form(""),
+                      staff_password: str = Form("")):
+    _require_super(request)
     update_tenant_config(tenant_id, name=name.strip(),
                          wa_phone_number_id=wa_phone_number_id.strip() or None,
                          wa_access_token=wa_access_token.strip() or None,
                          timezone=timezone.strip() or "Asia/Riyadh",
                          clinic_data=_parse_clinic_data(clinic_data))
+    # Update credentials: username always; password only if a new one was typed.
+    pw_hash = hash_password(staff_password) if staff_password.strip() else None
+    set_tenant_credentials(tenant_id, staff_username.strip() or None, pw_hash)
     return RedirectResponse("/admin/plans", status_code=303)
 
 
 @router.get("/stream")
 async def stream(request: Request):
-    _require_auth(request)
+    scope = _scope(request)   # clinic sees only its own events; super sees all
     q = subscribe()
 
     async def gen():
+        import json as _json
         try:
             while True:
                 if await request.is_disconnected():
                     break
                 try:
                     payload = await asyncio.wait_for(q.get(), timeout=20.0)
+                    if scope is not None and _json.loads(payload).get("tenant_id") != scope:
+                        continue
                     yield f"event: message\ndata: {_render_event(payload)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"

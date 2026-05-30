@@ -75,6 +75,27 @@ def test_booked_intervals_and_upcoming_isolated(two_tenants):
     assert all(r["tenant_id"] == a for r in ua)
 
 
+def test_admin_queries_are_tenant_scoped(two_tenants):
+    a, b, user = two_tenants
+    db.log_message(a, user, "in", "scoped to A only")
+    db.log_message(b, user, "in", "scoped to B only")
+    convs_a = db.list_conversations(tenant_id=a)
+    row = next((c for c in convs_a if c["wa_user"] == user), None)
+    assert row is not None
+    assert "A only" in row["last_message"]      # not B's message, despite shared phone
+    sa, sb = db.stats(tenant_id=a), db.stats(tenant_id=b)
+    assert sa["messages"] >= 1 and sb["messages"] >= 1
+
+
+def test_staff_credentials_lookup(two_tenants):
+    from app.auth import hash_password, verify_password
+    a, _b, _user = two_tenants
+    db.set_tenant_credentials(a, "clinic-a-staff", hash_password("pw-a"))
+    t = db.get_tenant_by_username("clinic-a-staff")
+    assert t and t["id"] == a
+    assert verify_password("pw-a", t["staff_password_hash"])
+
+
 def test_cross_tenant_appointment_access_blocked(two_tenants):
     a, b, user = two_tenants
     start = datetime.now(timezone.utc) + timedelta(days=5)
