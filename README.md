@@ -77,8 +77,24 @@ Dashboard: `http://localhost:8000/admin/` (password = `ADMIN_PASSWORD`).
 
 ```bash
 pip install pytest
-pytest -q          # scheduling logic (no DB/network needed)
+pytest -q          # pure logic — scheduling, resilience, tenancy/enforcement (no DB/network)
 ```
+
+## Staging database
+
+A local Postgres that mirrors production, for testing migrations/refactors before they
+touch prod (e.g. the Phase 3b tenant-isolation rewrite). Requires a local Postgres
+(`brew services start postgresql@16`).
+
+```bash
+scripts/staging.sh init           # (re)create clinic_staging + apply schema/seed
+scripts/staging.sh run <cmd...>   # run any command with staging env loaded
+scripts/staging.sh test           # pytest against staging
+scripts/staging.sh psql           # open psql on the staging DB
+```
+
+It exports a staging `DATABASE_URL` (`clinic_staging` on localhost) plus dummy
+credentials before `app.config` loads, so it never reaches production data or APIs.
 
 ## Deployment (Railway)
 
