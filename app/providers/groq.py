@@ -7,6 +7,7 @@ MODEL = "llama-3.3-70b-versatile"
 ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
 is_transient = _oai.is_transient
+is_rate_limit = _oai.is_rate_limit
 
 
 def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResult:

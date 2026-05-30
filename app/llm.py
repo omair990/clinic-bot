@@ -128,6 +128,7 @@ def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResu
             except Exception as e:  # noqa: BLE001
                 last_err = e
                 transient = provider.is_transient(e)
+                rate_limited = getattr(provider, "is_rate_limit", lambda _e: False)(e)
                 if transient and attempt == 0:
                     log.warning("[%s] transient %s — retrying", provider.NAME, type(e).__name__)
                     time.sleep(1.5)
@@ -137,7 +138,10 @@ def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResu
                 else:
                     any_hard = True
                     log.error("[%s] failed: %s", provider.NAME, e)
-                _record_failure(provider.NAME, time.monotonic())
+                # A rate-limited provider is alive (just throttling) — keep it in
+                # rotation. Only genuine failures (auth, 5xx, timeouts) trip the breaker.
+                if not rate_limited:
+                    _record_failure(provider.NAME, time.monotonic())
                 break
 
     # transient (ask user to retry) only if we actually tried something and every

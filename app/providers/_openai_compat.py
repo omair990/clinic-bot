@@ -20,6 +20,11 @@ def is_transient(exc: BaseException) -> bool:
     return isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout))
 
 
+def is_rate_limit(exc: BaseException) -> bool:
+    """Rate-limited but alive — retry, but don't trip the circuit breaker."""
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
+
+
 def _to_messages(system: str, messages: list[Msg]) -> list[dict]:
     out: list[dict] = [{"role": "system", "content": system}]
     for m in messages:

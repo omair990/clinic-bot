@@ -39,6 +39,11 @@ def is_transient(exc: BaseException) -> bool:
     return False
 
 
+def is_rate_limit(exc: BaseException) -> bool:
+    """Rate-limited but alive — retry, but don't trip the circuit breaker."""
+    return isinstance(exc, genai_errors.ClientError) and getattr(exc, "code", None) == 429
+
+
 def _schema(node: dict) -> types.Schema:
     t = node.get("type", "string")
     kwargs: dict = {"type": _TYPES.get(t, types.Type.STRING)}

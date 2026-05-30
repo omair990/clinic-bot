@@ -32,6 +32,15 @@ def is_transient(exc: BaseException) -> bool:
     return False
 
 
+def is_rate_limit(exc: BaseException) -> bool:
+    """Rate-limited but alive — retry, but don't trip the circuit breaker."""
+    if isinstance(exc, anthropic.RateLimitError):
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return getattr(exc, "status_code", 0) == 429
+    return False
+
+
 def _to_messages(messages: list[Msg]) -> list[dict]:
     out: list[dict] = []
     pending_results: list[dict] = []

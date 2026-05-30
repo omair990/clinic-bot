@@ -13,6 +13,10 @@ class _Transient(Exception):
     pass
 
 
+class _RateLimit(Exception):
+    pass
+
+
 class _Hard(Exception):
     pass
 
@@ -35,7 +39,11 @@ class FakeProvider:
 
     @staticmethod
     def is_transient(exc):
-        return isinstance(exc, _Transient)
+        return isinstance(exc, (_Transient, _RateLimit))
+
+    @staticmethod
+    def is_rate_limit(exc):
+        return isinstance(exc, _RateLimit)
 
 
 @pytest.fixture(autouse=True)
@@ -89,6 +97,21 @@ def test_success_resets_breaker(monkeypatch):
     assert llm._breaker["a"]["fails"] == 1
     llm.generate("s", [], [])              # success -> breaker reset
     assert "a" not in llm._breaker         # state cleared on success
+
+
+def test_rate_limit_never_trips_breaker(monkeypatch):
+    # A provider that only ever rate-limits must stay in rotation (it's alive),
+    # so its breaker must never open — even after many turns.
+    monkeypatch.setattr(llm, "LLM_BREAKER_THRESHOLD", 2)
+    a = FakeProvider("a", [_RateLimit()])
+    a._last = _RateLimit()
+    _install(monkeypatch, a)
+
+    for _ in range(5):
+        with pytest.raises(LLMUnavailable) as ei:
+            llm.generate("s", [], [])
+        assert ei.value.transient is True  # ask user to retry, not escalate
+    assert "a" not in llm._breaker  # breaker never opened
 
 
 def test_transient_outage_is_flagged_transient(monkeypatch):
