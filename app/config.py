@@ -26,12 +26,16 @@ WA_API_VERSION = os.getenv("WA_API_VERSION", "v22.0")
 WA_APP_SECRET = os.environ.get("WA_APP_SECRET", "").strip()
 
 # --- LLM providers ---
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+
 AI_PROVIDERS = [
-    p.strip() for p in os.environ.get("AI_PROVIDERS", "gemini,groq,deepseek").split(",") if p.strip()
+    p.strip() for p in os.environ.get("AI_PROVIDERS", "claude,gemini,groq,deepseek").split(",")
+    if p.strip()
 ]
 
 # Max tool-calling round-trips per user turn before we hand off to staff.

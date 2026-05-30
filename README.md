@@ -36,7 +36,7 @@ anything out of scope are escalated to staff via WhatsApp.
 | `app/tools.py` | Tool specs + handlers + per-turn `AgentContext` |
 | `app/scheduling.py` | Slot generation / availability (pure, unit-tested) |
 | `app/llm.py` | Neutral message/tool types + multi-provider fallback |
-| `app/providers/` | `gemini` (manual function calling), `groq`/`deepseek` (OpenAI-compatible) |
+| `app/providers/` | `claude` (Anthropic tool use + prompt caching), `gemini` (manual function calling), `groq`/`deepseek` (OpenAI-compatible) |
 | `app/prompts.py` | System prompt (rebuilt per turn with current clinic time) |
 | `app/db.py` | Postgres pool + repository functions |
 | `app/webhook.py` | WhatsApp verify, signature check, message routing |
@@ -82,8 +82,10 @@ pytest -q          # scheduling logic (no DB/network needed)
 
 ## Configuration notes
 
-- **`AI_PROVIDERS`** sets the fallback order (default `gemini,groq,deepseek`). A provider
-  is skipped if its API key is missing.
+- **`AI_PROVIDERS`** sets the fallback order (default `claude,gemini,groq,deepseek`). A
+  provider is skipped if its API key is missing. Claude is paid but has no free-tier daily
+  caps; the others have free tiers that exhaust quickly. Set `CLAUDE_MODEL` to override the
+  Claude model (default `claude-haiku-4-5-20251001`).
 - **`WA_APP_SECRET`** must be set in production — inbound webhooks are rejected if the
   HMAC signature is invalid.
 - **`CLINIC_TIMEZONE`** (default `Asia/Riyadh`) governs all slot math and display.
