@@ -36,7 +36,7 @@ anything out of scope are escalated to staff via WhatsApp.
 | `app/tools.py` | Tool specs + handlers + per-turn `AgentContext` |
 | `app/scheduling.py` | Slot generation / availability (pure, unit-tested) |
 | `app/llm.py` | Neutral message/tool types + multi-provider fallback |
-| `app/providers/` | `claude` (Anthropic tool use + prompt caching), `gemini` (manual function calling), `groq`/`deepseek`/`openrouter` (OpenAI-compatible) |
+| `app/providers/` | `claude` (Anthropic tool use + prompt caching), `gemini` (manual function calling), `groq`/`deepseek`/`openrouter`/`selfhosted` (OpenAI-compatible) |
 | `app/prompts.py` | System prompt (rebuilt per turn with current clinic time) |
 | `app/db.py` | Postgres pool + repository functions |
 | `app/webhook.py` | WhatsApp verify, signature check, message routing |
