@@ -60,7 +60,7 @@ AI_PROVIDERS = [
     p.strip()
     for p in os.environ.get(
         "AI_PROVIDERS",
-        "claude,gemini,mistral,openrouter,groq,deepseek,selfhosted").split(",")
+        "claude,mistral,openrouter,gemini,groq,deepseek,selfhosted").split(",")
     if p.strip()
 ]
 
