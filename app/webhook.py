@@ -77,7 +77,7 @@ def _extract_text(msg: dict) -> str:
     return ""
 
 
-async def _resolve_text(msg: dict, sender: str) -> str | None:
+async def _resolve_text(msg: dict, sender: str, creds: dict) -> str | None:
     """Get the user's message as text, transcribing voice notes.
 
     Returns the text, '' if unreadable (caller sends a generic prompt), or None
@@ -90,16 +90,16 @@ async def _resolve_text(msg: dict, sender: str) -> str | None:
     if not media_id:
         return ""
     try:
-        audio_bytes, mime = await download_media(media_id)
+        audio_bytes, mime = await download_media(media_id, access_token=creds.get("access_token"))
         text = (await asyncio.to_thread(transcribe_audio, audio_bytes, mime)).strip()
     except Exception:
         log.exception("Voice transcription failed for %s", sender)
         await send_text(sender, "Sorry, I couldn't process that voice note — "
-                                "please type your message or try again.")
+                                "please type your message or try again.", **creds)
         return None
     if not text:
         await send_text(sender, "Sorry, I couldn't make out that voice note. "
-                                "Please try again or type your message.")
+                                "Please try again or type your message.", **creds)
         return None
     log.info("Voice from %s transcribed: %s", sender, text)
     return text
@@ -115,12 +115,16 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         log.info("Dedup: skipping %s", msg_id)
         return
 
-    # Acknowledge + show "typing…" as early as possible (covers transcription time too).
-    if msg_id:
-        asyncio.create_task(mark_read(msg_id))
-
     is_voice = msg.get("type") == "audio"
     tenant = await asyncio.to_thread(resolve_tenant, phone_number_id)
+    creds = {
+        "phone_number_id": (tenant or {}).get("wa_phone_number_id"),
+        "access_token": (tenant or {}).get("wa_access_token"),
+    }
+
+    # Acknowledge + show "typing…" as early as possible (covers transcription time too).
+    if msg_id:
+        asyncio.create_task(mark_read(msg_id, **creds))
 
     # Enforce the tenant's plan (status, trial, voice gating, quotas) BEFORE any
     # expensive work (transcription, LLM). Unlimited plan => always allowed.
@@ -129,14 +133,14 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         if not decision.allowed:
             log.info("Blocked %s (tenant %s): %s", sender,
                      tenant.get("id") if tenant else "?", decision.reason)
-            await send_text(sender, decision.message)
+            await send_text(sender, decision.message, **creds)
             return
 
-    user_text = await _resolve_text(msg, sender)
+    user_text = await _resolve_text(msg, sender, creds)
     if user_text is None:
         return  # a voice-handling error reply was already sent
     if not user_text:
-        await send_text(sender, "Sorry, I couldn't read that. Please type your question.")
+        await send_text(sender, "Sorry, I couldn't read that. Please type your question.", **creds)
         return
 
     # Count usage now that the message is accepted.
@@ -156,26 +160,27 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
             log.warning("LLM transiently unavailable for %s: %s", sender, e)
             await send_text(sender,
                             "I'm getting a lot of messages right now — please send that again "
-                            "in a moment. 🙏")
+                            "in a moment. 🙏", **creds)
         else:
             # Sustained outage / misconfig: own the failure and bring in a human.
             log.error("LLM unavailable (hard) for %s: %s", sender, e)
             await send_text(sender,
                             "Sorry, we're having a technical issue. A staff member will follow "
-                            "up with you shortly.")
+                            "up with you shortly.", **creds)
             await asyncio.to_thread(log_message, sender, "out", "[llm unavailable]", "error", True)
             await _notify_admin(f"[LLM DOWN] +{sender}\nUser: {user_text}\nDetail: {e}")
         return
     except Exception:
         log.exception("Agent failed for %s", sender)
         await send_text(sender,
-                        "Sorry, we're having a temporary issue. A staff member will follow up shortly.")
+                        "Sorry, we're having a temporary issue. A staff member will follow up shortly.",
+                        **creds)
         await asyncio.to_thread(log_message, sender, "out", "[agent error]",
                                 "error", True)
         await _notify_admin(f"[AGENT ERROR] +{sender}\nUser: {user_text}")
         return
 
-    await send_text(sender, ctx.reply)
+    await send_text(sender, ctx.reply, **creds)
     log.info("Out %s: %s", sender, ctx.reply)
     await asyncio.to_thread(log_message, sender, "out", ctx.reply,
                             ctx.derived_intent(), ctx.needs_human)

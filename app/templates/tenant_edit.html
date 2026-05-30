@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set active = 'plans' %}
+{% block title %}Edit {{ t.name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="text-xs text-slate-500"><a href="/admin/plans" class="hover:underline">← Plans &amp; Usage</a></div>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">Edit clinic: {{ t.name }}</h1>
+  <div class="text-xs text-slate-400">{{ t.slug }}</div>
+</div>
+
+<div class="bg-white rounded-lg shadow p-5 max-w-3xl">
+  <form method="post" action="/admin/tenants/{{ t.id }}/edit" class="space-y-4 text-sm">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Clinic name</label>
+      <input name="name" value="{{ t.name }}" required class="w-full border rounded px-2 py-1">
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">WhatsApp phone_number_id</label>
+        <input name="wa_phone_number_id" value="{{ t.wa_phone_number_id or '' }}" class="w-full border rounded px-2 py-1">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">Timezone</label>
+        <input name="timezone" value="{{ t.timezone }}" class="w-full border rounded px-2 py-1">
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">WhatsApp access token (leave blank to keep platform default)</label>
+      <input name="wa_access_token" value="{{ t.wa_access_token or '' }}" class="w-full border rounded px-2 py-1" placeholder="(uses platform token if empty)">
+    </div>
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Clinic data (JSON: clinic, services, doctors, appointment_policy, faqs)</label>
+      <textarea name="clinic_data" rows="18" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ clinic_json }}</textarea>
+    </div>
+    <div class="flex gap-2">
+      <button class="px-4 py-2 rounded bg-emerald-600 text-white">Save</button>
+      <a href="/admin/plans" class="px-4 py-2 rounded border">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -8,9 +8,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
+import json
+
 from app.config import ADMIN_PASSWORD, BASE_DIR, TZ
 from app.db import (
     conversation_thread,
+    create_tenant,
+    get_tenant,
     list_appointments,
     list_conversations,
     list_plans,
@@ -19,6 +23,7 @@ from app.db import (
     set_tenant_plan,
     set_tenant_status,
     stats,
+    update_tenant_config,
     upsert_plan,
 )
 from app.events import subscribe, unsubscribe
@@ -195,6 +200,62 @@ async def change_tenant_status(request: Request, tenant_id: int, status: str = F
     _require_auth(request)
     if status in {"active", "suspended", "expired"}:
         set_tenant_status(tenant_id, status)
+    return RedirectResponse("/admin/plans", status_code=303)
+
+
+def _parse_clinic_data(raw: str) -> dict | None:
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(400, f"Invalid clinic data JSON: {e}")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "Clinic data must be a JSON object")
+    return data
+
+
+@router.post("/tenants")
+async def add_tenant(request: Request,
+                     name: str = Form(...),
+                     slug: str = Form(...),
+                     wa_phone_number_id: str = Form(""),
+                     plan_id: int = Form(...),
+                     timezone: str = Form("Asia/Riyadh"),
+                     wa_access_token: str = Form(""),
+                     clinic_data: str = Form("")):
+    _require_auth(request)
+    create_tenant(name.strip(), slug.strip(), wa_phone_number_id.strip() or None,
+                  plan_id, timezone.strip() or "Asia/Riyadh",
+                  wa_access_token.strip() or None, _parse_clinic_data(clinic_data))
+    return RedirectResponse("/admin/plans", status_code=303)
+
+
+@router.get("/tenants/{tenant_id}/edit", response_class=HTMLResponse)
+async def edit_tenant_page(request: Request, tenant_id: int):
+    _require_auth(request)
+    tenant = get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    pretty = json.dumps(tenant.get("clinic_data") or {}, indent=2, ensure_ascii=False)
+    return templates.TemplateResponse(
+        "tenant_edit.html", {"request": request, "t": tenant, "clinic_json": pretty})
+
+
+@router.post("/tenants/{tenant_id}/edit")
+async def edit_tenant(request: Request, tenant_id: int,
+                      name: str = Form(...),
+                      wa_phone_number_id: str = Form(""),
+                      timezone: str = Form("Asia/Riyadh"),
+                      wa_access_token: str = Form(""),
+                      clinic_data: str = Form("")):
+    _require_auth(request)
+    update_tenant_config(tenant_id, name=name.strip(),
+                         wa_phone_number_id=wa_phone_number_id.strip() or None,
+                         wa_access_token=wa_access_token.strip() or None,
+                         timezone=timezone.strip() or "Asia/Riyadh",
+                         clinic_data=_parse_clinic_data(clinic_data))
     return RedirectResponse("/admin/plans", status_code=303)
 
 

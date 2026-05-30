@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS tenants (
     name               TEXT NOT NULL,
     slug               TEXT UNIQUE NOT NULL,
     wa_phone_number_id TEXT UNIQUE,
+    wa_access_token    TEXT,
+    clinic_data        JSONB,
     plan_id            BIGINT REFERENCES plans(id),
     status             TEXT NOT NULL DEFAULT 'active'
                        CHECK (status IN ('active', 'suspended', 'expired')),
@@ -96,6 +98,8 @@ CREATE TABLE IF NOT EXISTS tenant_usage (
 ALTER TABLE patients      ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
+ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
+ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 CREATE INDEX IF NOT EXISTS idx_conv_tenant ON conversations(tenant_id, created_at);
 """
 
@@ -132,6 +136,8 @@ def init_db() -> None:
 def seed_tenancy() -> None:
     """Create default plans and the first tenant (the current clinic) if absent,
     then backfill tenant_id on any legacy rows. Idempotent."""
+    from psycopg.types.json import Json
+
     from app.config import CLINIC_DATA, TIMEZONE, WA_PHONE_NUMBER_ID
 
     clinic_name = CLINIC_DATA.get("clinic", {}).get("name", "Clinic")
@@ -147,12 +153,19 @@ def seed_tenancy() -> None:
         if not row:
             plan = conn.execute("SELECT id FROM plans WHERE name = 'Unlimited'").fetchone()
             row = conn.execute(
-                "INSERT INTO tenants (name, slug, wa_phone_number_id, plan_id, status, timezone) "
-                "VALUES (%s, 'default', %s, %s, 'active', %s) RETURNING id",
-                (clinic_name, WA_PHONE_NUMBER_ID, plan["id"] if plan else None, TIMEZONE),
+                "INSERT INTO tenants (name, slug, wa_phone_number_id, clinic_data, "
+                "plan_id, status, timezone) "
+                "VALUES (%s, 'default', %s, %s, %s, 'active', %s) RETURNING id",
+                (clinic_name, WA_PHONE_NUMBER_ID, Json(CLINIC_DATA),
+                 plan["id"] if plan else None, TIMEZONE),
             ).fetchone()
             log.info("Seeded default tenant '%s' (id=%s)", clinic_name, row["id"])
         tid = row["id"]
+        # Backfill clinic_data on the default tenant if it predates the column. Leave
+        # wa_access_token NULL so the default tenant always uses the live env token.
+        conn.execute(
+            "UPDATE tenants SET clinic_data = %s WHERE slug = 'default' AND clinic_data IS NULL",
+            (Json(CLINIC_DATA),))
         for table in ("patients", "conversations", "appointments"):
             conn.execute(
                 f"UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL", (tid,)
@@ -507,3 +520,35 @@ def set_tenant_plan(tenant_id: int, plan_id: int) -> None:
 def set_tenant_status(tenant_id: int, status: str) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE tenants SET status = %s WHERE id = %s", (status, tenant_id))
+
+
+def create_tenant(name: str, slug: str, wa_phone_number_id: str | None, plan_id: int | None,
+                  timezone: str, wa_access_token: str | None, clinic_data: dict | None) -> int:
+    from psycopg.types.json import Json
+    with get_conn() as conn:
+        row = conn.execute(
+            "INSERT INTO tenants (name, slug, wa_phone_number_id, wa_access_token, "
+            "clinic_data, plan_id, status, timezone) "
+            "VALUES (%s, %s, %s, %s, %s, %s, 'active', %s) RETURNING id",
+            (name, slug, wa_phone_number_id or None, wa_access_token or None,
+             Json(clinic_data) if clinic_data is not None else None, plan_id, timezone),
+        ).fetchone()
+    return row["id"]
+
+
+def update_tenant_config(tenant_id: int, *, name: str, wa_phone_number_id: str | None,
+                         wa_access_token: str | None, timezone: str,
+                         clinic_data: dict | None) -> None:
+    from psycopg.types.json import Json
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE tenants SET name = %s, wa_phone_number_id = %s, wa_access_token = %s, "
+            "timezone = %s, clinic_data = COALESCE(%s, clinic_data) WHERE id = %s",
+            (name, wa_phone_number_id or None, wa_access_token or None, timezone,
+             Json(clinic_data) if clinic_data is not None else None, tenant_id),
+        )
+
+
+def get_tenant(tenant_id: int) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
