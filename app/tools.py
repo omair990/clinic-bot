@@ -25,6 +25,21 @@ log = logging.getLogger(__name__)
 DEFAULT_DURATION_MIN = 30
 
 
+def _field_value(extra: dict, field: dict) -> str:
+    """Look up a field's value by key OR label, case-insensitively — models pass
+    either the key or the human label as the dict key."""
+    lower = {str(k).lower(): v for k, v in extra.items()}
+    for cand in (field.get("key"), field.get("label")):
+        if not cand:
+            continue
+        v = extra.get(cand)
+        if v is None:
+            v = lower.get(str(cand).lower())
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
 def check_booking_fields(clinic_data: dict, extra: dict | None) -> dict | None:
     """Validate clinic-specific intake fields. Returns an error dict (telling the
     model what's still needed) or None if all good.
@@ -34,13 +49,13 @@ def check_booking_fields(clinic_data: dict, extra: dict | None) -> dict | None:
     fields = (clinic_data or {}).get("booking_fields") or []
     extra = extra if isinstance(extra, dict) else {}
     missing = [f.get("label") or f.get("key") for f in fields
-               if f.get("required") and not str(extra.get(f.get("key"), "")).strip()]
+               if f.get("required") and not _field_value(extra, f)]
     if missing:
         return {"error": "missing_information", "needed": missing,
                 "hint": "Ask the patient for these before booking."}
     for f in fields:
         opts = f.get("options")
-        val = str(extra.get(f.get("key"), "")).strip()
+        val = _field_value(extra, f)
         if opts and val and val not in opts:
             return {"error": "invalid_value", "field": f.get("label") or f.get("key"),
                     "allowed": opts}
@@ -176,6 +191,8 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
     return {
         "doctor": doctor["name"],
         "date": on.isoformat(),
+        "day": on.strftime("%A"),          # weekday name — use this, don't compute it
+        "date_label": on.strftime("%A, %d %B %Y"),
         "service": service["name"] if service else None,
         "slot_duration_min": duration,
         "available_times": [s.strftime("%H:%M") for s in slots[:12]],

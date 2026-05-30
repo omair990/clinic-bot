@@ -115,8 +115,17 @@ def day_bounds(on: date_cls) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
+_WEEKDAYS = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
+    "saturday": 5, "sunday": 6,
+    "الاثنين": 0, "الإثنين": 0, "الثلاثاء": 1, "الأربعاء": 2, "الاربعاء": 2,
+    "الخميس": 3, "الجمعة": 4, "السبت": 5, "الأحد": 6, "الاحد": 6,
+}
+
+
 def parse_date(s: str, today: date_cls) -> date_cls | None:
-    """Accept ISO 'YYYY-MM-DD' or the words today/tomorrow."""
+    """Accept ISO 'YYYY-MM-DD', today/tomorrow, or a weekday name ('sunday',
+    'this sunday', 'next monday') resolved to its next occurrence."""
     s = s.strip().lower()
     if s in ("today", "اليوم"):
         return today
@@ -127,6 +136,14 @@ def parse_date(s: str, today: date_cls) -> date_cls | None:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
+    # Weekday names: compute the next occurrence (deterministic — don't rely on the model).
+    nxt = "next" in s
+    key = s.replace("this", "").replace("next", "").replace("on", "").strip()
+    if key in _WEEKDAYS:
+        delta = (_WEEKDAYS[key] - today.weekday()) % 7
+        if delta == 0 and nxt:
+            delta = 7
+        return today + timedelta(days=delta)
     return None
 
 

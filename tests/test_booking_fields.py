@@ -31,3 +31,15 @@ def test_invalid_option_rejected():
 def test_no_fields_configured_is_ok():
     assert check_booking_fields({}, {}) is None
     assert check_booking_fields({"booking_fields": []}, None) is None
+
+
+def test_accepts_label_or_key_or_caseinsensitive():
+    # model may pass the key, the label, or odd casing — all should validate
+    assert check_booking_fields(CD, {"device_code": "X1", "payment": "Cash"}) is None
+    assert check_booking_fields(CD, {"Device code": "X1", "Payment method": "mada"}) is None
+    assert check_booking_fields(CD, {"DEVICE CODE": "X1", "PAYMENT METHOD": "Card"}) is None
+
+
+def test_invalid_option_via_label():
+    err = check_booking_fields(CD, {"Device code": "X1", "Payment method": "Bitcoin"})
+    assert err and err["error"] == "invalid_value"
