@@ -49,6 +49,11 @@ def check_quota(tenant: dict | None, *, is_voice: bool) -> Decision:
     if not tenant:
         return Decision(True)
 
+    # Safeguard: the platform's own clinic is never blocked by enforcement, so it
+    # can't be accidentally locked out via the dashboard (status/plan/quota).
+    if tenant.get("slug") == "default":
+        return Decision(True)
+
     if tenant.get("status") in ("suspended", "expired"):
         return Decision(False, tenant["status"], MSG_UNAVAILABLE)
 

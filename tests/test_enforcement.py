@@ -21,6 +21,13 @@ def test_none_tenant_allows():
     assert ten.check_quota(None, is_voice=False).allowed
 
 
+def test_default_tenant_is_never_blocked(monkeypatch):
+    # Even expired + over text quota, the platform's own clinic stays served.
+    _usage(monkeypatch, text=999999)
+    t = _tenant(slug="default", status="expired", monthly_text_quota=1)
+    assert ten.check_quota(t, is_voice=False).allowed
+
+
 def test_unlimited_plan_allows_even_high_usage(monkeypatch):
     _usage(monkeypatch, text=999999)
     assert ten.check_quota(_tenant(), is_voice=False).allowed
