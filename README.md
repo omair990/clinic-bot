@@ -1,18 +1,22 @@
 # Clinic AI Assistant
 
-A production WhatsApp **AI agent** for a clinic. It holds real conversations, looks up
-pricing and doctors, checks live availability, and **books / reschedules / cancels
-appointments end-to-end** — backed by Postgres, with a staff dashboard. No spreadsheets,
-no external automation tools.
+A production WhatsApp **AI agent** for a clinic. It holds real conversations (typed
+**or voice notes**), looks up pricing and doctors, checks live availability, and
+**books / reschedules / cancels appointments end-to-end** — backed by Postgres, with a
+staff dashboard. Replies in the patient's own language. No spreadsheets, no external
+automation tools.
+
+Voice notes are transcribed with Gemini (`app/transcribe.py`); replies are sent as text
+in the same language the patient used, formatted for WhatsApp (`app/formatting.py`).
 
 ## How it works
 
 ```
-WhatsApp Cloud API
-      │  (webhook, HMAC-verified)
+WhatsApp Cloud API  (text or voice note)
+      │  (webhook, HMAC-verified; voice → Gemini transcription)
       ▼
-FastAPI  ──►  Agent loop  ──►  LLM (Gemini ▸ Groq ▸ DeepSeek fallback, tool-calling)
-                  │  tools
+FastAPI  ──►  Agent loop  ──►  LLM (Gemini ▸ OpenRouter ▸ Claude ▸ Groq ▸ DeepSeek ▸ self-hosted)
+                  │  tools                              (tool-calling, circuit-breaker fallback)
                   ▼
    list_services · list_doctors · check_availability
    book_appointment · get_my_appointments

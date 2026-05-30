@@ -32,6 +32,23 @@ async def send_text(to: str, body: str) -> dict:
         return r.json()
 
 
+async def download_media(media_id: str) -> tuple[bytes, str]:
+    """Resolve a WhatsApp media id to (bytes, mime_type).
+
+    Two hops: GET the media metadata for a short-lived URL, then GET that URL.
+    Both require the access token.
+    """
+    auth = {"Authorization": f"Bearer {WA_ACCESS_TOKEN}"}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        meta = await client.get(
+            f"https://graph.facebook.com/{WA_API_VERSION}/{media_id}", headers=auth)
+        meta.raise_for_status()
+        info = meta.json()
+        media = await client.get(info["url"], headers=auth)
+        media.raise_for_status()
+        return media.content, info.get("mime_type", "audio/ogg")
+
+
 async def mark_read(message_id: str) -> None:
     """Mark the inbound message read AND show a typing indicator.
 

@@ -13,7 +13,8 @@ from app.db import claim_message_id, log_message, recent_history
 from app.events import publish
 from app.llm import LLMUnavailable
 from app.tools import AgentContext
-from app.wa_client import mark_read, send_text
+from app.transcribe import transcribe_audio
+from app.wa_client import download_media, mark_read, send_text
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -73,6 +74,34 @@ def _extract_text(msg: dict) -> str:
     return ""
 
 
+async def _resolve_text(msg: dict, sender: str) -> str | None:
+    """Get the user's message as text, transcribing voice notes.
+
+    Returns the text, '' if unreadable (caller sends a generic prompt), or None
+    when a voice-specific error reply has already been sent.
+    """
+    if msg.get("type") != "audio":
+        return _extract_text(msg)
+
+    media_id = (msg.get("audio") or {}).get("id")
+    if not media_id:
+        return ""
+    try:
+        audio_bytes, mime = await download_media(media_id)
+        text = (await asyncio.to_thread(transcribe_audio, audio_bytes, mime)).strip()
+    except Exception:
+        log.exception("Voice transcription failed for %s", sender)
+        await send_text(sender, "Sorry, I couldn't process that voice note — "
+                                "please type your message or try again.")
+        return None
+    if not text:
+        await send_text(sender, "Sorry, I couldn't make out that voice note. "
+                                "Please try again or type your message.")
+        return None
+    log.info("Voice from %s transcribed: %s", sender, text)
+    return text
+
+
 async def _handle_message(msg: dict) -> None:
     sender = msg.get("from")
     msg_id = msg.get("id")
@@ -83,7 +112,13 @@ async def _handle_message(msg: dict) -> None:
         log.info("Dedup: skipping %s", msg_id)
         return
 
-    user_text = _extract_text(msg)
+    # Acknowledge + show "typing…" as early as possible (covers transcription time too).
+    if msg_id:
+        asyncio.create_task(mark_read(msg_id))
+
+    user_text = await _resolve_text(msg, sender)
+    if user_text is None:
+        return  # a voice-handling error reply was already sent
     if not user_text:
         await send_text(sender, "Sorry, I couldn't read that. Please type your question.")
         return
@@ -92,7 +127,6 @@ async def _handle_message(msg: dict) -> None:
     history = await asyncio.to_thread(recent_history, sender, 12)
     await asyncio.to_thread(log_message, sender, "in", user_text)
     publish("message", {"wa_user": sender, "direction": "in", "text": user_text})
-    asyncio.create_task(mark_read(msg_id))
 
     try:
         ctx: AgentContext = await asyncio.to_thread(run_agent, sender, user_text, history)
