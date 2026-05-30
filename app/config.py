@@ -31,6 +31,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
 # Self-hosted / "own" model via any OpenAI-compatible server (Ollama, vLLM, RunPod
 # serverless). The always-available tail of the chain — no per-token credit to run out of.
@@ -41,8 +42,14 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 SELFHOSTED_MODEL = os.getenv("SELFHOSTED_MODEL", "qwen2.5:14b-instruct")
 
-# Voice notes: transcribed with Gemini (reuses GEMINI_API_KEY).
-TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gemini-2.5-flash")
+# Voice notes: transcription fallback chain (tried in order, missing keys skipped).
+TRANSCRIBE_PROVIDERS = [
+    p.strip() for p in os.environ.get("TRANSCRIBE_PROVIDERS", "gemini,groq,openai").split(",")
+    if p.strip()
+]
+TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gemini-2.5-flash")        # Gemini
+GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
+OPENAI_WHISPER_MODEL = os.getenv("OPENAI_WHISPER_MODEL", "whisper-1")
 
 AI_PROVIDERS = [
     p.strip()

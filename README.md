@@ -6,8 +6,10 @@ A production WhatsApp **AI agent** for a clinic. It holds real conversations (ty
 staff dashboard. Replies in the patient's own language. No spreadsheets, no external
 automation tools.
 
-Voice notes are transcribed with Gemini (`app/transcribe.py`); replies are sent as text
-in the same language the patient used, formatted for WhatsApp (`app/formatting.py`).
+Voice notes are transcribed via a fallback chain (`app/transcribe.py`,
+`TRANSCRIBE_PROVIDERS`: Gemini → Groq Whisper → OpenAI Whisper, skipping any without a
+key); replies are sent as text in the same language the patient used, formatted for
+WhatsApp (`app/formatting.py`).
 
 ## How it works
 
