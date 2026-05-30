@@ -48,5 +48,39 @@
 {% else %}
   {% block anon %}{% endblock %}
 {% endif %}
+<script>
+  // New-message sound ping (Web Audio — no asset). Fires on inbound messages in the
+  // live conversation view and the home feed. Audio unlocks on first user interaction.
+  (function () {
+    var actx = null;
+    function unlock() {
+      try {
+        if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === "suspended") actx.resume();
+      } catch (e) { /* ignore */ }
+    }
+    document.addEventListener("click", unlock);
+    document.addEventListener("keydown", unlock);
+    function ping() {
+      unlock();
+      if (!actx) return;
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.connect(g); g.connect(actx.destination);
+      o.type = "sine"; o.frequency.value = 880;
+      var t = actx.currentTime;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o.start(t); o.stop(t + 0.26);
+    }
+    document.body.addEventListener("htmx:sseBeforeMessage", function (e) {
+      try {
+        var d = (e.detail && e.detail.data) ? e.detail.data : "";
+        // inbound bubble (conversation view) or inbound row (home feed)
+        if (d.indexOf("justify-start") > -1 || d.indexOf("←") > -1) ping();
+      } catch (_) { /* ignore */ }
+    });
+  })();
+</script>
 </body>
 </html>
