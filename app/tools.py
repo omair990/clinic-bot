@@ -80,14 +80,16 @@ TOOL_SPECS: list[ToolSpec] = [
                  "service": {"type": "string", "description": "Service name (sets the slot length)."}},
               "required": ["doctor", "date"]}),
     ToolSpec("book_appointment",
-             "Reserve a specific slot. Only use a time confirmed free by check_availability.",
+             "Reserve a specific slot. Only use a time confirmed free by check_availability. "
+             "Collect the patient's name and contact phone number before calling.",
              {"type": "object", "properties": {
                  "patient_name": {"type": "string"},
+                 "phone": {"type": "string", "description": "Patient's contact phone number."},
                  "doctor": {"type": "string"},
                  "service": {"type": "string"},
                  "date": {"type": "string", "description": "YYYY-MM-DD or 'today'/'tomorrow'."},
                  "time": {"type": "string", "description": "Start time, e.g. '17:00' or '5:00 PM'."}},
-              "required": ["patient_name", "doctor", "service", "date", "time"]}),
+              "required": ["patient_name", "phone", "doctor", "service", "date", "time"]}),
     ToolSpec("get_faqs",
              "Clinic FAQs: insurance, parking, home service, prescription refills, "
              "cancellation/reschedule policy, treating non-Saudis.",
@@ -187,7 +189,8 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
     name = (args.get("patient_name") or "").strip() or db.get_patient_name(ctx.tenant_id, ctx.wa_user)
-    row = db.create_appointment(ctx.tenant_id, ctx.wa_user, name, doctor["name"],
+    phone = (args.get("phone") or "").strip() or ctx.wa_user
+    row = db.create_appointment(ctx.tenant_id, ctx.wa_user, name, phone, doctor["name"],
                                 service["name"], start, end)
     if row.get("conflict"):
         booked = db.booked_intervals(ctx.tenant_id, doctor["name"], day_start, day_end)
@@ -197,8 +200,8 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
 
     db.upsert_patient(ctx.tenant_id, ctx.wa_user, name)
     ctx.booked_ids.append(row["id"])
-    ctx.actions.append(f"booked #{row['id']} {doctor['name']} {_fmt(start)}")
-    return {"booked": True, "appointment_id": row["id"], "patient_name": name,
+    ctx.actions.append(f"booked #{row['id']} {doctor['name']} {_fmt(start)} ({name}, {phone})")
+    return {"booked": True, "appointment_id": row["id"], "patient_name": name, "phone": phone,
             "doctor": doctor["name"], "service": service["name"], "when": _fmt(start)}
 
 

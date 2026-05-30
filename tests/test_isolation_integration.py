@@ -55,11 +55,11 @@ def test_same_doctor_time_not_cross_booked(two_tenants):
     a, b, user = two_tenants
     start = datetime.now(timezone.utc) + timedelta(days=3)
     end = start + timedelta(minutes=30)
-    ra = db.create_appointment(a, user, "Alice", "Dr. Test", "Consult", start, end)
-    rb = db.create_appointment(b, user, "Bob", "Dr. Test", "Consult", start, end)
+    ra = db.create_appointment(a, user, "Alice", "+100", "Dr. Test", "Consult", start, end)
+    rb = db.create_appointment(b, user, "Bob", "+200", "Dr. Test", "Consult", start, end)
     assert not ra.get("conflict") and not rb.get("conflict")   # different tenants don't clash
     # but a second booking in the SAME tenant at the same time does clash
-    rc = db.create_appointment(a, user, "Alice", "Dr. Test", "Consult", start, end)
+    rc = db.create_appointment(a, user, "Alice", "+100", "Dr. Test", "Consult", start, end)
     assert rc.get("conflict")
 
 
@@ -99,7 +99,7 @@ def test_staff_credentials_lookup(two_tenants):
 def test_cross_tenant_appointment_access_blocked(two_tenants):
     a, b, user = two_tenants
     start = datetime.now(timezone.utc) + timedelta(days=5)
-    row = db.create_appointment(a, user, "Alice", "Dr. Test", "Consult",
+    row = db.create_appointment(a, user, "Alice", "+100", "Dr. Test", "Consult",
                                 start, start + timedelta(minutes=30))
     appt_id = row["id"]
     assert db.get_appointment(a, appt_id) is not None

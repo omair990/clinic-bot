@@ -18,6 +18,7 @@
         <th class="text-left px-4 py-2">#</th>
         <th class="text-left px-4 py-2">User</th>
         <th class="text-left px-4 py-2">Patient</th>
+        <th class="text-left px-4 py-2">Phone</th>
         <th class="text-left px-4 py-2">Service</th>
         <th class="text-left px-4 py-2">Doctor</th>
         <th class="text-left px-4 py-2">When</th>
@@ -32,6 +33,7 @@
         <td class="px-4 py-3 text-slate-500">{{ a.id }}</td>
         <td class="px-4 py-3"><a class="hover:underline" href="/admin/conversations/{{ a.wa_user }}">+{{ a.wa_user }}</a></td>
         <td class="px-4 py-3">{{ a.patient_name or '—' }}</td>
+        <td class="px-4 py-3">{{ a.phone or '—' }}</td>
         <td class="px-4 py-3">{{ a.service or '—' }}</td>
         <td class="px-4 py-3">{{ a.doctor or '—' }}</td>
         <td class="px-4 py-3">{{ a.start_at | fmt_dt }}</td>
@@ -49,7 +51,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="px-4 py-8 text-center text-slate-400 text-sm">No appointments</td></tr>
+      <tr><td colspan="10" class="px-4 py-8 text-center text-slate-400 text-sm">No appointments</td></tr>
       {% endfor %}
     </tbody>
   </table>

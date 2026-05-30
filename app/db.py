@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     id          BIGSERIAL PRIMARY KEY,
     wa_user     TEXT NOT NULL,
     patient_name TEXT,
+    phone       TEXT,
     doctor      TEXT NOT NULL,
     service     TEXT NOT NULL,
     start_at    TIMESTAMPTZ NOT NULL,
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS tenant_usage (
 ALTER TABLE patients      ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
+ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_username TEXT;
@@ -290,9 +292,9 @@ def booked_intervals(tenant_id: int, doctor: str, day_start: datetime,
     return [(r["start_at"], r["end_at"]) for r in rows]
 
 
-def create_appointment(tenant_id: int, wa_user: str, patient_name: str | None, doctor: str,
-                       service: str, start_at: datetime, end_at: datetime,
-                       notes: str | None = None) -> dict:
+def create_appointment(tenant_id: int, wa_user: str, patient_name: str | None,
+                       phone: str | None, doctor: str, service: str, start_at: datetime,
+                       end_at: datetime, notes: str | None = None) -> dict:
     """Atomically book a slot. Returns the new row, or {'conflict': True} if the
     doctor is already booked in an overlapping window (within this tenant)."""
     with get_conn() as conn:
@@ -306,9 +308,9 @@ def create_appointment(tenant_id: int, wa_user: str, patient_name: str | None, d
                 return {"conflict": True}
             row = conn.execute(
                 "INSERT INTO appointments "
-                "(tenant_id, wa_user, patient_name, doctor, service, start_at, end_at, notes) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
-                (tenant_id, wa_user, patient_name, doctor, service, start_at, end_at, notes),
+                "(tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at, notes) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                (tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at, notes),
             ).fetchone()
     return row
 
@@ -428,7 +430,7 @@ def conversation_thread(wa_user: str, limit: int = 200,
 
 def list_appointments(status: str | None = None, limit: int = 200,
                       tenant_id: int | None = None) -> list[dict]:
-    sql = ("SELECT id, wa_user, patient_name, doctor, service, start_at, end_at, "
+    sql = ("SELECT id, wa_user, patient_name, phone, doctor, service, start_at, end_at, "
            "status, notes, created_at FROM appointments")
     clauses, params = [], []
     if tenant_id is not None:
