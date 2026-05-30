@@ -106,14 +106,16 @@ TOOL_SPECS: list[ToolSpec] = [
              "Collect the patient's name and contact phone number before calling.",
              {"type": "object", "properties": {
                  "patient_name": {"type": "string"},
-                 "phone": {"type": "string", "description": "Patient's contact phone number."},
+                 "phone": {"type": "string", "description": "ONLY if the patient gives a "
+                           "different contact number; otherwise leave empty and their "
+                           "WhatsApp number is used automatically."},
                  "doctor": {"type": "string"},
                  "service": {"type": "string"},
                  "date": {"type": "string", "description": "YYYY-MM-DD or 'today'/'tomorrow'."},
                  "time": {"type": "string", "description": "Start time, e.g. '17:00' or '5:00 PM'."},
                  "extra": {"type": "object", "description": "Clinic-specific intake fields "
                            "(keys/labels listed in the system prompt), e.g. payment method."}},
-              "required": ["patient_name", "phone", "doctor", "service", "date", "time"]}),
+              "required": ["patient_name", "doctor", "service", "date", "time"]}),
     ToolSpec("get_faqs",
              "Clinic FAQs: insurance, parking, home service, prescription refills, "
              "cancellation/reschedule policy, treating non-Saudis.",
