@@ -44,12 +44,15 @@ SELFHOSTED_MODEL = os.getenv("SELFHOSTED_MODEL", "qwen2.5:14b-instruct")
 
 # Voice notes: transcription fallback chain (tried in order, missing keys skipped).
 TRANSCRIBE_PROVIDERS = [
-    p.strip() for p in os.environ.get("TRANSCRIBE_PROVIDERS", "gemini,groq,openai").split(",")
+    p.strip()
+    for p in os.environ.get("TRANSCRIBE_PROVIDERS", "gemini,openrouter,groq,openai").split(",")
     if p.strip()
 ]
 TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gemini-2.5-flash")        # Gemini
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 OPENAI_WHISPER_MODEL = os.getenv("OPENAI_WHISPER_MODEL", "whisper-1")
+# OpenRouter has no Whisper endpoint; it transcribes via an audio-capable chat model.
+OPENROUTER_TRANSCRIBE_MODEL = os.getenv("OPENROUTER_TRANSCRIBE_MODEL", "google/gemini-2.0-flash-001")
 
 AI_PROVIDERS = [
     p.strip()

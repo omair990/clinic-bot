@@ -6,7 +6,9 @@ preserves the spoken language (Arabic stays Arabic, English stays English), so t
 agent's "reply in the same language" rule then answers voice notes in the caller's
 language automatically.
 """
+import base64
 import logging
+import subprocess
 
 import httpx
 from google import genai
@@ -19,6 +21,8 @@ from app.config import (
     LLM_TIMEOUT_S,
     OPENAI_API_KEY,
     OPENAI_WHISPER_MODEL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_TRANSCRIBE_MODEL,
     TRANSCRIBE_MODEL,
     TRANSCRIBE_PROVIDERS,
 )
@@ -74,9 +78,42 @@ def _openai(audio_bytes: bytes, mime_type: str) -> str:
                     OPENAI_API_KEY, OPENAI_WHISPER_MODEL, audio_bytes, mime_type)
 
 
+def _to_wav(audio_bytes: bytes) -> bytes:
+    """Transcode arbitrary audio (WhatsApp ogg/opus) to 16kHz mono wav via ffmpeg."""
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error",
+         "-i", "pipe:0", "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
+        input=audio_bytes, capture_output=True, timeout=30, check=True,
+    )
+    return proc.stdout
+
+
+def _openrouter(audio_bytes: bytes, mime_type: str) -> str:
+    """OpenRouter has no Whisper endpoint — transcribe via an audio-capable chat
+    model. Those accept base64 wav/mp3, so transcode the ogg/opus note first."""
+    wav_b64 = base64.b64encode(_to_wav(audio_bytes)).decode()
+    payload = {
+        "model": OPENROUTER_TRANSCRIBE_MODEL,
+        "temperature": 0,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": _PROMPT},
+                {"type": "input_audio", "input_audio": {"data": wav_b64, "format": "wav"}},
+            ],
+        }],
+    }
+    with httpx.Client(timeout=LLM_TIMEOUT_S) as client:
+        r = client.post("https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"}, json=payload)
+        r.raise_for_status()
+        return (r.json()["choices"][0]["message"]["content"] or "").strip()
+
+
 # name -> (fn, is_configured)
 _AVAILABLE = {
     "gemini": (_gemini, bool(_gemini_client)),
+    "openrouter": (_openrouter, bool(OPENROUTER_API_KEY)),
     "groq": (_groq, bool(GROQ_API_KEY)),
     "openai": (_openai, bool(OPENAI_API_KEY)),
 }

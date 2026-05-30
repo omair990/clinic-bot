@@ -53,6 +53,42 @@ def test_all_fail_raises_last_error(monkeypatch):
         t.transcribe_audio(b"x", "audio/ogg")
 
 
+def test_openrouter_sends_base64_audio_and_parses_reply(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(t, "_to_wav", lambda b: b"WAVBYTES")
+    monkeypatch.setattr(t, "OPENROUTER_API_KEY", "k")
+
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "  hello from OR  "}}]}
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            sent["url"] = url
+            sent["json"] = json
+            return FakeResp()
+
+    monkeypatch.setattr(t.httpx, "Client", FakeClient)
+    out = t._openrouter(b"oggbytes", "audio/ogg")
+
+    assert out == "hello from OR"
+    parts = sent["json"]["messages"][0]["content"]
+    assert any(p.get("type") == "input_audio" for p in parts)
+    assert "openrouter.ai" in sent["url"]
+
+
 def test_gemini_strips_codec_from_mime(monkeypatch):
     seen = {}
 
