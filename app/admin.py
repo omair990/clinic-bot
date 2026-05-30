@@ -111,6 +111,21 @@ def _scope(request: Request) -> int | None:
     return p["tenant_id"] if p["role"] == "clinic" else None
 
 
+def _open_issue_count(request: Request) -> int:
+    """Unresolved issues for the sidebar badge — never raises (0 on any error)."""
+    try:
+        p = _principal(request)
+        if not p:
+            return 0
+        scope = p["tenant_id"] if p["role"] == "clinic" else None
+        return unresolved_event_count(scope)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+templates.env.globals["open_issue_count"] = _open_issue_count
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     if request.session.get("role"):
