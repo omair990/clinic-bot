@@ -57,7 +57,55 @@ CREATE TABLE IF NOT EXISTS processed_messages (
     processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_processed_at ON processed_messages(processed_at);
+
+-- --- Multi-tenant SaaS: plans, tenants, usage metering ---
+CREATE TABLE IF NOT EXISTS plans (
+    id                   BIGSERIAL PRIMARY KEY,
+    name                 TEXT UNIQUE NOT NULL,
+    monthly_text_quota   INTEGER,    -- NULL = unlimited
+    voice_enabled        BOOLEAN NOT NULL DEFAULT FALSE,
+    monthly_voice_quota  INTEGER,    -- NULL = unlimited (when voice_enabled)
+    features             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_trial             BOOLEAN NOT NULL DEFAULT FALSE,
+    trial_days           INTEGER,
+    price_sar            NUMERIC,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tenants (
+    id                 BIGSERIAL PRIMARY KEY,
+    name               TEXT NOT NULL,
+    slug               TEXT UNIQUE NOT NULL,
+    wa_phone_number_id TEXT UNIQUE,
+    plan_id            BIGINT REFERENCES plans(id),
+    status             TEXT NOT NULL DEFAULT 'active'
+                       CHECK (status IN ('active', 'suspended', 'expired')),
+    trial_ends_at      TIMESTAMPTZ,
+    timezone           TEXT NOT NULL DEFAULT 'Asia/Riyadh',
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tenant_usage (
+    tenant_id   BIGINT NOT NULL REFERENCES tenants(id),
+    period      TEXT NOT NULL,           -- 'YYYY-MM'
+    text_count  INTEGER NOT NULL DEFAULT 0,
+    voice_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (tenant_id, period)
+);
+
+ALTER TABLE patients      ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
+ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
+CREATE INDEX IF NOT EXISTS idx_conv_tenant ON conversations(tenant_id, created_at);
 """
+
+# (name, text_quota, voice_enabled, voice_quota, is_trial, trial_days, price_sar)
+DEFAULT_PLANS = [
+    ("Trial", 50, False, None, True, 14, 0),
+    ("Basic", 1000, False, None, False, None, 199),
+    ("Pro", 5000, True, 500, False, None, 499),
+    ("Unlimited", None, True, None, False, None, 999),
+]
 
 _pool: ConnectionPool | None = None
 
@@ -77,7 +125,38 @@ def init_db() -> None:
         log.info("DB pool opened (min=%s max=%s)", DB_POOL_MIN, DB_POOL_MAX)
     with get_conn() as conn:
         conn.execute(DDL)
+    seed_tenancy()
     log.info("DB schema ready")
+
+
+def seed_tenancy() -> None:
+    """Create default plans and the first tenant (the current clinic) if absent,
+    then backfill tenant_id on any legacy rows. Idempotent."""
+    from app.config import CLINIC_DATA, TIMEZONE, WA_PHONE_NUMBER_ID
+
+    clinic_name = CLINIC_DATA.get("clinic", {}).get("name", "Clinic")
+    with get_conn() as conn:
+        for name, tq, ve, vq, tr, td, price in DEFAULT_PLANS:
+            conn.execute(
+                "INSERT INTO plans (name, monthly_text_quota, voice_enabled, "
+                "monthly_voice_quota, is_trial, trial_days, price_sar) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (name) DO NOTHING",
+                (name, tq, ve, vq, tr, td, price),
+            )
+        row = conn.execute("SELECT id FROM tenants WHERE slug = 'default'").fetchone()
+        if not row:
+            plan = conn.execute("SELECT id FROM plans WHERE name = 'Unlimited'").fetchone()
+            row = conn.execute(
+                "INSERT INTO tenants (name, slug, wa_phone_number_id, plan_id, status, timezone) "
+                "VALUES (%s, 'default', %s, %s, 'active', %s) RETURNING id",
+                (clinic_name, WA_PHONE_NUMBER_ID, plan["id"] if plan else None, TIMEZONE),
+            ).fetchone()
+            log.info("Seeded default tenant '%s' (id=%s)", clinic_name, row["id"])
+        tid = row["id"]
+        for table in ("patients", "conversations", "appointments"):
+            conn.execute(
+                f"UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL", (tid,)
+            )
 
 
 def close_db() -> None:
@@ -321,3 +400,95 @@ def stats() -> dict:
         ).fetchone()["n"]
     return {"messages": msgs, "users": users, "appointments": appts,
             "upcoming_appointments": upcoming, "needs_human_users": needs_human}
+
+
+# --- Tenancy / plans / usage ---
+
+_TENANT_SELECT = (
+    "SELECT t.*, p.name AS plan_name, p.monthly_text_quota, p.voice_enabled, "
+    "p.monthly_voice_quota, p.is_trial, p.trial_days "
+    "FROM tenants t LEFT JOIN plans p ON p.id = t.plan_id "
+)
+
+
+def get_tenant_by_phone(phone_number_id: str | None) -> dict | None:
+    if not phone_number_id:
+        return None
+    with get_conn() as conn:
+        return conn.execute(
+            _TENANT_SELECT + "WHERE t.wa_phone_number_id = %s", (phone_number_id,)
+        ).fetchone()
+
+
+def get_default_tenant() -> dict | None:
+    with get_conn() as conn:
+        return conn.execute(_TENANT_SELECT + "WHERE t.slug = 'default'").fetchone()
+
+
+def incr_usage(tenant_id: int, period: str, *, text: int = 0, voice: int = 0) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO tenant_usage (tenant_id, period, text_count, voice_count) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (tenant_id, period) DO UPDATE SET "
+            "text_count = tenant_usage.text_count + EXCLUDED.text_count, "
+            "voice_count = tenant_usage.voice_count + EXCLUDED.voice_count",
+            (tenant_id, period, text, voice),
+        )
+
+
+def get_usage(tenant_id: int, period: str) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT text_count, voice_count FROM tenant_usage "
+            "WHERE tenant_id = %s AND period = %s",
+            (tenant_id, period),
+        ).fetchone()
+    return row or {"text_count": 0, "voice_count": 0}
+
+
+def list_plans() -> list[dict]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM plans ORDER BY COALESCE(price_sar, 0)").fetchall()
+
+
+def upsert_plan(name: str, monthly_text_quota, voice_enabled: bool,
+                monthly_voice_quota, is_trial: bool, trial_days, price_sar) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO plans (name, monthly_text_quota, voice_enabled, monthly_voice_quota, "
+            "is_trial, trial_days, price_sar) VALUES (%s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (name) DO UPDATE SET "
+            "monthly_text_quota = EXCLUDED.monthly_text_quota, "
+            "voice_enabled = EXCLUDED.voice_enabled, "
+            "monthly_voice_quota = EXCLUDED.monthly_voice_quota, "
+            "is_trial = EXCLUDED.is_trial, trial_days = EXCLUDED.trial_days, "
+            "price_sar = EXCLUDED.price_sar",
+            (name, monthly_text_quota, voice_enabled, monthly_voice_quota,
+             is_trial, trial_days, price_sar),
+        )
+
+
+def list_tenants(period: str) -> list[dict]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT t.id, t.name, t.slug, t.status, t.wa_phone_number_id, "
+            "       p.name AS plan_name, p.monthly_text_quota, p.voice_enabled, "
+            "       p.monthly_voice_quota, "
+            "       COALESCE(u.text_count, 0) AS text_count, "
+            "       COALESCE(u.voice_count, 0) AS voice_count "
+            "FROM tenants t LEFT JOIN plans p ON p.id = t.plan_id "
+            "LEFT JOIN tenant_usage u ON u.tenant_id = t.id AND u.period = %s "
+            "ORDER BY t.id",
+            (period,),
+        ).fetchall()
+
+
+def set_tenant_plan(tenant_id: int, plan_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE tenants SET plan_id = %s WHERE id = %s", (plan_id, tenant_id))
+
+
+def set_tenant_status(tenant_id: int, status: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE tenants SET status = %s WHERE id = %s", (status, tenant_id))

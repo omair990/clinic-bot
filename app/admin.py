@@ -13,10 +13,16 @@ from app.db import (
     conversation_thread,
     list_appointments,
     list_conversations,
+    list_plans,
+    list_tenants,
     set_appointment_status,
+    set_tenant_plan,
+    set_tenant_status,
     stats,
+    upsert_plan,
 )
 from app.events import subscribe, unsubscribe
+from app.tenancy import current_period
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin")
@@ -137,6 +143,59 @@ async def update_appointment(request: Request, appointment_id: int, status: str 
     set_appointment_status(appointment_id, status)
     referrer = request.headers.get("referer", "/admin/appointments")
     return RedirectResponse(referrer, status_code=303)
+
+
+@router.get("/plans", response_class=HTMLResponse)
+async def plans_page(request: Request):
+    _require_auth(request)
+    period = current_period(str(TZ))
+    return templates.TemplateResponse(
+        "plans.html",
+        {"request": request, "plans": list_plans(),
+         "tenants": list_tenants(period), "period": period},
+    )
+
+
+def _int_or_none(value: str) -> int | None:
+    value = (value or "").strip()
+    return int(value) if value else None
+
+
+@router.post("/plans")
+async def save_plan(request: Request,
+                    name: str = Form(...),
+                    monthly_text_quota: str = Form(""),
+                    monthly_voice_quota: str = Form(""),
+                    trial_days: str = Form(""),
+                    price_sar: str = Form(""),
+                    voice_enabled: str = Form("off"),
+                    is_trial: str = Form("off")):
+    _require_auth(request)
+    upsert_plan(
+        name.strip(),
+        _int_or_none(monthly_text_quota),
+        voice_enabled == "on",
+        _int_or_none(monthly_voice_quota),
+        is_trial == "on",
+        _int_or_none(trial_days),
+        _int_or_none(price_sar),
+    )
+    return RedirectResponse("/admin/plans", status_code=303)
+
+
+@router.post("/tenants/{tenant_id}/plan")
+async def assign_plan(request: Request, tenant_id: int, plan_id: int = Form(...)):
+    _require_auth(request)
+    set_tenant_plan(tenant_id, plan_id)
+    return RedirectResponse("/admin/plans", status_code=303)
+
+
+@router.post("/tenants/{tenant_id}/status")
+async def change_tenant_status(request: Request, tenant_id: int, status: str = Form(...)):
+    _require_auth(request)
+    if status in {"active", "suspended", "expired"}:
+        set_tenant_status(tenant_id, status)
+    return RedirectResponse("/admin/plans", status_code=303)
 
 
 @router.get("/stream")

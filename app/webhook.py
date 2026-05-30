@@ -12,6 +12,7 @@ from app.config import ADMIN_WA_NUMBER, WA_APP_SECRET, WA_VERIFY_TOKEN
 from app.db import claim_message_id, log_message, recent_history
 from app.events import publish
 from app.llm import LLMUnavailable
+from app.tenancy import record_usage, resolve_tenant
 from app.tools import AgentContext
 from app.transcribe import transcribe_audio
 from app.wa_client import download_media, mark_read, send_text
@@ -57,8 +58,10 @@ async def _handle_payload(payload: dict) -> None:
     try:
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
-                for msg in change.get("value", {}).get("messages", []) or []:
-                    await _handle_message(msg)
+                value = change.get("value", {})
+                phone_number_id = value.get("metadata", {}).get("phone_number_id")
+                for msg in value.get("messages", []) or []:
+                    await _handle_message(msg, phone_number_id)
     except Exception:
         log.exception("Failed handling payload")
 
@@ -102,7 +105,7 @@ async def _resolve_text(msg: dict, sender: str) -> str | None:
     return text
 
 
-async def _handle_message(msg: dict) -> None:
+async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None:
     sender = msg.get("from")
     msg_id = msg.get("id")
     if not sender:
@@ -122,6 +125,10 @@ async def _handle_message(msg: dict) -> None:
     if not user_text:
         await send_text(sender, "Sorry, I couldn't read that. Please type your question.")
         return
+
+    # Meter usage against the tenant this number belongs to (non-blocking).
+    tenant = await asyncio.to_thread(resolve_tenant, phone_number_id)
+    await asyncio.to_thread(record_usage, tenant, is_voice=(msg.get("type") == "audio"))
 
     log.info("In  %s: %s", sender, user_text)
     history = await asyncio.to_thread(recent_history, sender, 12)
