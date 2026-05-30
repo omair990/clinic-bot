@@ -30,14 +30,17 @@ def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = 
     if fields:
         lines = []
         for f in fields:
+            key = f.get("key") or f.get("label")
             label = f.get("label") or f.get("key")
             req = "REQUIRED" if f.get("required") else "optional"
             opts = f.get("options")
-            opt = f" (must be one of: {', '.join(opts)})" if opts else ""
-            lines.append(f"  - {label} [{req}]{opt}")
+            opt = f" — value must be exactly one of: {', '.join(opts)}" if opts else ""
+            lines.append(f'  - key "{key}" ({label}) [{req}]{opt}')
         booking_fields_block = (
-            "\n\nBEFORE booking, also collect these clinic-specific details and pass them in "
-            "the `extra` object of book_appointment (use the field label as the key):\n"
+            "\n\nBEFORE booking, collect these and pass them in the `extra` object of "
+            "book_appointment. Use the EXACT English key shown, and for option fields one of "
+            "the EXACT listed values verbatim — do NOT translate the keys or values, even when "
+            "chatting in Arabic (e.g. the patient saying 'مدى' means value 'mada'):\n"
             + "\n".join(lines))
 
     known = []

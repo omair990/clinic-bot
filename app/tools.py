@@ -56,7 +56,7 @@ def check_booking_fields(clinic_data: dict, extra: dict | None) -> dict | None:
     for f in fields:
         opts = f.get("options")
         val = _field_value(extra, f)
-        if opts and val and val not in opts:
+        if opts and val and val.lower() not in [str(o).lower() for o in opts]:
             return {"error": "invalid_value", "field": f.get("label") or f.get("key"),
                     "allowed": opts}
     return None
