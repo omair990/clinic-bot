@@ -41,7 +41,7 @@ SELFHOSTED_API_KEY = os.environ.get("SELFHOSTED_API_KEY", "").strip()
 
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 SELFHOSTED_MODEL = os.getenv("SELFHOSTED_MODEL", "qwen2.5:14b-instruct")
 
 # Voice notes: transcription fallback chain (tried in order, missing keys skipped).
