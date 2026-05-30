@@ -127,6 +127,18 @@ credentials before `app.config` loads, so it never reaches production data or AP
   (`LLM_BREAKER_THRESHOLD` / `LLM_BREAKER_COOLDOWN_S`), while a rate-limited (429) provider
   stays in rotation. `LLM_TIMEOUT_S` bounds each call. Set `CLAUDE_MODEL` /
   `OPENROUTER_MODEL` to choose models (`openai/gpt-4o-mini` by default for OpenRouter).
+- **Configurable booking fields** — a clinic's `clinic_data` may include `booking_fields`,
+  a list of intake fields the bot collects before booking (stored on `appointments.extra`
+  and shown in the dashboard). Each is `{key, label, required, options?}`, e.g.:
+  ```json
+  "booking_fields": [
+    {"key": "device_code", "label": "Device code", "required": true},
+    {"key": "payment", "label": "Payment method", "required": true,
+     "options": ["Cash", "Card", "mada", "Insurance"]}
+  ]
+  ```
+  Required fields are asked before booking; `options` are validated. Edit via the admin
+  clinic editor (Plans & Usage → a clinic → edit).
 - **`WA_APP_SECRET`** must be set in production — inbound webhooks are rejected if the
   HMAC signature is invalid.
 - **`CLINIC_TIMEZONE`** (default `Asia/Riyadh`) governs all slot math and display.

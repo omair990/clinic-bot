@@ -25,6 +25,28 @@ log = logging.getLogger(__name__)
 DEFAULT_DURATION_MIN = 30
 
 
+def check_booking_fields(clinic_data: dict, extra: dict | None) -> dict | None:
+    """Validate clinic-specific intake fields. Returns an error dict (telling the
+    model what's still needed) or None if all good.
+
+    Each field in clinic_data['booking_fields'] is {key, label, required?, options?}.
+    """
+    fields = (clinic_data or {}).get("booking_fields") or []
+    extra = extra if isinstance(extra, dict) else {}
+    missing = [f.get("label") or f.get("key") for f in fields
+               if f.get("required") and not str(extra.get(f.get("key"), "")).strip()]
+    if missing:
+        return {"error": "missing_information", "needed": missing,
+                "hint": "Ask the patient for these before booking."}
+    for f in fields:
+        opts = f.get("options")
+        val = str(extra.get(f.get("key"), "")).strip()
+        if opts and val and val not in opts:
+            return {"error": "invalid_value", "field": f.get("label") or f.get("key"),
+                    "allowed": opts}
+    return None
+
+
 @dataclass
 class AgentContext:
     wa_user: str
@@ -88,7 +110,9 @@ TOOL_SPECS: list[ToolSpec] = [
                  "doctor": {"type": "string"},
                  "service": {"type": "string"},
                  "date": {"type": "string", "description": "YYYY-MM-DD or 'today'/'tomorrow'."},
-                 "time": {"type": "string", "description": "Start time, e.g. '17:00' or '5:00 PM'."}},
+                 "time": {"type": "string", "description": "Start time, e.g. '17:00' or '5:00 PM'."},
+                 "extra": {"type": "object", "description": "Clinic-specific intake fields "
+                           "(keys/labels listed in the system prompt), e.g. payment method."}},
               "required": ["patient_name", "phone", "doctor", "service", "date", "time"]}),
     ToolSpec("get_faqs",
              "Clinic FAQs: insurance, parking, home service, prescription refills, "
@@ -188,10 +212,16 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
         return {"error": "slot_unavailable",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
+    # Clinic-specific intake fields (device code, insurance, payment method, ...).
+    extra = args.get("extra") if isinstance(args.get("extra"), dict) else {}
+    field_error = check_booking_fields(ctx.clinic_data, extra)
+    if field_error:
+        return field_error
+
     name = (args.get("patient_name") or "").strip() or db.get_patient_name(ctx.tenant_id, ctx.wa_user)
     phone = (args.get("phone") or "").strip() or ctx.wa_user
     row = db.create_appointment(ctx.tenant_id, ctx.wa_user, name, phone, doctor["name"],
-                                service["name"], start, end)
+                                service["name"], start, end, extra=extra or None)
     if row.get("conflict"):
         booked = db.booked_intervals(ctx.tenant_id, doctor["name"], day_start, day_end)
         valid = available_slots(doctor, start.date(), service["duration_min"], booked, _now())
@@ -202,7 +232,8 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
     ctx.booked_ids.append(row["id"])
     ctx.actions.append(f"booked #{row['id']} {doctor['name']} {_fmt(start)} ({name}, {phone})")
     return {"booked": True, "appointment_id": row["id"], "patient_name": name, "phone": phone,
-            "doctor": doctor["name"], "service": service["name"], "when": _fmt(start)}
+            "doctor": doctor["name"], "service": service["name"], "when": _fmt(start),
+            "details": extra or None}
 
 
 def _get_faqs(args: dict, ctx: AgentContext) -> dict:

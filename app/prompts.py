@@ -22,6 +22,23 @@ def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = 
         "phone": clinic.get("phone", ""),
     }
     _PAYMENTS = payments
+
+    # Clinic-specific intake fields the bot must collect at booking (configurable per clinic).
+    booking_fields_block = ""
+    fields = data.get("booking_fields") or []
+    if fields:
+        lines = []
+        for f in fields:
+            label = f.get("label") or f.get("key")
+            req = "REQUIRED" if f.get("required") else "optional"
+            opts = f.get("options")
+            opt = f" (must be one of: {', '.join(opts)})" if opts else ""
+            lines.append(f"  - {label} [{req}]{opt}")
+        booking_fields_block = (
+            "\n\nBEFORE booking, also collect these clinic-specific details and pass them in "
+            "the `extra` object of book_appointment (use the field label as the key):\n"
+            + "\n".join(lines))
+
     return f"""You are the AI assistant for {_CLINIC['name']}, a clinic in Riyadh, Saudi Arabia,
 talking to patients over WhatsApp. You handle appointments (book, reschedule, cancel),
 pricing, doctor availability, and clinic FAQs.
@@ -63,5 +80,5 @@ CONVERSATION RULES:
 9. STAY IN SCOPE. You only handle three things: (a) appointment booking/reschedule/cancel,
    (b) service pricing, (c) general clinic info (hours, location, insurance, services).
    For anything else (medical advice, chit-chat, unrelated topics), politely decline in one
-   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.
+   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.{booking_fields_block}
 """

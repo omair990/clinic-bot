@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     status      TEXT NOT NULL DEFAULT 'confirmed'
                 CHECK (status IN ('confirmed', 'cancelled', 'completed', 'no_show')),
     notes       TEXT,
+    extra       JSONB,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -102,6 +103,7 @@ ALTER TABLE patients      ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS extra JSONB;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_username TEXT;
@@ -294,9 +296,11 @@ def booked_intervals(tenant_id: int, doctor: str, day_start: datetime,
 
 def create_appointment(tenant_id: int, wa_user: str, patient_name: str | None,
                        phone: str | None, doctor: str, service: str, start_at: datetime,
-                       end_at: datetime, notes: str | None = None) -> dict:
+                       end_at: datetime, notes: str | None = None,
+                       extra: dict | None = None) -> dict:
     """Atomically book a slot. Returns the new row, or {'conflict': True} if the
     doctor is already booked in an overlapping window (within this tenant)."""
+    from psycopg.types.json import Json
     with get_conn() as conn:
         with conn.transaction():
             clash = conn.execute(
@@ -308,9 +312,10 @@ def create_appointment(tenant_id: int, wa_user: str, patient_name: str | None,
                 return {"conflict": True}
             row = conn.execute(
                 "INSERT INTO appointments "
-                "(tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at, notes) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
-                (tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at, notes),
+                "(tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at, "
+                "notes, extra) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                (tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at,
+                 notes, Json(extra) if extra else None),
             ).fetchone()
     return row
 
@@ -431,7 +436,7 @@ def conversation_thread(wa_user: str, limit: int = 200,
 def list_appointments(status: str | None = None, limit: int = 200,
                       tenant_id: int | None = None) -> list[dict]:
     sql = ("SELECT id, wa_user, patient_name, phone, doctor, service, start_at, end_at, "
-           "status, notes, created_at FROM appointments")
+           "status, notes, extra, created_at FROM appointments")
     clauses, params = [], []
     if tenant_id is not None:
         clauses.append("tenant_id = %s")

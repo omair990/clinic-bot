@@ -22,6 +22,7 @@
         <th class="text-left px-4 py-2">Service</th>
         <th class="text-left px-4 py-2">Doctor</th>
         <th class="text-left px-4 py-2">When</th>
+        <th class="text-left px-4 py-2">Details</th>
         <th class="text-left px-4 py-2">Created</th>
         <th class="text-left px-4 py-2">Status</th>
         <th class="text-left px-4 py-2"></th>
@@ -37,6 +38,9 @@
         <td class="px-4 py-3">{{ a.service or '—' }}</td>
         <td class="px-4 py-3">{{ a.doctor or '—' }}</td>
         <td class="px-4 py-3">{{ a.start_at | fmt_dt }}</td>
+        <td class="px-4 py-3 text-xs text-slate-600">
+          {% if a.extra %}{% for k, v in a.extra.items() %}<span class="inline-block mr-2"><span class="text-slate-400">{{ k }}:</span> {{ v }}</span>{% endfor %}{% else %}—{% endif %}
+        </td>
         <td class="px-4 py-3 text-slate-500 text-xs">{{ a.created_at | fmt_dt }}</td>
         <td class="px-4 py-3">
           {% set color = {'confirmed':'emerald','completed':'blue','cancelled':'slate','no_show':'amber'}.get(a.status, 'slate') %}
@@ -51,7 +55,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="10" class="px-4 py-8 text-center text-slate-400 text-sm">No appointments</td></tr>
+      <tr><td colspan="11" class="px-4 py-8 text-center text-slate-400 text-sm">No appointments</td></tr>
       {% endfor %}
     </tbody>
   </table>
