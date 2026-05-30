@@ -32,6 +32,7 @@ DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "").strip()
 
 # Self-hosted / "own" model via any OpenAI-compatible server (Ollama, vLLM, RunPod
 # serverless). The always-available tail of the chain — no per-token credit to run out of.
@@ -40,6 +41,7 @@ SELFHOSTED_API_KEY = os.environ.get("SELFHOSTED_API_KEY", "").strip()
 
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 SELFHOSTED_MODEL = os.getenv("SELFHOSTED_MODEL", "qwen2.5:14b-instruct")
 
 # Voice notes: transcription fallback chain (tried in order, missing keys skipped).
@@ -57,7 +59,8 @@ OPENROUTER_TRANSCRIBE_MODEL = os.getenv("OPENROUTER_TRANSCRIBE_MODEL", "google/g
 AI_PROVIDERS = [
     p.strip()
     for p in os.environ.get(
-        "AI_PROVIDERS", "claude,gemini,openrouter,groq,deepseek,selfhosted").split(",")
+        "AI_PROVIDERS",
+        "claude,gemini,mistral,openrouter,groq,deepseek,selfhosted").split(",")
     if p.strip()
 ]
 
