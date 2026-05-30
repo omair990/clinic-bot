@@ -203,5 +203,7 @@ async def _notify_admin(text: str) -> None:
         return
     try:
         await send_text(ADMIN_WA_NUMBER, text)
-    except Exception:
-        log.exception("Failed to notify admin")
+    except Exception as e:  # noqa: BLE001
+        # Common in dev mode (#131030: admin number not on the WhatsApp allowed list).
+        # Doesn't affect the patient reply — log concisely instead of a full traceback.
+        log.warning("Could not notify admin (%s): %s", ADMIN_WA_NUMBER, str(e)[:160])
