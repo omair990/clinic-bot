@@ -80,6 +80,15 @@ pytest -q          # scheduling logic (no DB/network needed)
 3. Deploy. The schema is created on startup; the health check path is `/`.
 4. Point your Meta WhatsApp webhook at `https://<your-app>/webhook` using `WA_VERIFY_TOKEN`.
 
+> **Gotcha — leave the Railway "Custom Start Command" empty.** This is a Dockerfile
+> deployment, so the container start command must come from the Dockerfile's `CMD`
+> (`sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"`), which shell-expands
+> `$PORT`. If you set a Custom Start Command in the Railway dashboard, Railway runs it in
+> **exec form** — `$PORT` is passed as the literal string `$PORT` instead of the port
+> number, uvicorn fails to bind, and the service crash-loops (health check times out,
+> hitting `restartPolicyMaxRetries`). Fix: Service → Settings → Deploy → clear **Custom
+> Start Command** and redeploy.
+
 ## Configuration notes
 
 - **`AI_PROVIDERS`** sets the fallback order (default `claude,gemini,groq,deepseek`). A
