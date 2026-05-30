@@ -7,10 +7,12 @@
     <div class="text-xs text-slate-500"><a href="/admin/conversations" class="hover:underline">← Conversations</a></div>
     <h1 class="text-xl font-semibold text-slate-900 mt-1">+{{ wa_user }}</h1>
   </div>
-  <div class="text-xs text-slate-500">{{ messages|length }} messages</div>
+  <div class="text-xs text-slate-500"><span class="pulse-dot mr-1"></span>Live</div>
 </div>
 
-<div class="bg-white rounded-lg shadow p-4 space-y-3 max-h-[70vh] overflow-auto">
+<div id="threadWrap" class="bg-white rounded-lg shadow p-4 max-h-[70vh] overflow-auto"
+     hx-ext="sse" sse-connect="/admin/conversations/{{ wa_user }}/stream">
+  <div id="thread" class="space-y-3" sse-swap="message" hx-swap="beforeend">
   {% for m in messages %}
     {% if m.direction == 'in' %}
     <div class="flex justify-start">
@@ -31,8 +33,18 @@
       </div>
     </div>
     {% endif %}
-  {% else %}
-  <div class="text-center text-slate-400 text-sm py-8">No messages</div>
   {% endfor %}
+  </div>
 </div>
+
+<script>
+  (function () {
+    var wrap = document.getElementById('threadWrap');
+    function toBottom() { if (wrap) wrap.scrollTop = wrap.scrollHeight; }
+    toBottom();  // start at the latest message
+    // auto-scroll when a new live bubble is appended
+    document.body.addEventListener('htmx:sseMessage', toBottom);
+    document.body.addEventListener('htmx:oobAfterSwap', toBottom);
+  })();
+</script>
 {% endblock %}

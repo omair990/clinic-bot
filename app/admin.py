@@ -187,6 +187,54 @@ async def conversation_view(request: Request, wa_user: str):
     )
 
 
+def _render_bubble(p: dict) -> str:
+    """A single chat bubble for the live conversation view (SSE — one line, no raw \\n)."""
+    text = html.escape(p.get("text", "")).replace("\n", "<br>")
+    if p.get("direction") == "in":
+        return (
+            '<div class="flex justify-start"><div class="max-w-md">'
+            f'<div class="px-3 py-2 rounded-lg rounded-tl-sm bg-slate-100 text-slate-900 text-sm">{text}</div>'
+            '<div class="text-[10px] text-slate-400 mt-1">now</div></div></div>'
+        )
+    badge = intent_badge_html(p.get("intent")) if p.get("intent") else ""
+    flag = ('<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] '
+            'font-medium ring-1 ring-inset bg-red-100 text-red-700 ring-red-200">flag</span>'
+            if p.get("needs_human") else "")
+    return (
+        '<div class="flex justify-end"><div class="max-w-md">'
+        f'<div class="px-3 py-2 rounded-lg rounded-tr-sm bg-emerald-600 text-white text-sm">{text}</div>'
+        f'<div class="mt-1 flex items-center justify-end gap-1.5">{badge}{flag}'
+        '<span class="text-[10px] text-slate-400">now</span></div></div></div>'
+    )
+
+
+@router.get("/conversations/{wa_user}/stream")
+async def conversation_stream(request: Request, wa_user: str):
+    scope = _scope(request)
+    q = subscribe()
+
+    async def gen():
+        import json as _json
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=20.0)
+                    p = _json.loads(payload)
+                    if p.get("wa_user") != wa_user:
+                        continue
+                    if scope is not None and p.get("tenant_id") != scope:
+                        continue
+                    yield f"event: message\ndata: {_render_bubble(p)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            unsubscribe(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 @router.get("/appointments", response_class=HTMLResponse)
 async def appointments(request: Request, status: str | None = None):
     _require_auth(request)
