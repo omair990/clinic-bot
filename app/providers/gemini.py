@@ -5,7 +5,7 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
-from app.config import GEMINI_API_KEY, LLM_TIMEOUT_S
+from app.config import GEMINI_API_KEY, LLM_MAX_TOKENS, LLM_STOP, LLM_TIMEOUT_S
 from app.llm import LLMResult, Msg, ToolCall, ToolSpec
 
 log = logging.getLogger(__name__)
@@ -122,7 +122,8 @@ def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResu
             tools=_to_tools(tools),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             temperature=0.3,
-            max_output_tokens=1500,
+            max_output_tokens=LLM_MAX_TOKENS,
+            stop_sequences=LLM_STOP,
         ),
     )
 

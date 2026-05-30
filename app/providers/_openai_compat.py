@@ -7,7 +7,7 @@ import logging
 
 import httpx
 
-from app.config import LLM_TIMEOUT_S
+from app.config import LLM_MAX_TOKENS, LLM_STOP, LLM_TIMEOUT_S
 from app.llm import LLMResult, Msg, ToolCall, ToolSpec
 
 log = logging.getLogger(__name__)
@@ -61,7 +61,8 @@ def generate(name: str, endpoint: str, model: str, api_key: str,
         "tools": _to_tools(tools),
         "tool_choice": "auto",
         "temperature": 0.3,
-        "max_tokens": 1500,
+        "max_tokens": LLM_MAX_TOKENS,
+        "stop": LLM_STOP,
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     with httpx.Client(timeout=LLM_TIMEOUT_S) as client:

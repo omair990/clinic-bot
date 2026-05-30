@@ -68,6 +68,10 @@ AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "6"))
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).
 LLM_TIMEOUT_S = float(os.getenv("LLM_TIMEOUT_S", "30"))
+# Cap reply length (WhatsApp messages are short) and stop the model from role-playing
+# extra turns / simulating the user — the cause of long rambling replies.
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "500"))
+LLM_STOP = ["\nUser:", "\nuser:", "\nPatient:", "User hasn't"]
 # Circuit breaker: after this many consecutive failures a provider is skipped for
 # the cooldown window, so a dead provider (e.g. no credits) isn't retried on every
 # message — we go straight to the next one.

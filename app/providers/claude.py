@@ -8,7 +8,7 @@ import logging
 
 import anthropic
 
-from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, LLM_TIMEOUT_S
+from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, LLM_MAX_TOKENS, LLM_STOP, LLM_TIMEOUT_S
 from app.llm import LLMResult, Msg, ToolCall, ToolSpec
 
 log = logging.getLogger(__name__)
@@ -89,8 +89,9 @@ def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResu
 
     resp = _client.messages.create(
         model=MODEL,
-        max_tokens=1500,
+        max_tokens=LLM_MAX_TOKENS,
         temperature=0.3,
+        stop_sequences=LLM_STOP,
         system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         tools=_to_tools(tools),
         messages=_to_messages(messages),
