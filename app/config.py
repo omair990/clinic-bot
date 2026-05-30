@@ -57,7 +57,7 @@ OPENROUTER_TRANSCRIBE_MODEL = os.getenv("OPENROUTER_TRANSCRIBE_MODEL", "google/g
 AI_PROVIDERS = [
     p.strip()
     for p in os.environ.get(
-        "AI_PROVIDERS", "gemini,openrouter,claude,groq,deepseek,selfhosted").split(",")
+        "AI_PROVIDERS", "claude,gemini,openrouter,groq,deepseek,selfhosted").split(",")
     if p.strip()
 ]
 
