@@ -45,7 +45,7 @@ SELFHOSTED_MODEL = os.getenv("SELFHOSTED_MODEL", "qwen2.5:14b-instruct")
 # Voice notes: transcription fallback chain (tried in order, missing keys skipped).
 TRANSCRIBE_PROVIDERS = [
     p.strip()
-    for p in os.environ.get("TRANSCRIBE_PROVIDERS", "gemini,openrouter,groq,openai").split(",")
+    for p in os.environ.get("TRANSCRIBE_PROVIDERS", "gemini,groq,openrouter,openai").split(",")
     if p.strip()
 ]
 TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gemini-2.5-flash")        # Gemini
