@@ -5,13 +5,13 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
-from app.config import GEMINI_API_KEY, LLM_MAX_TOKENS, LLM_STOP, LLM_TIMEOUT_S
+from app.config import GEMINI_API_KEY, GEMINI_MODEL, LLM_MAX_TOKENS, LLM_STOP, LLM_TIMEOUT_S
 from app.llm import LLMResult, Msg, ToolCall, ToolSpec
 
 log = logging.getLogger(__name__)
 
 NAME = "gemini"
-MODEL = "gemini-2.5-flash"
+MODEL = GEMINI_MODEL
 ENABLED = bool(GEMINI_API_KEY)
 
 # http_options.timeout is in milliseconds.

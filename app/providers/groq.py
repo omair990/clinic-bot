@@ -1,9 +1,9 @@
-from app.config import GROQ_API_KEY
+from app.config import GROQ_API_KEY, GROQ_MODEL
 from app.llm import LLMResult, Msg, ToolSpec
 from app.providers import _openai_compat as _oai
 
 NAME = "groq"
-MODEL = "llama-3.3-70b-versatile"
+MODEL = GROQ_MODEL
 ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 ENABLED = bool(GROQ_API_KEY)
 

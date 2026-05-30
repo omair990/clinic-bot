@@ -1,9 +1,9 @@
-from app.config import DEEPSEEK_API_KEY
+from app.config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL
 from app.llm import LLMResult, Msg, ToolSpec
 from app.providers import _openai_compat as _oai
 
 NAME = "deepseek"
-MODEL = "deepseek-chat"
+MODEL = DEEPSEEK_MODEL
 ENDPOINT = "https://api.deepseek.com/chat/completions"
 ENABLED = bool(DEEPSEEK_API_KEY)
 
