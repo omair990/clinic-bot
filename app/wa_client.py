@@ -4,6 +4,7 @@ import logging
 import httpx
 
 from app.config import WA_ACCESS_TOKEN, WA_API_VERSION, WA_PHONE_NUMBER_ID
+from app.formatting import to_whatsapp
 
 log = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ HEADERS = {
 
 
 async def send_text(to: str, body: str) -> dict:
+    body = to_whatsapp(body)
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
