@@ -5,7 +5,7 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
-from app.config import GEMINI_API_KEY
+from app.config import GEMINI_API_KEY, LLM_TIMEOUT_S
 from app.llm import LLMResult, Msg, ToolCall, ToolSpec
 
 log = logging.getLogger(__name__)
@@ -13,7 +13,10 @@ log = logging.getLogger(__name__)
 NAME = "gemini"
 MODEL = "gemini-2.5-flash"
 
-_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+# http_options.timeout is in milliseconds.
+_client = (genai.Client(api_key=GEMINI_API_KEY,
+                        http_options=types.HttpOptions(timeout=int(LLM_TIMEOUT_S * 1000)))
+           if GEMINI_API_KEY else None)
 
 _TYPES = {
     "object": types.Type.OBJECT,
@@ -30,6 +33,9 @@ def is_transient(exc: BaseException) -> bool:
         return True
     if isinstance(exc, genai_errors.ClientError):
         return getattr(exc, "code", None) == 429
+    # Network/timeout errors surface from the underlying httpx transport.
+    if "timeout" in type(exc).__name__.lower() or "connect" in type(exc).__name__.lower():
+        return True
     return False
 
 

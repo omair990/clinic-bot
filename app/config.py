@@ -41,6 +41,16 @@ AI_PROVIDERS = [
 # Max tool-calling round-trips per user turn before we hand off to staff.
 AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "6"))
 
+# --- LLM resilience ---
+# Per-call wall-clock budget for any single provider request (seconds). Stops a
+# slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).
+LLM_TIMEOUT_S = float(os.getenv("LLM_TIMEOUT_S", "30"))
+# Circuit breaker: after this many consecutive failures a provider is skipped for
+# the cooldown window, so a dead provider (e.g. no credits) isn't retried on every
+# message — we go straight to the next one.
+LLM_BREAKER_THRESHOLD = int(os.getenv("LLM_BREAKER_THRESHOLD", "3"))
+LLM_BREAKER_COOLDOWN_S = float(os.getenv("LLM_BREAKER_COOLDOWN_S", "60"))
+
 # --- Operations ---
 ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "").strip()
 PORT = int(os.getenv("PORT", "8000"))

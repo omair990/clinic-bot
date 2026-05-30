@@ -11,6 +11,7 @@ from app.agent import run_agent
 from app.config import ADMIN_WA_NUMBER, WA_APP_SECRET, WA_VERIFY_TOKEN
 from app.db import claim_message_id, log_message, recent_history
 from app.events import publish
+from app.llm import LLMUnavailable
 from app.tools import AgentContext
 from app.wa_client import mark_read, send_text
 
@@ -95,6 +96,23 @@ async def _handle_message(msg: dict) -> None:
 
     try:
         ctx: AgentContext = await asyncio.to_thread(run_agent, sender, user_text, history)
+    except LLMUnavailable as e:
+        if e.transient:
+            # Temporary blip (rate limits / timeouts): ask the user to retry; the
+            # message_id of a resend is new, so it won't be deduped away. No staff page.
+            log.warning("LLM transiently unavailable for %s: %s", sender, e)
+            await send_text(sender,
+                            "I'm getting a lot of messages right now — please send that again "
+                            "in a moment. 🙏")
+        else:
+            # Sustained outage / misconfig: own the failure and bring in a human.
+            log.error("LLM unavailable (hard) for %s: %s", sender, e)
+            await send_text(sender,
+                            "Sorry, we're having a technical issue. A staff member will follow "
+                            "up with you shortly.")
+            await asyncio.to_thread(log_message, sender, "out", "[llm unavailable]", "error", True)
+            await _notify_admin(f"[LLM DOWN] +{sender}\nUser: {user_text}\nDetail: {e}")
+        return
     except Exception:
         log.exception("Agent failed for %s", sender)
         await send_text(sender,

@@ -8,7 +8,7 @@ import logging
 
 import anthropic
 
-from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, LLM_TIMEOUT_S
 from app.llm import LLMResult, Msg, ToolCall, ToolSpec
 
 log = logging.getLogger(__name__)
@@ -16,7 +16,10 @@ log = logging.getLogger(__name__)
 NAME = "claude"
 MODEL = CLAUDE_MODEL
 
-_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+# Cap the request well below the SDK default (600s) so a hung call can't pin a
+# worker thread; the fallback chain takes over instead.
+_client = (anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=LLM_TIMEOUT_S)
+           if ANTHROPIC_API_KEY else None)
 
 
 def is_transient(exc: BaseException) -> bool:

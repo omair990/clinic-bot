@@ -7,6 +7,7 @@ import logging
 
 import httpx
 
+from app.config import LLM_TIMEOUT_S
 from app.llm import LLMResult, Msg, ToolCall, ToolSpec
 
 log = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ def generate(name: str, endpoint: str, model: str, api_key: str,
         "max_tokens": 1500,
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    with httpx.Client(timeout=40.0) as client:
+    with httpx.Client(timeout=LLM_TIMEOUT_S) as client:
         r = client.post(endpoint, headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()
