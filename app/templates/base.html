@@ -28,6 +28,7 @@
       <a href="/admin/" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='home' %}bg-slate-800 text-white{% endif %}">Dashboard</a>
       <a href="/admin/conversations" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='conv' %}bg-slate-800 text-white{% endif %}">Conversations</a>
       <a href="/admin/appointments" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='appt' %}bg-slate-800 text-white{% endif %}">Appointments</a>
+      <a href="/admin/logs" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='logs' %}bg-slate-800 text-white{% endif %}">Issues</a>
       {% if request.session.get('role')=='super' %}
       <a href="/admin/plans" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='plans' %}bg-slate-800 text-white{% endif %}">Plans &amp; Usage</a>
       {% endif %}

@@ -20,13 +20,16 @@ from app.db import (
     get_tenant_by_username,
     list_appointments,
     list_conversations,
+    list_events,
     list_plans,
     list_tenants,
+    resolve_event,
     set_appointment_status,
     set_tenant_credentials,
     set_tenant_plan,
     set_tenant_status,
     stats,
+    unresolved_event_count,
     update_tenant_config,
     upsert_plan,
 )
@@ -309,6 +312,26 @@ async def edit_tenant(request: Request, tenant_id: int,
     pw_hash = hash_password(staff_password) if staff_password.strip() else None
     set_tenant_credentials(tenant_id, staff_username.strip() or None, pw_hash)
     return RedirectResponse("/admin/plans", status_code=303)
+
+
+@router.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request, show: str = "open"):
+    _require_auth(request)
+    scope = _scope(request)
+    resolved = {"open": False, "resolved": True}.get(show, None)
+    return templates.TemplateResponse(
+        "logs.html",
+        {"request": request, "show": show,
+         "events": list_events(resolved=resolved, tenant_id=scope),
+         "open_count": unresolved_event_count(scope)},
+    )
+
+
+@router.post("/logs/{event_id}/resolve")
+async def resolve_log(request: Request, event_id: int):
+    scope = _scope(request)
+    resolve_event(event_id, tenant_id=scope)  # clinic can only resolve its own
+    return RedirectResponse(request.headers.get("referer", "/admin/logs"), status_code=303)
 
 
 @router.get("/stream")

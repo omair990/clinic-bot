@@ -91,6 +91,21 @@ CREATE TABLE IF NOT EXISTS tenants (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS system_events (
+    id          BIGSERIAL PRIMARY KEY,
+    tenant_id   BIGINT,
+    level       TEXT NOT NULL DEFAULT 'error',   -- error | warning | info
+    category    TEXT NOT NULL,                    -- llm | whatsapp | tool | agent | transcription | quota | escalation
+    message     TEXT NOT NULL,
+    detail      TEXT,
+    wa_user     TEXT,
+    resolved    BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_events_open ON system_events(resolved, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_tenant ON system_events(tenant_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS tenant_usage (
     tenant_id   BIGINT NOT NULL REFERENCES tenants(id),
     period      TEXT NOT NULL,           -- 'YYYY-MM'
@@ -346,6 +361,60 @@ def set_appointment_status(tenant_id: int, appointment_id: int, status: str) -> 
             "WHERE tenant_id = %s AND id = %s",
             (status, tenant_id, appointment_id),
         )
+
+
+def record_event(level: str, category: str, message: str, *, detail: str | None = None,
+                 tenant_id: int | None = None, wa_user: str | None = None) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO system_events (tenant_id, level, category, message, detail, wa_user) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (tenant_id, level, category, message, (detail or "")[:2000], wa_user),
+        )
+
+
+def list_events(resolved: bool | None = None, level: str | None = None,
+                tenant_id: int | None = None, limit: int = 200) -> list[dict]:
+    clauses, params = [], []
+    if tenant_id is not None:
+        clauses.append("tenant_id = %s")
+        params.append(tenant_id)
+    if resolved is not None:
+        clauses.append("resolved = %s")
+        params.append(resolved)
+    if level:
+        clauses.append("level = %s")
+        params.append(level)
+    sql = "SELECT * FROM system_events"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY created_at DESC LIMIT %s"
+    params.append(limit)
+    with get_conn() as conn:
+        return conn.execute(sql, tuple(params)).fetchall()
+
+
+def resolve_event(event_id: int, tenant_id: int | None = None) -> None:
+    with get_conn() as conn:
+        if tenant_id is None:
+            conn.execute(
+                "UPDATE system_events SET resolved = TRUE, resolved_at = now() WHERE id = %s",
+                (event_id,))
+        else:
+            conn.execute(
+                "UPDATE system_events SET resolved = TRUE, resolved_at = now() "
+                "WHERE id = %s AND tenant_id = %s", (event_id, tenant_id))
+
+
+def unresolved_event_count(tenant_id: int | None = None) -> int:
+    where = "WHERE resolved = FALSE"
+    params: tuple = ()
+    if tenant_id is not None:
+        where += " AND tenant_id = %s"
+        params = (tenant_id,)
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT COUNT(*) AS n FROM system_events {where}", params).fetchone()["n"]
 
 
 def admin_set_appointment_status(appointment_id: int, status: str) -> None:

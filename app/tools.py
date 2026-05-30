@@ -349,4 +349,7 @@ def dispatch(name: str, args: dict, ctx: AgentContext) -> dict:
         return result
     except Exception as e:  # noqa: BLE001
         log.exception("Tool %s failed", name)
+        from app import incidents
+        incidents.record("tool", f"Tool '{name}' failed", detail=f"{args} -> {e}",
+                         tenant_id=ctx.tenant_id, wa_user=ctx.wa_user)
         return {"error": "tool_failed", "detail": str(e)}

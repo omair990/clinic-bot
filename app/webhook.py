@@ -8,6 +8,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
 from app.agent import run_agent
+from app import incidents
 from app.config import ADMIN_WA_NUMBER, USAGE_ENFORCEMENT, WA_APP_SECRET, WA_VERIFY_TOKEN
 from app.db import claim_message_id, log_message, recent_history
 from app.events import publish
@@ -92,8 +93,10 @@ async def _resolve_text(msg: dict, sender: str, creds: dict) -> str | None:
     try:
         audio_bytes, mime = await download_media(media_id, access_token=creds.get("access_token"))
         text = (await asyncio.to_thread(transcribe_audio, audio_bytes, mime)).strip()
-    except Exception:
+    except Exception as ex:
         log.exception("Voice transcription failed for %s", sender)
+        await asyncio.to_thread(incidents.record, "transcription",
+                                "Voice transcription failed", detail=repr(ex), wa_user=sender)
         await send_text(sender, "Sorry, I couldn't process that voice note — "
                                 "please type your message or try again.", **creds)
         return None
@@ -134,6 +137,9 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         if not decision.allowed:
             log.info("Blocked %s (tenant %s): %s", sender,
                      tenant.get("id") if tenant else "?", decision.reason)
+            await asyncio.to_thread(incidents.record, "quota",
+                                    f"Message blocked: {decision.reason}", level="warning",
+                                    tenant_id=tid, wa_user=sender)
             await send_text(sender, decision.message, **creds)
             return
 
@@ -169,15 +175,19 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
                             "Sorry, we're having a technical issue. A staff member will follow "
                             "up with you shortly.", **creds)
             await asyncio.to_thread(log_message, tid, sender, "out", "[llm unavailable]", "error", True)
+            await asyncio.to_thread(incidents.record, "llm", "All LLM providers unavailable",
+                                    detail=str(e), tenant_id=tid, wa_user=sender)
             await _notify_admin(f"[LLM DOWN] +{sender}\nUser: {user_text}\nDetail: {e}")
         return
-    except Exception:
+    except Exception as ex:
         log.exception("Agent failed for %s", sender)
         await send_text(sender,
                         "Sorry, we're having a temporary issue. A staff member will follow up shortly.",
                         **creds)
         await asyncio.to_thread(log_message, tid, sender, "out", "[agent error]",
                                 "error", True)
+        await asyncio.to_thread(incidents.record, "agent", "Agent crashed handling a message",
+                                detail=repr(ex), tenant_id=tid, wa_user=sender)
         await _notify_admin(f"[AGENT ERROR] +{sender}\nUser: {user_text}")
         return
 
@@ -207,3 +217,5 @@ async def _notify_admin(text: str) -> None:
         # Common in dev mode (#131030: admin number not on the WhatsApp allowed list).
         # Doesn't affect the patient reply — log concisely instead of a full traceback.
         log.warning("Could not notify admin (%s): %s", ADMIN_WA_NUMBER, str(e)[:160])
+        await asyncio.to_thread(incidents.record, "whatsapp", "Could not notify staff number",
+                                level="warning", detail=str(e)[:300])
