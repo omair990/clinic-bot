@@ -71,6 +71,11 @@ AI_PROVIDERS = [
 # Max tool-calling round-trips per user turn before we hand off to staff.
 AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "6"))
 
+# --- Background maintenance (auto-prune) ---
+MAINTENANCE_INTERVAL_HOURS = int(os.getenv("MAINTENANCE_INTERVAL_HOURS", "24"))
+PROCESSED_MSG_RETENTION_HOURS = int(os.getenv("PROCESSED_MSG_RETENTION_HOURS", "24"))
+EVENT_RETENTION_DAYS = int(os.getenv("EVENT_RETENTION_DAYS", "30"))
+
 # --- LLM resilience ---
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).

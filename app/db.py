@@ -406,6 +406,16 @@ def resolve_event(event_id: int, tenant_id: int | None = None) -> None:
                 "WHERE id = %s AND tenant_id = %s", (event_id, tenant_id))
 
 
+def prune_resolved_events(older_than_days: int = 30) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM system_events WHERE resolved = TRUE "
+            "AND resolved_at < now() - make_interval(days => %s)",
+            (older_than_days,),
+        )
+        return cur.rowcount
+
+
 def unresolved_event_count(tenant_id: int | None = None) -> int:
     where = "WHERE resolved = FALSE"
     params: tuple = ()

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -7,20 +8,43 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import router as admin_router
-from app.config import PORT, SECRET_KEY
-from app.db import close_db, init_db, ping
+from app.config import (
+    EVENT_RETENTION_DAYS,
+    MAINTENANCE_INTERVAL_HOURS,
+    PORT,
+    PROCESSED_MSG_RETENTION_HOURS,
+    SECRET_KEY,
+)
+from app.db import close_db, init_db, ping, prune_processed_messages, prune_resolved_events
 from app.webhook import router as webhook_router
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
 )
+log = logging.getLogger("main")
+
+
+async def _maintenance_loop() -> None:
+    """Periodically prune old dedup rows and old resolved issues."""
+    while True:
+        try:
+            msgs = await asyncio.to_thread(prune_processed_messages, PROCESSED_MSG_RETENTION_HOURS)
+            events = await asyncio.to_thread(prune_resolved_events, EVENT_RETENTION_DAYS)
+            if msgs or events:
+                log.info("maintenance: pruned %s processed messages, %s resolved issues",
+                         msgs, events)
+        except Exception:  # noqa: BLE001
+            log.exception("maintenance prune failed")
+        await asyncio.sleep(MAINTENANCE_INTERVAL_HOURS * 3600)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    task = asyncio.create_task(_maintenance_loop())
     yield
+    task.cancel()
     close_db()
 
 
