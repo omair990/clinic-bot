@@ -28,6 +28,8 @@ DEFAULT_DURATION_MIN = 30
 @dataclass
 class AgentContext:
     wa_user: str
+    tenant_id: int = 0
+    clinic_data: dict = field(default_factory=dict)
     reply: str = ""
     needs_human: bool = False
     emergency: bool = False
@@ -35,6 +37,14 @@ class AgentContext:
     booked_ids: list[int] = field(default_factory=list)
     changed_ids: list[int] = field(default_factory=list)
     actions: list[str] = field(default_factory=list)
+
+    @property
+    def doctors(self) -> list[dict]:
+        return self.clinic_data.get("doctors", []) if self.clinic_data else []
+
+    @property
+    def services(self) -> list[dict]:
+        return self.clinic_data.get("services", []) if self.clinic_data else []
 
     def derived_intent(self) -> str:
         if self.emergency:
@@ -105,18 +115,16 @@ TOOL_SPECS: list[ToolSpec] = [
 # --- Handlers ---
 
 def _list_services(args: dict, ctx: AgentContext) -> dict:
-    from app.scheduling import SERVICES
     return {"services": [
         {"name": s["name"], "price_sar": s["price_sar"], "duration_min": s["duration_min"]}
-        for s in SERVICES]}
+        for s in ctx.services]}
 
 
 def _list_doctors(args: dict, ctx: AgentContext) -> dict:
-    from app.scheduling import DOCTORS
     spec = (args.get("specialty") or "").lower().strip()
-    docs = DOCTORS
+    docs = ctx.doctors
     if spec:
-        docs = [d for d in DOCTORS if spec in d["specialty"].lower()] or DOCTORS
+        docs = [d for d in ctx.doctors if spec in d["specialty"].lower()] or ctx.doctors
     return {"doctors": [
         {"name": d["name"], "specialty": d["specialty"],
          "available_days": d["available_days"], "available_hours": d["available_hours"]}
@@ -124,19 +132,18 @@ def _list_doctors(args: dict, ctx: AgentContext) -> dict:
 
 
 def _check_availability(args: dict, ctx: AgentContext) -> dict:
-    from app.scheduling import DOCTORS
-    doctor = find_doctor(args.get("doctor", ""))
+    doctor = find_doctor(args.get("doctor", ""), ctx.doctors)
     if not doctor:
         return {"error": "doctor_not_found",
-                "available_doctors": [d["name"] for d in DOCTORS]}
+                "available_doctors": [d["name"] for d in ctx.doctors]}
     on = parse_date(args.get("date", ""), _now().date())
     if not on:
         return {"error": "bad_date", "hint": "Use YYYY-MM-DD or 'today'/'tomorrow'."}
-    service = find_service(args.get("service", "")) if args.get("service") else None
+    service = find_service(args.get("service", ""), ctx.services) if args.get("service") else None
     duration = service["duration_min"] if service else DEFAULT_DURATION_MIN
 
     start, end = day_bounds(on)
-    booked = db.booked_intervals(doctor["name"], start, end)
+    booked = db.booked_intervals(ctx.tenant_id, doctor["name"], start, end)
     slots = available_slots(doctor, on, duration, booked, _now())
     return {
         "doctor": doctor["name"],
@@ -149,12 +156,12 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
     }
 
 
-def _resolve_slot(args: dict):
+def _resolve_slot(args: dict, ctx: AgentContext):
     """Shared validation for book/reschedule -> (doctor, service, start, end) or error dict."""
-    doctor = find_doctor(args.get("doctor", ""))
+    doctor = find_doctor(args.get("doctor", ""), ctx.doctors)
     if not doctor:
         return {"error": "doctor_not_found"}
-    service = find_service(args.get("service", ""))
+    service = find_service(args.get("service", ""), ctx.services)
     if not service:
         return {"error": "service_not_found"}
     on = parse_date(args.get("date", ""), _now().date())
@@ -167,27 +174,28 @@ def _resolve_slot(args: dict):
 
 
 def _book_appointment(args: dict, ctx: AgentContext) -> dict:
-    resolved = _resolve_slot(args)
+    resolved = _resolve_slot(args, ctx)
     if isinstance(resolved, dict):
         return resolved
     doctor, service, start, end = resolved
 
     day_start, day_end = day_bounds(start.date())
-    booked = db.booked_intervals(doctor["name"], day_start, day_end)
+    booked = db.booked_intervals(ctx.tenant_id, doctor["name"], day_start, day_end)
     valid = available_slots(doctor, start.date(), service["duration_min"], booked, _now())
     if start not in valid:
         return {"error": "slot_unavailable",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
-    name = (args.get("patient_name") or "").strip() or db.get_patient_name(ctx.wa_user)
-    row = db.create_appointment(ctx.wa_user, name, doctor["name"], service["name"], start, end)
+    name = (args.get("patient_name") or "").strip() or db.get_patient_name(ctx.tenant_id, ctx.wa_user)
+    row = db.create_appointment(ctx.tenant_id, ctx.wa_user, name, doctor["name"],
+                                service["name"], start, end)
     if row.get("conflict"):
-        booked = db.booked_intervals(doctor["name"], day_start, day_end)
+        booked = db.booked_intervals(ctx.tenant_id, doctor["name"], day_start, day_end)
         valid = available_slots(doctor, start.date(), service["duration_min"], booked, _now())
         return {"error": "just_taken",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
-    db.upsert_patient(ctx.wa_user, name)
+    db.upsert_patient(ctx.tenant_id, ctx.wa_user, name)
     ctx.booked_ids.append(row["id"])
     ctx.actions.append(f"booked #{row['id']} {doctor['name']} {_fmt(start)}")
     return {"booked": True, "appointment_id": row["id"], "patient_name": name,
@@ -195,20 +203,20 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
 
 
 def _get_faqs(args: dict, ctx: AgentContext) -> dict:
-    from app.config import CLINIC_DATA
-    return {"faqs": CLINIC_DATA.get("faqs", []),
-            "policy": CLINIC_DATA.get("appointment_policy", {})}
+    data = ctx.clinic_data or {}
+    return {"faqs": data.get("faqs", []),
+            "policy": data.get("appointment_policy", {})}
 
 
 def _get_my_appointments(args: dict, ctx: AgentContext) -> dict:
-    rows = db.upcoming_appointments(ctx.wa_user, _now())
+    rows = db.upcoming_appointments(ctx.tenant_id, ctx.wa_user, _now())
     return {"appointments": [
         {"appointment_id": r["id"], "doctor": r["doctor"], "service": r["service"],
          "when": _fmt(r["start_at"]), "status": r["status"]} for r in rows]}
 
 
 def _owned(appointment_id: int, ctx: AgentContext) -> dict | None:
-    appt = db.get_appointment(appointment_id)
+    appt = db.get_appointment(ctx.tenant_id, appointment_id)
     if not appt or appt["wa_user"] != ctx.wa_user:
         return None
     return appt
@@ -229,15 +237,15 @@ def _reschedule_appointment(args: dict, ctx: AgentContext) -> dict:
     duration = (appt["end_at"] - appt["start_at"])
     end = start + duration
 
-    doctor = find_doctor(appt["doctor"])
+    doctor = find_doctor(appt["doctor"], ctx.doctors)
     day_start, day_end = day_bounds(start.date())
-    booked = db.booked_intervals(appt["doctor"], day_start, day_end)
+    booked = db.booked_intervals(ctx.tenant_id, appt["doctor"], day_start, day_end)
     valid = available_slots(doctor, start.date(), int(duration.total_seconds() // 60), booked, _now())
     if start not in valid:
         return {"error": "slot_unavailable",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
-    row = db.reschedule(appt["id"], start, end)
+    row = db.reschedule(ctx.tenant_id, appt["id"], start, end)
     if row.get("conflict"):
         return {"error": "just_taken"}
     ctx.changed_ids.append(appt["id"])
@@ -251,7 +259,7 @@ def _cancel_appointment(args: dict, ctx: AgentContext) -> dict:
         return {"error": "appointment_not_found"}
     if appt["status"] == "cancelled":
         return {"already_cancelled": True}
-    db.set_appointment_status(appt["id"], "cancelled")
+    db.set_appointment_status(ctx.tenant_id, appt["id"], "cancelled")
     ctx.changed_ids.append(appt["id"])
     ctx.actions.append(f"cancelled #{appt['id']}")
     return {"cancelled": True, "appointment_id": appt["id"]}

@@ -21,29 +21,34 @@ def _norm(s: str) -> str:
     return "".join(ch for ch in s.lower() if ch.isalnum())
 
 
-def find_doctor(query: str) -> dict | None:
-    """Match a doctor by full name or a distinctive fragment (e.g. 'khalid', 'dentist')."""
+def find_doctor(query: str, doctors: list[dict] | None = None) -> dict | None:
+    """Match a doctor by full name or a distinctive fragment (e.g. 'khalid', 'dentist').
+
+    `doctors` defaults to the global clinic config; pass a tenant's list for isolation.
+    """
     if not query:
         return None
+    doctors = DOCTORS if doctors is None else doctors
     q = _norm(query)
-    for doc in DOCTORS:
+    for doc in doctors:
         if _norm(doc["name"]) == q:
             return doc
-    for doc in DOCTORS:
+    for doc in doctors:
         name = _norm(doc["name"])
         if q in name or name in q or q in _norm(doc["specialty"]):
             return doc
     return None
 
 
-def find_service(query: str) -> dict | None:
+def find_service(query: str, services: list[dict] | None = None) -> dict | None:
     if not query:
         return None
+    services = SERVICES if services is None else services
     q = _norm(query)
-    for svc in SERVICES:
+    for svc in services:
         if _norm(svc["name"]) == q:
             return svc
-    for svc in SERVICES:
+    for svc in services:
         if q in _norm(svc["name"]) or _norm(svc["name"]) in q:
             return svc
     return None

@@ -101,6 +101,9 @@ ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 CREATE INDEX IF NOT EXISTS idx_conv_tenant ON conversations(tenant_id, created_at);
+-- A patient phone is unique per clinic, not globally (two clinics may share a patient).
+ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_wa_user_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_patients_tenant_wa ON patients(tenant_id, wa_user);
 """
 
 # (name, text_quota, voice_enabled, voice_quota, is_trial, trial_days, price_sar)
@@ -199,22 +202,22 @@ def ping() -> bool:
 
 # --- Messages / conversations ---
 
-def log_message(wa_user: str, direction: str, message: str,
+def log_message(tenant_id: int, wa_user: str, direction: str, message: str,
                 intent: str | None = None, needs_human: bool = False) -> None:
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO conversations (wa_user, direction, message, intent, needs_human) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (wa_user, direction, message, intent, needs_human),
+            "INSERT INTO conversations (tenant_id, wa_user, direction, message, intent, needs_human) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (tenant_id, wa_user, direction, message, intent, needs_human),
         )
 
 
-def recent_history(wa_user: str, limit: int = 10) -> list[dict]:
+def recent_history(tenant_id: int, wa_user: str, limit: int = 10) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT direction, message FROM conversations WHERE wa_user = %s "
-            "ORDER BY id DESC LIMIT %s",
-            (wa_user, limit),
+            "SELECT direction, message FROM conversations "
+            "WHERE tenant_id = %s AND wa_user = %s ORDER BY id DESC LIMIT %s",
+            (tenant_id, wa_user, limit),
         ).fetchall()
     return list(reversed(rows))
 
@@ -241,83 +244,100 @@ def prune_processed_messages(older_than_hours: int = 24) -> int:
 
 # --- Patients ---
 
-def upsert_patient(wa_user: str, name: str | None) -> None:
+def upsert_patient(tenant_id: int, wa_user: str, name: str | None) -> None:
     with get_conn() as conn:
         if name:
             conn.execute(
-                "INSERT INTO patients (wa_user, name) VALUES (%s, %s) "
-                "ON CONFLICT (wa_user) DO UPDATE SET name = EXCLUDED.name, updated_at = now()",
-                (wa_user, name),
+                "INSERT INTO patients (tenant_id, wa_user, name) VALUES (%s, %s, %s) "
+                "ON CONFLICT (tenant_id, wa_user) DO UPDATE SET "
+                "name = EXCLUDED.name, updated_at = now()",
+                (tenant_id, wa_user, name),
             )
         else:
             conn.execute(
-                "INSERT INTO patients (wa_user) VALUES (%s) ON CONFLICT DO NOTHING",
-                (wa_user,),
+                "INSERT INTO patients (tenant_id, wa_user) VALUES (%s, %s) "
+                "ON CONFLICT (tenant_id, wa_user) DO NOTHING",
+                (tenant_id, wa_user),
             )
 
 
-def get_patient_name(wa_user: str) -> str | None:
+def get_patient_name(tenant_id: int, wa_user: str) -> str | None:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT name FROM patients WHERE wa_user = %s", (wa_user,)
+            "SELECT name FROM patients WHERE tenant_id = %s AND wa_user = %s",
+            (tenant_id, wa_user),
         ).fetchone()
     return row["name"] if row else None
 
 
 # --- Appointments ---
 
-def booked_intervals(doctor: str, day_start: datetime, day_end: datetime) -> list[tuple]:
+def booked_intervals(tenant_id: int, doctor: str, day_start: datetime,
+                     day_end: datetime) -> list[tuple]:
     """(start_at, end_at) of active appointments for a doctor within [day_start, day_end)."""
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT start_at, end_at FROM appointments "
-            "WHERE doctor = %s AND status = 'confirmed' "
+            "WHERE tenant_id = %s AND doctor = %s AND status = 'confirmed' "
             "AND start_at < %s AND end_at > %s ORDER BY start_at",
-            (doctor, day_end, day_start),
+            (tenant_id, doctor, day_end, day_start),
         ).fetchall()
     return [(r["start_at"], r["end_at"]) for r in rows]
 
 
-def create_appointment(wa_user: str, patient_name: str | None, doctor: str, service: str,
-                       start_at: datetime, end_at: datetime, notes: str | None = None) -> dict:
+def create_appointment(tenant_id: int, wa_user: str, patient_name: str | None, doctor: str,
+                       service: str, start_at: datetime, end_at: datetime,
+                       notes: str | None = None) -> dict:
     """Atomically book a slot. Returns the new row, or {'conflict': True} if the
-    doctor is already booked in an overlapping window."""
+    doctor is already booked in an overlapping window (within this tenant)."""
     with get_conn() as conn:
         with conn.transaction():
             clash = conn.execute(
-                "SELECT id FROM appointments WHERE doctor = %s AND status = 'confirmed' "
-                "AND start_at < %s AND end_at > %s FOR UPDATE",
-                (doctor, end_at, start_at),
+                "SELECT id FROM appointments WHERE tenant_id = %s AND doctor = %s "
+                "AND status = 'confirmed' AND start_at < %s AND end_at > %s FOR UPDATE",
+                (tenant_id, doctor, end_at, start_at),
             ).fetchone()
             if clash:
                 return {"conflict": True}
             row = conn.execute(
                 "INSERT INTO appointments "
-                "(wa_user, patient_name, doctor, service, start_at, end_at, notes) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
-                (wa_user, patient_name, doctor, service, start_at, end_at, notes),
+                "(tenant_id, wa_user, patient_name, doctor, service, start_at, end_at, notes) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                (tenant_id, wa_user, patient_name, doctor, service, start_at, end_at, notes),
             ).fetchone()
     return row
 
 
-def upcoming_appointments(wa_user: str, now: datetime, limit: int = 10) -> list[dict]:
+def upcoming_appointments(tenant_id: int, wa_user: str, now: datetime,
+                          limit: int = 10) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM appointments WHERE wa_user = %s AND status = 'confirmed' "
-            "AND end_at >= %s ORDER BY start_at ASC LIMIT %s",
-            (wa_user, now, limit),
+            "SELECT * FROM appointments WHERE tenant_id = %s AND wa_user = %s "
+            "AND status = 'confirmed' AND end_at >= %s ORDER BY start_at ASC LIMIT %s",
+            (tenant_id, wa_user, now, limit),
         ).fetchall()
     return rows
 
 
-def get_appointment(appointment_id: int) -> dict | None:
+def get_appointment(tenant_id: int, appointment_id: int) -> dict | None:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT * FROM appointments WHERE id = %s", (appointment_id,)
+            "SELECT * FROM appointments WHERE tenant_id = %s AND id = %s",
+            (tenant_id, appointment_id),
         ).fetchone()
 
 
-def set_appointment_status(appointment_id: int, status: str) -> None:
+def set_appointment_status(tenant_id: int, appointment_id: int, status: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE appointments SET status = %s, updated_at = now() "
+            "WHERE tenant_id = %s AND id = %s",
+            (status, tenant_id, appointment_id),
+        )
+
+
+def admin_set_appointment_status(appointment_id: int, status: str) -> None:
+    """Super-admin status change by id (not tenant-scoped) — used by the dashboard."""
     with get_conn() as conn:
         conn.execute(
             "UPDATE appointments SET status = %s, updated_at = now() WHERE id = %s",
@@ -325,19 +345,21 @@ def set_appointment_status(appointment_id: int, status: str) -> None:
         )
 
 
-def reschedule(appointment_id: int, start_at: datetime, end_at: datetime) -> dict:
+def reschedule(tenant_id: int, appointment_id: int, start_at: datetime,
+               end_at: datetime) -> dict:
     """Move an appointment to a new window if free. Returns updated row or {'conflict': True}."""
     with get_conn() as conn:
         with conn.transaction():
             appt = conn.execute(
-                "SELECT * FROM appointments WHERE id = %s FOR UPDATE", (appointment_id,)
+                "SELECT * FROM appointments WHERE tenant_id = %s AND id = %s FOR UPDATE",
+                (tenant_id, appointment_id),
             ).fetchone()
             if not appt:
                 return {"not_found": True}
             clash = conn.execute(
-                "SELECT id FROM appointments WHERE doctor = %s AND status = 'confirmed' "
-                "AND id <> %s AND start_at < %s AND end_at > %s FOR UPDATE",
-                (appt["doctor"], appointment_id, end_at, start_at),
+                "SELECT id FROM appointments WHERE tenant_id = %s AND doctor = %s "
+                "AND status = 'confirmed' AND id <> %s AND start_at < %s AND end_at > %s FOR UPDATE",
+                (tenant_id, appt["doctor"], appointment_id, end_at, start_at),
             ).fetchone()
             if clash:
                 return {"conflict": True}

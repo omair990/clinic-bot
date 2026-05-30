@@ -9,13 +9,19 @@ from datetime import datetime
 
 from app.config import CLINIC_DATA, TIMEZONE, TZ
 
-_CLINIC = CLINIC_DATA["clinic"]
-_POLICY = CLINIC_DATA.get("appointment_policy", {})
-_PAYMENTS = ", ".join(_POLICY.get("payment_methods", [])) or "Cash, Card, mada"
 
-
-def build_system_prompt(now: datetime | None = None) -> str:
+def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = None) -> str:
     now = now or datetime.now(TZ)
+    data = clinic_data or CLINIC_DATA
+    clinic = data.get("clinic", {})
+    policy = data.get("appointment_policy", {})
+    payments = ", ".join(policy.get("payment_methods", [])) or "Cash, Card, mada"
+    _CLINIC = {
+        "name": clinic.get("name", "the clinic"),
+        "address": clinic.get("address", ""),
+        "phone": clinic.get("phone", ""),
+    }
+    _PAYMENTS = payments
     return f"""You are the AI assistant for {_CLINIC['name']}, a clinic in Riyadh, Saudi Arabia,
 talking to patients over WhatsApp. You handle appointments (book, reschedule, cancel),
 pricing, doctor availability, and clinic FAQs.

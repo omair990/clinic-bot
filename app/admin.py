@@ -12,6 +12,7 @@ import json
 
 from app.config import ADMIN_PASSWORD, BASE_DIR, TZ
 from app.db import (
+    admin_set_appointment_status,
     conversation_thread,
     create_tenant,
     get_tenant,
@@ -19,7 +20,6 @@ from app.db import (
     list_conversations,
     list_plans,
     list_tenants,
-    set_appointment_status,
     set_tenant_plan,
     set_tenant_status,
     stats,
@@ -145,7 +145,7 @@ async def update_appointment(request: Request, appointment_id: int, status: str 
     _require_auth(request)
     if status not in APPOINTMENT_STATUSES:
         raise HTTPException(400, "bad status")
-    set_appointment_status(appointment_id, status)
+    admin_set_appointment_status(appointment_id, status)
     referrer = request.headers.get("referer", "/admin/appointments")
     return RedirectResponse(referrer, status_code=303)
 

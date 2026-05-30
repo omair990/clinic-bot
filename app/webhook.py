@@ -117,6 +117,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
 
     is_voice = msg.get("type") == "audio"
     tenant = await asyncio.to_thread(resolve_tenant, phone_number_id)
+    tid = (tenant or {}).get("id") or 0
     creds = {
         "phone_number_id": (tenant or {}).get("wa_phone_number_id"),
         "access_token": (tenant or {}).get("wa_access_token"),
@@ -147,12 +148,12 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
     await asyncio.to_thread(record_usage, tenant, is_voice=is_voice)
 
     log.info("In  %s: %s", sender, user_text)
-    history = await asyncio.to_thread(recent_history, sender, 12)
-    await asyncio.to_thread(log_message, sender, "in", user_text)
+    history = await asyncio.to_thread(recent_history, tid, sender, 12)
+    await asyncio.to_thread(log_message, tid, sender, "in", user_text)
     publish("message", {"wa_user": sender, "direction": "in", "text": user_text})
 
     try:
-        ctx: AgentContext = await asyncio.to_thread(run_agent, sender, user_text, history)
+        ctx: AgentContext = await asyncio.to_thread(run_agent, tenant, sender, user_text, history)
     except LLMUnavailable as e:
         if e.transient:
             # Temporary blip (rate limits / timeouts): ask the user to retry; the
@@ -167,7 +168,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
             await send_text(sender,
                             "Sorry, we're having a technical issue. A staff member will follow "
                             "up with you shortly.", **creds)
-            await asyncio.to_thread(log_message, sender, "out", "[llm unavailable]", "error", True)
+            await asyncio.to_thread(log_message, tid, sender, "out", "[llm unavailable]", "error", True)
             await _notify_admin(f"[LLM DOWN] +{sender}\nUser: {user_text}\nDetail: {e}")
         return
     except Exception:
@@ -175,14 +176,14 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         await send_text(sender,
                         "Sorry, we're having a temporary issue. A staff member will follow up shortly.",
                         **creds)
-        await asyncio.to_thread(log_message, sender, "out", "[agent error]",
+        await asyncio.to_thread(log_message, tid, sender, "out", "[agent error]",
                                 "error", True)
         await _notify_admin(f"[AGENT ERROR] +{sender}\nUser: {user_text}")
         return
 
     await send_text(sender, ctx.reply, **creds)
     log.info("Out %s: %s", sender, ctx.reply)
-    await asyncio.to_thread(log_message, sender, "out", ctx.reply,
+    await asyncio.to_thread(log_message, tid, sender, "out", ctx.reply,
                             ctx.derived_intent(), ctx.needs_human)
     publish("message", {"wa_user": sender, "direction": "out", "text": ctx.reply,
                         "intent": ctx.derived_intent(), "needs_human": ctx.needs_human})

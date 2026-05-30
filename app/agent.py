@@ -6,7 +6,7 @@ so it never blocks the event loop.
 """
 import logging
 
-from app.config import AGENT_MAX_STEPS
+from app.config import AGENT_MAX_STEPS, CLINIC_DATA
 from app.llm import Msg, generate
 from app.prompts import build_system_prompt
 from app.tools import TOOL_SPECS, AgentContext, dispatch
@@ -28,11 +28,14 @@ def _history_to_messages(history: list[dict]) -> list[Msg]:
     return msgs
 
 
-def run_agent(wa_user: str, user_text: str, history: list[dict]) -> AgentContext:
-    """Drive one user turn to completion. `history` is prior turns (oldest first),
-    excluding the current message."""
-    ctx = AgentContext(wa_user=wa_user)
-    system = build_system_prompt()
+def run_agent(tenant: dict | None, wa_user: str, user_text: str,
+              history: list[dict]) -> AgentContext:
+    """Drive one user turn to completion for a tenant. `history` is prior turns
+    (oldest first), excluding the current message."""
+    clinic_data = (tenant or {}).get("clinic_data") or CLINIC_DATA
+    ctx = AgentContext(wa_user=wa_user, tenant_id=(tenant or {}).get("id") or 0,
+                       clinic_data=clinic_data)
+    system = build_system_prompt(clinic_data)
     messages = _history_to_messages(history)
     messages.append(Msg(role="user", content=user_text))
 
