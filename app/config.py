@@ -75,6 +75,8 @@ LLM_BREAKER_THRESHOLD = int(os.getenv("LLM_BREAKER_THRESHOLD", "3"))
 LLM_BREAKER_COOLDOWN_S = float(os.getenv("LLM_BREAKER_COOLDOWN_S", "60"))
 
 # --- Operations ---
+# Master switch for plan/quota enforcement (counting always happens regardless).
+USAGE_ENFORCEMENT = os.getenv("USAGE_ENFORCEMENT", "true").lower() in ("1", "true", "yes", "on")
 ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "").strip()
 PORT = int(os.getenv("PORT", "8000"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")

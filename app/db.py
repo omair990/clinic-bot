@@ -485,8 +485,23 @@ def list_tenants(period: str) -> list[dict]:
 
 
 def set_tenant_plan(tenant_id: int, plan_id: int) -> None:
+    """Assign a plan. For trial plans, start the trial clock (now + trial_days);
+    otherwise clear any trial expiry."""
     with get_conn() as conn:
-        conn.execute("UPDATE tenants SET plan_id = %s WHERE id = %s", (plan_id, tenant_id))
+        plan = conn.execute(
+            "SELECT is_trial, trial_days FROM plans WHERE id = %s", (plan_id,)
+        ).fetchone()
+        if plan and plan["is_trial"] and plan["trial_days"]:
+            conn.execute(
+                "UPDATE tenants SET plan_id = %s, "
+                "trial_ends_at = now() + make_interval(days => %s) WHERE id = %s",
+                (plan_id, plan["trial_days"], tenant_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE tenants SET plan_id = %s, trial_ends_at = NULL WHERE id = %s",
+                (plan_id, tenant_id),
+            )
 
 
 def set_tenant_status(tenant_id: int, status: str) -> None:

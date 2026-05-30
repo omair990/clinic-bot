@@ -8,11 +8,11 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
 from app.agent import run_agent
-from app.config import ADMIN_WA_NUMBER, WA_APP_SECRET, WA_VERIFY_TOKEN
+from app.config import ADMIN_WA_NUMBER, USAGE_ENFORCEMENT, WA_APP_SECRET, WA_VERIFY_TOKEN
 from app.db import claim_message_id, log_message, recent_history
 from app.events import publish
 from app.llm import LLMUnavailable
-from app.tenancy import record_usage, resolve_tenant
+from app.tenancy import check_quota, record_usage, resolve_tenant
 from app.tools import AgentContext
 from app.transcribe import transcribe_audio
 from app.wa_client import download_media, mark_read, send_text
@@ -119,6 +119,19 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
     if msg_id:
         asyncio.create_task(mark_read(msg_id))
 
+    is_voice = msg.get("type") == "audio"
+    tenant = await asyncio.to_thread(resolve_tenant, phone_number_id)
+
+    # Enforce the tenant's plan (status, trial, voice gating, quotas) BEFORE any
+    # expensive work (transcription, LLM). Unlimited plan => always allowed.
+    if USAGE_ENFORCEMENT:
+        decision = await asyncio.to_thread(check_quota, tenant, is_voice=is_voice)
+        if not decision.allowed:
+            log.info("Blocked %s (tenant %s): %s", sender,
+                     tenant.get("id") if tenant else "?", decision.reason)
+            await send_text(sender, decision.message)
+            return
+
     user_text = await _resolve_text(msg, sender)
     if user_text is None:
         return  # a voice-handling error reply was already sent
@@ -126,9 +139,8 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         await send_text(sender, "Sorry, I couldn't read that. Please type your question.")
         return
 
-    # Meter usage against the tenant this number belongs to (non-blocking).
-    tenant = await asyncio.to_thread(resolve_tenant, phone_number_id)
-    await asyncio.to_thread(record_usage, tenant, is_voice=(msg.get("type") == "audio"))
+    # Count usage now that the message is accepted.
+    await asyncio.to_thread(record_usage, tenant, is_voice=is_voice)
 
     log.info("In  %s: %s", sender, user_text)
     history = await asyncio.to_thread(recent_history, sender, 12)
