@@ -208,6 +208,12 @@ def _render_bubble(p: dict) -> str:
     )
 
 
+_TYPING_BUBBLE = (
+    '<div class="flex justify-end"><div class="px-3 py-2 rounded-lg rounded-tr-sm '
+    'bg-emerald-50 text-emerald-700 text-sm italic">typing<span class="pulse-dot ml-1"></span></div></div>'
+)
+
+
 @router.get("/conversations/{wa_user}/stream")
 async def conversation_stream(request: Request, wa_user: str):
     scope = _scope(request)
@@ -226,7 +232,13 @@ async def conversation_stream(request: Request, wa_user: str):
                         continue
                     if scope is not None and p.get("tenant_id") != scope:
                         continue
-                    yield f"event: message\ndata: {_render_bubble(p)}\n\n"
+                    kind = p.get("type")
+                    if kind == "message":
+                        yield f"event: message\ndata: {_render_bubble(p)}\n\n"
+                    elif kind == "typing":
+                        yield f"event: typing\ndata: {_TYPING_BUBBLE}\n\n"
+                    elif kind == "stoptyping":
+                        yield "event: stoptyping\ndata: <span></span>\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
         finally:
@@ -410,7 +422,10 @@ async def stream(request: Request):
                     break
                 try:
                     payload = await asyncio.wait_for(q.get(), timeout=20.0)
-                    if scope is not None and _json.loads(payload).get("tenant_id") != scope:
+                    _p = _json.loads(payload)
+                    if _p.get("type") != "message":
+                        continue  # ignore typing/stoptyping on the home feed
+                    if scope is not None and _p.get("tenant_id") != scope:
                         continue
                     yield f"event: message\ndata: {_render_event(payload)}\n\n"
                 except asyncio.TimeoutError:

@@ -157,6 +157,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
     history = await asyncio.to_thread(recent_history, tid, sender, 12)
     await asyncio.to_thread(log_message, tid, sender, "in", user_text)
     publish("message", {"wa_user": sender, "direction": "in", "text": user_text, "tenant_id": tid})
+    publish("typing", {"wa_user": sender, "tenant_id": tid})  # bot is generating a reply
 
     try:
         ctx: AgentContext = await asyncio.to_thread(run_agent, tenant, sender, user_text, history)
@@ -178,6 +179,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
             await asyncio.to_thread(incidents.record, "llm", "All LLM providers unavailable",
                                     detail=str(e), tenant_id=tid, wa_user=sender)
             await _notify_admin(f"[LLM DOWN] +{sender}\nUser: {user_text}\nDetail: {e}")
+        publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
         return
     except Exception as ex:
         log.exception("Agent failed for %s", sender)
@@ -189,12 +191,14 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         await asyncio.to_thread(incidents.record, "agent", "Agent crashed handling a message",
                                 detail=repr(ex), tenant_id=tid, wa_user=sender)
         await _notify_admin(f"[AGENT ERROR] +{sender}\nUser: {user_text}")
+        publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
         return
 
     await send_text(sender, ctx.reply, **creds)
     log.info("Out %s: %s", sender, ctx.reply)
     await asyncio.to_thread(log_message, tid, sender, "out", ctx.reply,
                             ctx.derived_intent(), ctx.needs_human)
+    publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
     publish("message", {"wa_user": sender, "direction": "out", "text": ctx.reply,
                         "intent": ctx.derived_intent(), "needs_human": ctx.needs_human,
                         "tenant_id": tid})
