@@ -6,6 +6,7 @@ so it never blocks the event loop.
 """
 import logging
 
+from app import db
 from app.config import AGENT_MAX_STEPS, CLINIC_DATA
 from app.llm import Msg, generate
 from app.prompts import build_system_prompt
@@ -33,9 +34,15 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
     """Drive one user turn to completion for a tenant. `history` is prior turns
     (oldest first), excluding the current message."""
     clinic_data = (tenant or {}).get("clinic_data") or CLINIC_DATA
-    ctx = AgentContext(wa_user=wa_user, tenant_id=(tenant or {}).get("id") or 0,
-                       clinic_data=clinic_data)
-    system = build_system_prompt(clinic_data)
+    tenant_id = (tenant or {}).get("id") or 0
+    ctx = AgentContext(wa_user=wa_user, tenant_id=tenant_id, clinic_data=clinic_data)
+    known_name = None
+    if tenant_id:
+        try:
+            known_name = db.get_patient_name(tenant_id, wa_user)
+        except Exception:  # noqa: BLE001 — name lookup must never block a turn
+            known_name = None
+    system = build_system_prompt(clinic_data, patient_name=known_name, wa_user=wa_user)
     messages = _history_to_messages(history)
     messages.append(Msg(role="user", content=user_text))
 
