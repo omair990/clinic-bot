@@ -65,7 +65,10 @@ availability/bookings (no double-booking), we keep a write-through mirror so ana
 1. **(done)** Google Calendar — hybrid (Google free/busy + events, local mirror). See config below.
 2. **(done)** Cliniko — hybrid (busy overlay + bookings via REST, local mirror). See config below.
 3. **(done)** Custom ERP — config-driven adapter over a small canonical REST contract. See below.
-4. FHIR (hospital + modern dental); closed/on-prem via edge agent or calendar fallback.
+4. **(done)** FHIR (hospital + modern dental) — Slot/Appointment, supports request-to-book. See below.
+
+Closed/on-prem systems with no API still use the fallback ladder (calendar export → edge
+agent → CSV → native + human-in-the-loop); those are deployment/ops choices, not new code.
 
 `get_connector(tenant)` dispatches on `clinic_data.connector.type`.
 
@@ -149,3 +152,28 @@ ERP, have it POST changes to an inbound webhook (reconciliation — dedup like
 
 > `auth.token` is a secret — same storage caveat (encrypt at rest, don't leave plaintext in
 > `clinic_data`). The connector logic is tested with a fake; `GenericErpClient` HTTP is not.
+
+## FHIR connector config
+
+Per-tenant, in `clinic_data.connector`:
+
+```json
+{
+  "type": "fhir",
+  "base_url": "https://fhir.hospital.org/r4",
+  "auth": { "type": "bearer", "token": "<secret>" },
+  "booking_status": "proposed",
+  "schedules": { "Dr. Khalid Al-Otaibi": "Schedule/123" },
+  "practitioners": { "Dr. Khalid Al-Otaibi": "Practitioner/456" }
+}
+```
+
+`auth.type` is `bearer` or `client_credentials` (`{token_url,client_id,client_secret,scope}`).
+Availability = free `Slot` resources for the doctor's `Schedule`; booking posts an
+`Appointment`. `booking_status` is `booked` (direct) or `proposed` (**request-to-book** — the
+HIS staff confirm; the connector returns `pending: true` and the local mirror represents the
+request). Reschedule/cancel patch the Appointment; a HIS failure keeps the local booking.
+
+> Production SMART backend auth often needs a signed **JWT client assertion** rather than a
+> plain client_secret — wire that into `FhirClient._token()` for your server. The `token`/
+> `client_secret` are secrets (encrypt at rest). Logic tested with a fake; HTTP client not.

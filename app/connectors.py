@@ -606,6 +606,201 @@ def _build_erp_client(conf: dict) -> ErpApi:
     return GenericErpClient(base_url=conf["base_url"], auth=conf.get("auth"))
 
 
+# --- FHIR (Phase 4) — hospital HIS / modern dental via FHIR R4 ---
+#
+# Availability comes from FHIR `Slot` resources (status=free); bookings are `Appointment`
+# resources. Many hospitals only permit request-to-book (Appointment.status="proposed",
+# staff confirm in the HIS) rather than a direct "booked" — set config.booking_status.
+
+class FhirApi(ABC):
+    """I/O boundary for a FHIR R4 scheduling server."""
+
+    @abstractmethod
+    def free_slots(self, schedule_ref: str, time_min: datetime,
+                   time_max: datetime) -> list[datetime]: ...
+
+    @abstractmethod
+    def find_or_create_patient(self, name: str | None, phone: str) -> str: ...
+
+    @abstractmethod
+    def create_appointment(self, *, practitioner_ref: str, patient_ref: str,
+                           start: datetime, end: datetime, status: str) -> str: ...
+
+    @abstractmethod
+    def update_appointment(self, appointment_id: str, start: datetime, end: datetime) -> None: ...
+
+    @abstractmethod
+    def cancel_appointment(self, appointment_id: str) -> None: ...
+
+
+class FhirConnector(ClinicConnector):
+    """Hybrid connector for a FHIR server: the HIS owns slots + appointments, we mirror
+    locally. Doctors map to a Schedule (for availability) and a Practitioner (for booking)
+    via config. `booking_status` is 'booked' (direct) or 'proposed' (request-to-book)."""
+
+    def __init__(self, tenant_id: int, config: dict, client: FhirApi):
+        self.tenant_id = tenant_id
+        self.config = config or {}
+        self.client = client
+        self._sched = {str(k).lower(): v for k, v in (config.get("schedules") or {}).items()}
+        self._pract = {str(k).lower(): v for k, v in (config.get("practitioners") or {}).items()}
+        self.booking_status = config.get("booking_status", "booked")
+
+    def capabilities(self) -> set[str]:
+        return {READ_AVAILABILITY, CREATE, RESCHEDULE, CANCEL, LIST}
+
+    def _schedule(self, doctor_name):
+        return self._sched.get(str(doctor_name or "").lower())
+
+    def _practitioner(self, doctor_name):
+        return self._pract.get(str(doctor_name or "").lower())
+
+    def available_slots(self, doctor, on, duration_min, now):
+        sched = self._schedule(doctor.get("name"))
+        if not sched:
+            return []
+        day_start, day_end = day_bounds(on)
+        return [s for s in self.client.free_slots(sched, day_start, day_end) if s > now]
+
+    def create_appointment(self, *, wa_user, patient_name, phone, doctor, service,
+                           start, end, extra=None):
+        row = db.create_appointment(self.tenant_id, wa_user, patient_name, phone, doctor,
+                                    service, start, end, extra=extra)
+        if row.get("conflict"):
+            return row
+        pract = self._practitioner(doctor)
+        if pract:
+            try:
+                patient_ref = self.client.find_or_create_patient(patient_name, phone or wa_user)
+                ext = self.client.create_appointment(
+                    practitioner_ref=pract, patient_ref=patient_ref, start=start, end=end,
+                    status=self.booking_status)
+                db.set_appointment_external_id(self.tenant_id, row["id"], ext)
+                row = {**row, "external_id": ext, "pending": self.booking_status == "proposed"}
+            except Exception:  # noqa: BLE001 — keep the booking if the HIS write fails
+                log.exception("FHIR create failed for appt %s (booking kept)", row["id"])
+        return row
+
+    def upcoming_appointments(self, wa_user, now):
+        return db.upcoming_appointments(self.tenant_id, wa_user, now)
+
+    def get_appointment(self, appointment_id):
+        return db.get_appointment(self.tenant_id, appointment_id)
+
+    def reschedule(self, appointment_id, start, end):
+        appt = db.get_appointment(self.tenant_id, appointment_id)
+        if not appt:
+            return {"not_found": True}
+        if appt.get("external_id"):
+            try:
+                self.client.update_appointment(appt["external_id"], start, end)
+            except Exception:  # noqa: BLE001
+                log.exception("FHIR update failed for appt %s", appointment_id)
+        return db.reschedule(self.tenant_id, appointment_id, start, end)
+
+    def set_status(self, appointment_id, status):
+        appt = db.get_appointment(self.tenant_id, appointment_id)
+        if appt and status == "cancelled" and appt.get("external_id"):
+            try:
+                self.client.cancel_appointment(appt["external_id"])
+            except Exception:  # noqa: BLE001
+                log.exception("FHIR cancel failed for appt %s", appointment_id)
+        db.set_appointment_status(self.tenant_id, appointment_id, status)
+
+
+class FhirClient(FhirApi):
+    """Live FHIR R4 client. Auth is config-driven: {"type":"bearer","token":…} or
+    {"type":"client_credentials","token_url":…,"client_id":…,"client_secret":…,"scope":…}.
+    NOT exercised by tests; production SMART backend auth often needs a signed JWT assertion
+    — verify against your server before go-live."""
+
+    def __init__(self, *, base_url: str, auth: dict | None = None):
+        self.base = base_url.rstrip("/")
+        self.auth = auth or {}
+
+    def _token(self) -> str:
+        if self.auth.get("type") == "bearer":
+            return self.auth.get("token", "")
+        if self.auth.get("type") == "client_credentials":
+            import httpx
+            r = httpx.post(self.auth["token_url"], timeout=15, data={
+                "grant_type": "client_credentials", "client_id": self.auth["client_id"],
+                "client_secret": self.auth.get("client_secret", ""),
+                "scope": self.auth.get("scope", "system/Appointment.write system/Slot.read")})
+            r.raise_for_status()
+            return r.json()["access_token"]
+        return ""
+
+    def _headers(self) -> dict:
+        h = {"Accept": "application/fhir+json", "Content-Type": "application/fhir+json"}
+        tok = self._token()
+        if tok:
+            h["Authorization"] = f"Bearer {tok}"
+        return h
+
+    def free_slots(self, schedule_ref, time_min, time_max):
+        import httpx
+        r = httpx.get(f"{self.base}/Slot", headers=self._headers(), timeout=15, params={
+            "schedule": schedule_ref, "status": "free",
+            "start": [f"ge{time_min.isoformat()}", f"lt{time_max.isoformat()}"]})
+        r.raise_for_status()
+        out = []
+        for e in r.json().get("entry", []):
+            start = (e.get("resource") or {}).get("start")
+            if start:
+                out.append(datetime.fromisoformat(start.replace("Z", "+00:00")))
+        return out
+
+    def find_or_create_patient(self, name, phone):
+        import httpx
+        r = httpx.get(f"{self.base}/Patient", headers=self._headers(), timeout=15,
+                      params={"telecom": phone})
+        r.raise_for_status()
+        entries = r.json().get("entry", [])
+        if entries:
+            return f"Patient/{entries[0]['resource']['id']}"
+        first, _, last = (name or "Patient").partition(" ")
+        r = httpx.post(f"{self.base}/Patient", headers=self._headers(), timeout=15, json={
+            "resourceType": "Patient", "name": [{"given": [first or "Patient"],
+                                                 "family": last or "(WhatsApp)"}],
+            "telecom": [{"system": "phone", "value": phone}]})
+        r.raise_for_status()
+        return f"Patient/{r.json()['id']}"
+
+    def create_appointment(self, *, practitioner_ref, patient_ref, start, end, status):
+        import httpx
+        r = httpx.post(f"{self.base}/Appointment", headers=self._headers(), timeout=15, json={
+            "resourceType": "Appointment", "status": status,
+            "start": start.isoformat(), "end": end.isoformat(),
+            "participant": [{"actor": {"reference": practitioner_ref}, "status": "accepted"},
+                            {"actor": {"reference": patient_ref}, "status": "accepted"}]})
+        r.raise_for_status()
+        return str(r.json()["id"])
+
+    def update_appointment(self, appointment_id, start, end):
+        import httpx
+        r = httpx.patch(f"{self.base}/Appointment/{appointment_id}",
+                        headers={**self._headers(), "Content-Type": "application/json-patch+json"},
+                        timeout=15, json=[
+                            {"op": "replace", "path": "/start", "value": start.isoformat()},
+                            {"op": "replace", "path": "/end", "value": end.isoformat()}])
+        r.raise_for_status()
+
+    def cancel_appointment(self, appointment_id):
+        import httpx
+        r = httpx.patch(f"{self.base}/Appointment/{appointment_id}",
+                        headers={**self._headers(), "Content-Type": "application/json-patch+json"},
+                        timeout=15, json=[{"op": "replace", "path": "/status", "value": "cancelled"}])
+        if r.status_code not in (200, 204, 404):
+            r.raise_for_status()
+
+
+def _build_fhir_client(conf: dict) -> FhirApi:
+    if not conf.get("base_url"):
+        raise RuntimeError("FHIR connector not configured (base_url)")
+    return FhirClient(base_url=conf["base_url"], auth=conf.get("auth"))
+
+
 def get_connector(tenant: dict | None) -> ClinicConnector:
     """Resolve the connector for a tenant from clinic_data.connector.type. Falls back to
     NativeConnector (our DB) for unconfigured tenants or if a connector fails to initialise."""
@@ -619,6 +814,8 @@ def get_connector(tenant: dict | None) -> ClinicConnector:
             return ClinikoConnector(tenant_id, conf, _build_cliniko_client(conf))
         if ctype == "custom_erp":
             return CustomErpConnector(tenant_id, conf, _build_erp_client(conf))
+        if ctype == "fhir":
+            return FhirConnector(tenant_id, conf, _build_fhir_client(conf))
     except Exception:  # noqa: BLE001 — a misconfigured connector must not break bookings
         log.exception("connector '%s' init failed for tenant %s; using native", ctype, tenant_id)
     return NativeConnector(tenant_id)
