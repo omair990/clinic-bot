@@ -75,6 +75,11 @@ class AgentContext:
     actions: list[str] = field(default_factory=list)
     # Set by the reply guard when it blocks an unbacked booking confirmation (for incidents).
     guard_tripped: bool = False
+    # Availability the tools actually surfaced this turn — the only times the reply may
+    # offer. availability_checked gates the availability guard (no check ⇒ don't police
+    # times, so it never fires on general "we're open 9–11" answers).
+    availability_checked: bool = False
+    offered_times: set = field(default_factory=set)
     # The patient's open no-show follow-up (missed appointment we're recovering), if any.
     no_show: dict | None = None
     # A pending post-visit review request awaiting the patient's star rating, if any.
@@ -235,6 +240,9 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
 
     now = _now()
     slots = _conn(ctx).available_slots(doctor, on, duration, now)
+    # Record the real slots so the reply guard can reject any time the bot invents.
+    ctx.availability_checked = True
+    ctx.offered_times.update(s.strftime("%H:%M") for s in slots)
     result = {
         "doctor": doctor["name"],
         "date": on.isoformat(),
@@ -287,6 +295,8 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
 
     conn = _conn(ctx)
     valid = conn.available_slots(doctor, start.date(), service["duration_min"], _now())
+    ctx.availability_checked = True
+    ctx.offered_times.update(s.strftime("%H:%M") for s in valid)
     if start not in valid:
         return {"error": "slot_unavailable",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
@@ -304,6 +314,7 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
                                   start=start, end=end, extra=extra or None)
     if row.get("conflict"):
         valid = conn.available_slots(doctor, start.date(), service["duration_min"], _now())
+        ctx.offered_times.update(s.strftime("%H:%M") for s in valid)
         return {"error": "just_taken",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
@@ -407,6 +418,8 @@ def _reschedule_appointment(args: dict, ctx: AgentContext) -> dict:
     conn = _conn(ctx)
     doctor = find_doctor(appt["doctor"], ctx.doctors)
     valid = conn.available_slots(doctor, start.date(), int(duration.total_seconds() // 60), _now())
+    ctx.availability_checked = True
+    ctx.offered_times.update(s.strftime("%H:%M") for s in valid)
     if start not in valid:
         return {"error": "slot_unavailable",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}

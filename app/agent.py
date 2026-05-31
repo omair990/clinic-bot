@@ -62,7 +62,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
 
         if not result.tool_calls:
             ctx.reply = (result.text or "").strip() or _FALLBACK_REPLY
-            reply_guard.verify(ctx)   # never confirm a booking the DB can't back
+            reply_guard.verify(ctx, user_text)   # never state a booking/time we can't back
             return ctx
 
         messages.append(Msg(role="assistant", content=result.text or "",
@@ -77,7 +77,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
     ctx.needs_human = True
     if not ctx.reply:
         ctx.reply = _FALLBACK_REPLY
-    reply_guard.verify(ctx)
+    reply_guard.verify(ctx, user_text)
     return ctx
 
 

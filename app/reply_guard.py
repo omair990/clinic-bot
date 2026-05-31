@@ -1,20 +1,22 @@
-"""Strict booking-confirmation guard.
+"""Strict patient-facing truthfulness guards.
 
-The model writes the patient-facing reply in free prose, so it can *say* an appointment is
-booked/confirmed even when the booking tool returned an error or was never called. This
-guard refuses to let an unbacked confirmation reach the patient: if the reply claims a
-booking but there is **no database-backed appointment** for this patient, it swaps in a safe
-message and escalates to staff.
+The model writes replies in free prose, so it can *state* things that aren't true:
+  1. claim an appointment is booked/confirmed when the tool errored or wasn't called, or
+  2. offer appointment times that the availability tool never returned.
 
-A claim is considered backed if either:
-  * an appointment was booked/rescheduled *this turn* (`ctx.booked_ids` / `ctx.changed_ids`,
-    already verified against the DB by the booking tools), or
-  * the patient already has a confirmed, not-yet-ended appointment in the DB (so confirming
-    an existing booking on a later turn is truthful).
+These guards refuse to let either reach the patient:
+  * Booking guard — if the reply claims a booking but there is no database-backed
+    appointment (none booked/rescheduled this turn, and none confirmed-and-upcoming in the
+    DB), swap in a safe message and escalate to staff.
+  * Availability guard — if the reply offers a clock time that the availability tool did NOT
+    return this turn (and the patient didn't propose it), the bot is inventing availability;
+    correct it to the real slots (or defer) and escalate. Only active once availability was
+    actually checked, so it never fires on general "we're open 9–11" answers.
 
-`should_block` is pure and unit-tested; `verify` applies the decision to the context.
+The decision functions are pure and unit-tested; `verify` applies them to the context.
 """
 import logging
+import re
 
 from app import db
 
@@ -65,12 +67,107 @@ def should_block(ctx) -> bool:
     return claims_booking(ctx.reply) and not _has_backed_appointment(ctx)
 
 
-def verify(ctx) -> None:
-    """Mutate ctx in place: block an unbacked booking confirmation and escalate."""
-    if not should_block(ctx):
+# --------------------------------------------------------------------------- availability
+_AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+# "5 PM", "5:30pm", "17:00", "9 a.m.", "٥ مساءً"
+_TIME_RE = re.compile(
+    r"(?<!\d)(\d{1,2})(?::(\d{2}))?\s*"
+    r"(a\.?m\.?|p\.?m\.?|صباح\w*|مساء\w*)?",
+    re.IGNORECASE,
+)
+_PM_WORDS = ("pm", "p.m", "p.m.", "مساء")
+_AM_WORDS = ("am", "a.m", "a.m.", "صباح")
+
+SAFE_AVAIL_DEFER = (
+    "Let me re-check the available times so I give you accurate slots — our team will "
+    "confirm the exact times with you shortly."
+)
+
+
+def _hhmm(h: int, m: int) -> str:
+    return f"{h % 24:02d}:{m:02d}"
+
+
+def _fmt_12h(hhmm: str) -> str:
+    h, m = (int(x) for x in hhmm.split(":"))
+    ap = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d} {ap}"
+
+
+def time_mentions(text: str) -> list[set]:
+    """Every clock time mentioned, each as a set of plausible 'HH:MM' values. A bare hour
+    with no am/pm yields both interpretations (lenient — avoids false positives); an explicit
+    meridiem or a 24h value yields one. Bare integers without ':' or am/pm are ignored, so
+    prices/durations/dates don't register."""
+    text = (text or "").translate(_AR_DIGITS)
+    out: list[set] = []
+    for m in _TIME_RE.finditer(text):
+        hour = int(m.group(1))
+        has_min = m.group(2) is not None
+        minute = int(m.group(2)) if has_min else 0
+        mer = (m.group(3) or "").lower()
+        if hour > 23 or minute > 59:
+            continue
+        # require a real time token: a ':MM' or an explicit meridiem
+        if not has_min and not mer:
+            continue
+        if any(mer.startswith(w) for w in _PM_WORDS):
+            out.append({_hhmm(hour if hour == 12 else hour + 12, minute)})
+        elif any(mer.startswith(w) for w in _AM_WORDS):
+            out.append({_hhmm(0 if hour == 12 else hour, minute)})
+        elif hour >= 13:
+            out.append({_hhmm(hour, minute)})              # unambiguous 24h
+        else:
+            out.append({_hhmm(hour, minute), _hhmm(hour + 12, minute)})  # am or pm
+    return out
+
+
+def _allowed_times(ctx, user_text: str) -> set:
+    """Times the reply may mention: real slots surfaced this turn + times the patient
+    themselves proposed (so 'you asked for 5 PM, but it's taken' isn't flagged)."""
+    allowed = set(getattr(ctx, "offered_times", set()) or set())
+    for cand in time_mentions(user_text):
+        allowed |= cand
+    return allowed
+
+
+def unverified_offer_times(ctx, user_text: str) -> list[set]:
+    allowed = _allowed_times(ctx, user_text)
+    return [cand for cand in time_mentions(ctx.reply) if not (cand & allowed)]
+
+
+def should_block_availability(ctx, user_text: str = "") -> bool:
+    """True if the reply offers a time the availability tool didn't return this turn."""
+    if not getattr(ctx, "availability_checked", False):
+        return False                       # availability never checked → don't police times
+    return bool(unverified_offer_times(ctx, user_text))
+
+
+def _availability_reply(ctx) -> str:
+    real = sorted(getattr(ctx, "offered_times", set()) or set())
+    if real:
+        shown = ", ".join(_fmt_12h(t) for t in real[:12])
+        return ("To make sure I give you the right times, the actually available slots are: "
+                f"{shown}. Which one works for you?")
+    return SAFE_AVAIL_DEFER
+
+
+def verify(ctx, user_text: str = "") -> None:
+    """Mutate ctx in place: block an unbacked booking confirmation, else block an invented
+    availability offer. Escalates to staff in either case."""
+    if should_block(ctx):
+        log.error("BLOCKED unbacked booking confirmation (tenant %s, user %s): %r",
+                  ctx.tenant_id, ctx.wa_user, (ctx.reply or "")[:200])
+        ctx.reply = SAFE_REPLY
+        ctx.needs_human = True
+        ctx.guard_tripped = True
         return
-    log.error("BLOCKED unbacked booking confirmation (tenant %s, user %s): %r",
-              ctx.tenant_id, ctx.wa_user, (ctx.reply or "")[:200])
-    ctx.reply = SAFE_REPLY
-    ctx.needs_human = True
-    ctx.guard_tripped = True
+    if should_block_availability(ctx, user_text):
+        bad = unverified_offer_times(ctx, user_text)
+        log.error("BLOCKED invented availability (tenant %s, user %s): offered %s not in %s | %r",
+                  ctx.tenant_id, ctx.wa_user, bad, sorted(getattr(ctx, "offered_times", set())),
+                  (ctx.reply or "")[:200])
+        ctx.reply = _availability_reply(ctx)
+        ctx.needs_human = True
+        ctx.guard_tripped = True
