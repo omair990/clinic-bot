@@ -17,8 +17,9 @@ The detection sweep is driven by a background loop in main.py. `compute_risk` ha
 I/O so it's unit-tested directly; everything else is thin orchestration over db.py.
 
 NOTE: proactive (business-initiated) WhatsApp messages outside the 24-hour customer-care
-window require a pre-approved message template. This module sends free-form text like the
-rest of the app; in production, wire these to approved templates.
+window require a pre-approved message template. Set NO_SHOW_USE_TEMPLATES=true and register
+the templates (see config.py) to send via templates; otherwise these go as free-form text,
+which only delivers inside the 24h window.
 """
 import asyncio
 import logging
@@ -32,10 +33,15 @@ from app.config import (
     NO_SHOW_INACTIVE_HOURS,
     NO_SHOW_PREDICTOR,
     NO_SHOW_RISK_REMINDER_LEAD_HOURS,
+    NO_SHOW_TEMPLATE_LANG,
+    NO_SHOW_USE_TEMPLATES,
     TZ,
+    WA_TEMPLATE_FOLLOWUP,
+    WA_TEMPLATE_NO_SHOW,
+    WA_TEMPLATE_REMINDER,
 )
 from app.events import publish
-from app.wa_client import send_text
+from app.wa_client import send_template, send_text
 
 log = logging.getLogger(__name__)
 
@@ -142,22 +148,53 @@ def _creds(tenant: dict) -> dict:
             "access_token": tenant.get("wa_access_token")}
 
 
-async def _send_and_log(to: str, body: str, creds: dict, tenant_id: int) -> None:
+# Fallback template names from env, by message kind.
+_ENV_TEMPLATES = {"no_show": WA_TEMPLATE_NO_SHOW, "followup": WA_TEMPLATE_FOLLOWUP,
+                  "reminder": WA_TEMPLATE_REMINDER}
+
+
+def resolve_template(kind: str, tenant: dict | None) -> dict | None:
+    """The approved template to use for this message kind, or None to send free text.
+
+    Templates are only used when NO_SHOW_USE_TEMPLATES is on AND a name is configured —
+    per-tenant via clinic_data.no_show_templates, else the platform env default. This
+    lets a clinic adopt templates without forcing every clinic to.
+    """
+    if not NO_SHOW_USE_TEMPLATES:
+        return None
+    cfg = ((tenant or {}).get("clinic_data") or {}).get("no_show_templates") or {}
+    name = cfg.get(kind) or _ENV_TEMPLATES.get(kind)
+    if not name:
+        return None
+    return {"name": name, "language": cfg.get("language") or NO_SHOW_TEMPLATE_LANG}
+
+
+async def _send_and_log(to: str, body: str, creds: dict, tenant_id: int, *,
+                        template: dict | None = None, params: list | None = None) -> None:
     """Send a proactive message and mirror it into the conversation log + live feed,
-    so it shows up in the dashboard and the agent has it in history on the reply."""
-    await send_text(to, body, **creds)
+    so it shows up in the dashboard and the agent has it in history on the reply.
+
+    Sends via an approved template when one is given (needed outside the 24h window),
+    otherwise free-form text. Either way we log the human-readable `body` so the
+    dashboard and the agent's history stay readable."""
+    if template:
+        await send_template(to, template["name"], template["language"], params, **creds)
+    else:
+        await send_text(to, body, **creds)
     await asyncio.to_thread(db.log_message, tenant_id, to, "out", body, NO_SHOW_INTENT, False)
     publish("message", {"wa_user": to, "direction": "out", "text": body,
                         "intent": NO_SHOW_INTENT, "tenant_id": tenant_id})
-    log.info("no-show out %s: %s", to, body[:80])
+    log.info("no-show out %s (%s): %s", to, "template" if template else "text", body[:80])
 
 
 async def send_no_show_notification(*, to: str, service: str | None, doctor: str | None,
                                     creds: dict, tenant_id: int, followup_id: int,
-                                    advance: bool = True) -> None:
+                                    tenant: dict | None = None, advance: bool = True) -> None:
     """Send the initial recovery message. Used by both the sweep (auto-send) and the
     dashboard's manual 'Send'/'Resend'. `advance=True` moves the follow-up to 'notified'."""
-    await _send_and_log(to, no_show_message(service, doctor), creds, tenant_id)
+    template = resolve_template("no_show", tenant)
+    await _send_and_log(to, no_show_message(service, doctor), creds, tenant_id,
+                        template=template, params=[_subject(service, doctor)])
     if advance:
         await asyncio.to_thread(db.set_followup_stage, followup_id, "notified",
                                 stamp="notified_at")
@@ -182,7 +219,7 @@ async def _detect_no_shows(now: datetime, tenants: dict[int, dict]) -> int:
             try:
                 await send_no_show_notification(
                     to=a["wa_user"], service=a["service"], doctor=a["doctor"],
-                    creds=_creds(tenant), tenant_id=tid, followup_id=fu["id"])
+                    creds=_creds(tenant), tenant_id=tid, followup_id=fu["id"], tenant=tenant)
             except Exception as ex:  # noqa: BLE001 — one failure mustn't stop the sweep
                 log.exception("no-show notify failed for %s", a["wa_user"])
                 incidents.record("whatsapp", "No-show notification failed",
@@ -200,7 +237,9 @@ async def _send_followups(now: datetime, tenants: dict[int, dict]) -> int:
             continue
         try:
             await _send_and_log(f["wa_user"], followup_message(f["service"], f["doctor"]),
-                                _creds(tenant), f["tenant_id"])
+                                _creds(tenant), f["tenant_id"],
+                                template=resolve_template("followup", tenant),
+                                params=[_subject(f["service"], f["doctor"])])
             await asyncio.to_thread(db.set_followup_stage, f["id"], "followed_up",
                                     stamp="followup_at")
             count += 1
@@ -239,7 +278,9 @@ async def _score_and_remind(now: datetime, tenants: dict[int, dict]) -> tuple[in
         when = a["start_at"].astimezone(TZ).strftime("%A %d %B, %I:%M %p")
         try:
             await _send_and_log(a["wa_user"], reminder_message(a["service"], a["doctor"], when),
-                                _creds(tenant), a["tenant_id"])
+                                _creds(tenant), a["tenant_id"],
+                                template=resolve_template("reminder", tenant),
+                                params=[_subject(a["service"], a["doctor"]), when])
             await asyncio.to_thread(db.mark_reminded, a["tenant_id"], a["id"])
             reminded += 1
         except Exception as ex:  # noqa: BLE001

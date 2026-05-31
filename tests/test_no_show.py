@@ -44,3 +44,34 @@ def test_last_minute_booking_raises_risk():
 def test_reason_labels_cover_enum():
     for r in REASONS:
         assert r in REASON_LABELS
+
+
+def test_resolve_template_off_by_default(monkeypatch):
+    import app.no_show as ns
+    monkeypatch.setattr(ns, "NO_SHOW_USE_TEMPLATES", False)
+    assert ns.resolve_template("no_show", {"clinic_data": {}}) is None
+
+
+def test_resolve_template_uses_env_default(monkeypatch):
+    import app.no_show as ns
+    monkeypatch.setattr(ns, "NO_SHOW_USE_TEMPLATES", True)
+    monkeypatch.setattr(ns, "_ENV_TEMPLATES", {"no_show": "env_no_show"})
+    monkeypatch.setattr(ns, "NO_SHOW_TEMPLATE_LANG", "en")
+    t = ns.resolve_template("no_show", None)
+    assert t == {"name": "env_no_show", "language": "en"}
+
+
+def test_resolve_template_tenant_override_wins(monkeypatch):
+    import app.no_show as ns
+    monkeypatch.setattr(ns, "NO_SHOW_USE_TEMPLATES", True)
+    monkeypatch.setattr(ns, "_ENV_TEMPLATES", {"no_show": "env_no_show"})
+    tenant = {"clinic_data": {"no_show_templates": {"no_show": "clinic_tmpl", "language": "ar"}}}
+    t = ns.resolve_template("no_show", tenant)
+    assert t == {"name": "clinic_tmpl", "language": "ar"}
+
+
+def test_resolve_template_none_when_no_name(monkeypatch):
+    import app.no_show as ns
+    monkeypatch.setattr(ns, "NO_SHOW_USE_TEMPLATES", True)
+    monkeypatch.setattr(ns, "_ENV_TEMPLATES", {"no_show": ""})
+    assert ns.resolve_template("no_show", {"clinic_data": {}}) is None

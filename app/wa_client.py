@@ -47,6 +47,38 @@ async def send_text(to: str, body: str, *, phone_number_id: str | None = None,
         return r.json()
 
 
+async def send_template(to: str, name: str, language: str, params: list | None = None, *,
+                        phone_number_id: str | None = None,
+                        access_token: str | None = None) -> dict:
+    """Send a pre-approved message template — the only way to start a conversation
+    outside WhatsApp's 24-hour customer-care window (business-initiated messages).
+
+    `params` are positional body variables ({{1}}, {{2}}, …) in the order the approved
+    template defines them. The template name and language must match one registered in
+    the WhatsApp Business account.
+    """
+    pn, token = _resolve_creds(phone_number_id, access_token)
+    payload = build_template_payload(to, name, language, params)
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(_messages_url(pn), headers=_auth(token), json=payload)
+        if r.status_code >= 400:
+            log.error("WA send_template(%s) failed status=%s body=%s", name, r.status_code, r.text)
+        r.raise_for_status()
+        return r.json()
+
+
+def build_template_payload(to: str, name: str, language: str, params: list | None = None) -> dict:
+    """The template message body (without creds) — exposed for unit testing the shape."""
+    template: dict = {"name": name, "language": {"code": language}}
+    if params:
+        template["components"] = [{
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(p)[:1024]} for p in params],
+        }]
+    return {"messaging_product": "whatsapp", "recipient_type": "individual",
+            "to": to, "type": "template", "template": template}
+
+
 async def download_media(media_id: str, *, access_token: str | None = None) -> tuple[bytes, str]:
     """Resolve a WhatsApp media id to (bytes, mime_type).
 

@@ -99,6 +99,20 @@ NO_SHOW_INACTIVE_HOURS = int(os.getenv("NO_SHOW_INACTIVE_HOURS", "24"))
 NO_SHOW_PREDICTOR = _flag("NO_SHOW_PREDICTOR", True)
 NO_SHOW_RISK_REMINDER_LEAD_HOURS = int(os.getenv("NO_SHOW_RISK_REMINDER_LEAD_HOURS", "24"))
 
+# Proactive (business-initiated) WhatsApp messages outside the 24-hour customer-care
+# window require a PRE-APPROVED message template. Turn this on once the templates below
+# are registered & approved in your WhatsApp Business account; until then the no-show
+# messages send as free-form text (fine in dev / inside the 24h window).
+# A clinic can override the names/language per-tenant via clinic_data.no_show_templates:
+#   {"no_show": "...", "followup": "...", "reminder": "...", "language": "en"}
+# Expected body variables: no_show/followup -> {{1}} appointment summary;
+#   reminder -> {{1}} appointment summary, {{2}} date & time.
+NO_SHOW_USE_TEMPLATES = _flag("NO_SHOW_USE_TEMPLATES", False)
+NO_SHOW_TEMPLATE_LANG = os.getenv("NO_SHOW_TEMPLATE_LANG", "en")
+WA_TEMPLATE_NO_SHOW = os.getenv("WA_TEMPLATE_NO_SHOW", "").strip()
+WA_TEMPLATE_FOLLOWUP = os.getenv("WA_TEMPLATE_FOLLOWUP", "").strip()
+WA_TEMPLATE_REMINDER = os.getenv("WA_TEMPLATE_REMINDER", "").strip()
+
 # --- LLM resilience ---
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).

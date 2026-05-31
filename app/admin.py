@@ -325,7 +325,7 @@ async def no_show_action(request: Request, followup_id: int, action: str = Form(
                 await no_show_mod.send_no_show_notification(
                     to=fu["wa_user"], service=fu.get("service"), doctor=fu.get("doctor"),
                     creds=creds, tenant_id=fu["tenant_id"], followup_id=fu["id"],
-                    advance=(fu["stage"] == "detected"))
+                    tenant=tenant, advance=(fu["stage"] == "detected"))
             except Exception as e:  # noqa: BLE001
                 log.warning("manual no-show send failed: %s", str(e)[:160])
     elif action == "resolve":
