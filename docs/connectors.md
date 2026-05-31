@@ -63,7 +63,7 @@ availability/bookings (no double-booking), we keep a write-through mirror so ana
 
 0. **(done)** Extract `ClinicConnector` + `NativeConnector`; route tools through `ctx.connector`. Behavior-identical.
 1. **(done)** Google Calendar — hybrid (Google free/busy + events, local mirror). See config below.
-2. Cliniko (first PMS; hybrid SoR + webhooks).
+2. **(done)** Cliniko — hybrid (busy overlay + bookings via REST, local mirror). See config below.
 3. Custom ERP via a generic webhook/REST adapter + config-driven mapping.
 4. FHIR (hospital + modern dental); closed/on-prem via edge agent or calendar fallback.
 
@@ -92,4 +92,30 @@ calendar write failure never loses the booking (mirror is authoritative for the 
 > Live I/O (`GoogleCalendarClient`) needs the tenant's Google authorization and is not
 > covered by tests — verify against a real calendar. The refresh token is a secret and must
 > not live in plaintext `clinic_data` in production (encrypt at rest / use a secret store).
+
+## Cliniko connector config
+
+Per-tenant, in `clinic_data.connector`:
+
+```json
+{
+  "type": "cliniko",
+  "api_key": "<cliniko api key, e.g. MS0x...-au4>",
+  "user_agent": "Your Clinic (you@clinic.com)",
+  "business_id": "<businessId>",
+  "practitioners": { "Dr. Khalid Al-Otaibi": "<practitionerId>" },
+  "appointment_types": { "Dental Checkup": "<appointmentTypeId>" }
+}
+```
+
+Behaviour: availability = doctor's `available_hours` (clinic_data) minus Cliniko's existing
+bookings for that practitioner (busy overlay); bookings find/create a Cliniko patient and
+create an `individual_appointment`, mirrored locally (`external_id` = Cliniko id).
+Reschedule/cancel propagate to Cliniko; a Cliniko failure keeps the local booking.
+
+> Live I/O (`ClinikoClient`): API-key Basic auth, shard from the key suffix, required
+> User-Agent. The `api_key` is a secret (same storage caveat as above). Endpoint/field
+> names follow Cliniko v1 — **verify against current Cliniko API docs** before go-live;
+> the connector *logic* is tested with a fake, the HTTP client is not.
+
 
