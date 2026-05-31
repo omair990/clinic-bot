@@ -24,6 +24,7 @@ from app.db import (
     admin_set_appointment_status,
     conversation_thread,
     create_tenant,
+    delete_tenant,
     get_appointment_by_id,
     get_followup,
     get_tenant,
@@ -686,6 +687,39 @@ async def change_tenant_status(request: Request, tenant_id: int, status: str = F
     return RedirectResponse("/admin/plans", status_code=303)
 
 
+@router.post("/tenants/{tenant_id}/delete")
+async def delete_tenant_route(request: Request, tenant_id: int,
+                              confirm_slug: str = Form("")):
+    """Hard-delete a tenant and all its data. Guarded by a three-part safety gate:
+    super-admin only, never the default/primary tenant, and the admin must re-type the
+    tenant's exact slug to confirm (so it can't be fat-fingered)."""
+    _require_super(request)
+    t = get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    # GATE 1: the platform's primary/live tenant is never deletable.
+    if tenant_id == 1 or t.get("slug") == "default":
+        return _render_tenant_edit(
+            request, tenant_id, name=t.get("name", ""),
+            wa_phone_number_id=t.get("wa_phone_number_id") or "",
+            timezone=t.get("timezone") or "Asia/Riyadh", wa_access_token="",
+            clinic_data_raw="", staff_username=t.get("staff_username") or "",
+            error="The default tenant cannot be deleted.", status_code=403)
+    # GATE 2: typed slug must match exactly.
+    if confirm_slug.strip() != t.get("slug"):
+        return _render_tenant_edit(
+            request, tenant_id, name=t.get("name", ""),
+            wa_phone_number_id=t.get("wa_phone_number_id") or "",
+            timezone=t.get("timezone") or "Asia/Riyadh", wa_access_token="",
+            clinic_data_raw="", staff_username=t.get("staff_username") or "",
+            error=f'To delete this clinic, type its slug "{t.get("slug")}" to confirm.',
+            status_code=400)
+    cleared = delete_tenant(tenant_id)
+    log.warning("Tenant %s (%s) hard-deleted by super admin; cleared %s child table(s)",
+                tenant_id, t.get("slug"), cleared)
+    return RedirectResponse("/admin/plans", status_code=303)
+
+
 class ClinicDataError(Exception):
     """Carries field-level validation messages so the route can re-render the form."""
     def __init__(self, errors: list[str], warnings: list[str] | None = None):
@@ -749,16 +783,20 @@ async def add_tenant(request: Request,
 
 
 @router.get("/tenants/{tenant_id}/edit", response_class=HTMLResponse)
-async def edit_tenant_page(request: Request, tenant_id: int):
+async def edit_tenant_page(request: Request, tenant_id: int, saved: int = 0):
     _require_super(request)
     tenant = get_tenant(tenant_id)
     if not tenant:
         raise HTTPException(404, "Tenant not found")
     data = tenant.get("clinic_data") or {}
     pretty = json.dumps(data, indent=2, ensure_ascii=False)
+    # After a successful save we land here with ?saved=1 — recompute advisory warnings
+    # (e.g. "no doctors yet") to show inline. Errors can't occur here (they blocked the save).
+    warnings = cs.validate_and_normalize(data)[2] if saved else []
     return templates.TemplateResponse(
         "tenant_edit.html", {"request": request, "t": tenant, "clinic_json": pretty,
-                             "clinic_obj": cs.normalize(data)})
+                             "clinic_obj": cs.normalize(data),
+                             "saved": bool(saved), "warnings": warnings})
 
 
 def _render_tenant_edit(request: Request, tenant_id: int, *, name, wa_phone_number_id,
@@ -799,7 +837,7 @@ async def edit_tenant(request: Request, tenant_id: int,
     uname = staff_username.strip() or None
     # Validate clinic data up front — reject broken config instead of silently saving it.
     try:
-        parsed, warnings = _parse_clinic_data(clinic_data)
+        parsed, _warnings = _parse_clinic_data(clinic_data)
     except ClinicDataError as e:
         return _render_tenant_edit(
             request, tenant_id, name=name, wa_phone_number_id=wa_phone_number_id,
@@ -829,15 +867,9 @@ async def edit_tenant(request: Request, tenant_id: int,
             timezone=timezone, wa_access_token=wa_access_token, clinic_data_raw=clinic_data,
             staff_username=staff_username,
             error=f'Staff username "{uname}" is already in use by another clinic.')
-    if warnings:
-        # Saved fine, but show advisory notes (e.g. no doctors yet) rather than hiding them.
-        return _render_tenant_edit(
-            request, tenant_id, name=name.strip(),
-            wa_phone_number_id=wa_phone_number_id, timezone=timezone,
-            wa_access_token=wa_access_token,
-            clinic_data_raw=json.dumps(parsed or {}, indent=2, ensure_ascii=False),
-            staff_username=staff_username, warnings=warnings, saved=True, status_code=200)
-    return RedirectResponse("/admin/plans", status_code=303)
+    # Always redirect on success (stable contract). Advisory warnings, if any, are
+    # recomputed and shown on the edit page we land back on (?saved=1).
+    return RedirectResponse(f"/admin/tenants/{tenant_id}/edit?saved=1", status_code=303)
 
 
 @router.get("/logs", response_class=HTMLResponse)

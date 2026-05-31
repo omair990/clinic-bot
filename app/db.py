@@ -1532,3 +1532,20 @@ def set_tenant_credentials(tenant_id: int, username: str | None,
         else:
             conn.execute("UPDATE tenants SET staff_username = %s WHERE id = %s",
                          (username or None, tenant_id))
+
+
+def delete_tenant(tenant_id: int) -> int:
+    """Hard-delete a tenant and every tenant-scoped row it owns, in one transaction.
+    The caller is responsible for the safety gate (never the default tenant; confirm by
+    slug) — this function does not second-guess it. Returns the number of child tables
+    cleared. Deletes from any ``public`` table that has a ``tenant_id`` column (so new
+    tenant-scoped tables are covered automatically), then the ``tenants`` row itself —
+    which also removes the staff login (it lives on that row)."""
+    with get_conn() as conn:
+        tables = [r["table_name"] for r in conn.execute(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE column_name = 'tenant_id' AND table_schema = 'public'").fetchall()]
+        for t in tables:
+            conn.execute(f'DELETE FROM "{t}" WHERE tenant_id = %s', (tenant_id,))
+        conn.execute("DELETE FROM tenants WHERE id = %s", (tenant_id,))
+        return len(tables)

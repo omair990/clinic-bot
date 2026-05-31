@@ -130,6 +130,18 @@
   </form>
 </div>
 
+{% if t.id != 1 and t.slug != 'default' %}
+<div class="bg-white rounded-lg shadow p-5 max-w-3xl mt-6 ring-1 ring-red-200">
+  <div class="text-sm font-medium text-red-700 mb-1">Danger zone</div>
+  <div class="text-xs text-slate-500 mb-3">Permanently delete this clinic and <strong>all</strong> its data — conversations, appointments, no-shows, reviews, usage. This cannot be undone. Type the slug <code class="bg-slate-100 px-1 rounded">{{ t.slug }}</code> to confirm.</div>
+  <form method="post" action="/admin/tenants/{{ t.id }}/delete" class="flex items-center gap-2 text-sm"
+        onsubmit="return confirm('Delete {{ t.name }} and all its data? This cannot be undone.');">
+    <input name="confirm_slug" placeholder="{{ t.slug }}" autocomplete="off" class="border rounded px-2 py-1">
+    <button class="px-4 py-2 rounded bg-red-600 text-white">Delete clinic</button>
+  </form>
+</div>
+{% endif %}
+
 <script>
 (function () {
   const INITIAL = {{ clinic_obj | tojson }};
