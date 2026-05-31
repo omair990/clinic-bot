@@ -175,3 +175,121 @@ def test_refresh_analysis_route(monkeypatch):
     r = c.post(f"/admin/conversations/{user}/analysis/refresh", follow_redirects=False)
     assert r.status_code == 303
     assert db.get_conversation_analysis(tid, user)["lead_band"] == "warm"
+
+
+# --- Gap 1: detected intent stored on the inbound (voice/text) message ---
+
+def test_log_message_returns_id_and_intent_tagging():
+    tid, user = _tenant(), _user()
+    mid = db.log_message(tid, user, "in", "transcribed voice text", source="voice")
+    assert isinstance(mid, int)
+    db.set_message_intent(mid, "appointment")
+    thread = db.conversation_thread(user, tenant_id=tid)
+    assert thread[0]["source"] == "voice" and thread[0]["intent"] == "appointment"
+
+
+def test_set_message_intent_ignores_blanks():
+    tid, user = _tenant(), _user()
+    mid = db.log_message(tid, user, "in", "hi")
+    db.set_message_intent(mid, None)        # no-op, must not raise
+    db.set_message_intent(0, "appointment")  # no id, no-op
+    assert db.conversation_thread(user, tenant_id=tid)[0]["intent"] is None
+
+
+def test_webhook_tags_inbound_message_with_turn_intent(monkeypatch):
+    import asyncio
+    from app import webhook
+    from app.tools import AgentContext
+    tid = db.get_default_tenant()["id"]   # webhook resolves None phone -> default tenant
+    user = _user()
+
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr(webhook, "send_text", _noop)
+    monkeypatch.setattr(webhook, "mark_read", _noop)
+    # Agent classifies this turn as a booking (booked_ids -> derived intent 'appointment').
+    monkeypatch.setattr(webhook, "run_agent",
+                        lambda tenant, sender, text, hist: AgentContext(
+                            wa_user=sender, reply="Booked!", booked_ids=[1]))
+
+    msg = {"from": user, "id": "wamid." + uuid.uuid4().hex,
+           "type": "text", "text": {"body": "book me tomorrow"}}
+    asyncio.run(webhook._handle_message(msg, None))
+
+    inbound = [m for m in db.conversation_thread(user, tenant_id=tid) if m["direction"] == "in"]
+    assert inbound and inbound[0]["intent"] == "appointment"   # tagged after the agent ran
+
+
+# --- Gap 2: scheduled insights digest delivery ---
+
+def test_claim_digest_is_idempotent_per_day():
+    from datetime import date
+    tid = _tenant()
+    d = date(2026, 6, 1)
+    assert db.claim_digest(tid, "day", d) is True      # first claim
+    assert db.claim_digest(tid, "day", d) is False     # same day -> already sent
+    assert db.claim_digest(tid, "day", date(2026, 6, 2)) is True   # next day -> claimable
+
+
+def _digest_tenant(owner: str):
+    sfx = uuid.uuid4().hex[:8]
+    return db.create_tenant(f"Dig {sfx}", f"dig-{sfx}", f"PNDG{sfx}", None, "Asia/Riyadh",
+                            None, {"clinic": {"name": "Dig"}, "owner_wa_number": owner})
+
+
+def test_run_digests_sends_daily_once(monkeypatch):
+    import asyncio
+    import app.wa_client as wa
+    owner = "owner-" + uuid.uuid4().hex[:8]
+    tid = _digest_tenant(owner)
+    db.log_message(tid, _user(), "in", "hello")
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+    monkeypatch.setattr(wa, "send_text", fake_send)
+    monkeypatch.setattr(insights, "generate", lambda s, m, t: LLMResult(text="ok"))
+    monkeypatch.setattr(insights, "INSIGHTS_DIGEST_HOUR", 0)
+    monkeypatch.setattr(insights, "INSIGHTS_WEEKLY_DOW", 0)   # Monday
+    tuesday = datetime(2026, 6, 2, 10, 0, tzinfo=TZ)          # not Monday -> weekly skipped
+
+    asyncio.run(insights.run_digests(tuesday))
+    mine = [b for to, b in sent if to == owner]
+    assert len(mine) == 1 and "insights" in mine[0]
+    asyncio.run(insights.run_digests(tuesday))               # same day -> no resend
+    assert len([b for to, b in sent if to == owner]) == 1
+
+
+def test_run_digests_includes_weekly_on_dow(monkeypatch):
+    import asyncio
+    import app.wa_client as wa
+    owner = "owner-" + uuid.uuid4().hex[:8]
+    tid = _digest_tenant(owner)
+    db.log_message(tid, _user(), "in", "hello")
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+    monkeypatch.setattr(wa, "send_text", fake_send)
+    monkeypatch.setattr(insights, "generate", lambda s, m, t: LLMResult(text="ok"))
+    monkeypatch.setattr(insights, "INSIGHTS_DIGEST_HOUR", 0)
+    monkeypatch.setattr(insights, "INSIGHTS_WEEKLY_DOW", 0)
+    monday = datetime(2026, 6, 1, 9, 0, tzinfo=TZ)            # Monday -> day + week both fire
+    asyncio.run(insights.run_digests(monday))
+    assert len([b for to, b in sent if to == owner]) == 2
+
+
+def test_run_digests_skips_before_send_hour(monkeypatch):
+    import asyncio
+    import app.wa_client as wa
+    owner = "owner-" + uuid.uuid4().hex[:8]
+    _digest_tenant(owner)
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+    monkeypatch.setattr(wa, "send_text", fake_send)
+    monkeypatch.setattr(insights, "INSIGHTS_DIGEST_HOUR", 8)
+    early = datetime(2026, 6, 2, 6, 0, tzinfo=TZ)             # 06:00 < 08:00 send hour
+    asyncio.run(insights.run_digests(early))
+    assert [s for s in sent if s[0] == owner] == []

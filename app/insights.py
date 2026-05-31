@@ -5,11 +5,20 @@ fully testable). A short narrative — "what's happening + what to do" — is th
 the LLM from those metrics, with a deterministic fallback so the report always renders even
 when the model is unavailable.
 """
+import asyncio
 import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app import db
-from app.config import TIMEZONE, TZ
+from app.config import (
+    ADMIN_WA_NUMBER,
+    INSIGHTS_DIGEST_ENABLED,
+    INSIGHTS_DIGEST_HOUR,
+    INSIGHTS_WEEKLY_DOW,
+    TIMEZONE,
+    TZ,
+)
 from app.llm import LLMUnavailable, Msg, generate
 
 log = logging.getLogger(__name__)
@@ -120,3 +129,78 @@ def report(tenant_id: int | None, period: str = "day", tz: str = TIMEZONE,
     text, source = narrative(metrics, label)
     return {"period": period, "label": label, "since": since, "until": until,
             "metrics": metrics, "narrative": text, "narrative_source": source}
+
+
+# --- Scheduled digest delivery (Phase 5) ---
+
+def digest_text(rep: dict, clinic_name: str) -> str:
+    """A compact WhatsApp digest of a report for the clinic owner."""
+    m = rep["metrics"]
+    c = m["conversion"]
+    lines = [
+        f"📊 {clinic_name} — {rep['label']} insights",
+        "",
+        rep["narrative"],
+        "",
+        f"• Inbound: {m['inbound']} from {m['users']} patients ({m['voice_share_pct']}% voice)",
+        f"• Bookings: {c['users_booked']} ({c['conversion_pct']}% conversion)",
+        f"• No-shows: {m['no_shows']}",
+        f"• Leads — 🔥{m['lead_mix']['hot']} 🌤{m['lead_mix']['warm']} ❄️{m['lead_mix']['cold']}",
+    ]
+    if m["peak_hours"]:
+        lines.append(f"• Peak hour: {m['peak_hours'][0]['hour']:02d}:00")
+    if m["missed_opportunities"]:
+        lines.append(f"• Needs staff follow-up: {m['missed_opportunities']}")
+    return "\n".join(lines)
+
+
+def _owner_number(tenant: dict) -> str | None:
+    """Where to send a tenant's digest: its clinic_data.owner_wa_number, else (for the
+    platform's own clinic) the configured ADMIN_WA_NUMBER."""
+    owner = ((tenant.get("clinic_data") or {}).get("owner_wa_number") or "").strip()
+    if owner:
+        return owner
+    if tenant.get("slug") == "default" and ADMIN_WA_NUMBER:
+        return ADMIN_WA_NUMBER
+    return None
+
+
+async def run_digests(now: datetime | None = None) -> int:
+    """Send due daily/weekly insight digests to each active clinic's owner. Idempotent
+    per day via db.claim_digest. Returns the number of digests sent."""
+    if not INSIGHTS_DIGEST_ENABLED:
+        return 0
+    from app import incidents
+    from app.wa_client import send_text
+    now = now or datetime.now(TZ)
+    tenants = await asyncio.to_thread(db.all_active_tenants)
+    sent = 0
+    for t in tenants:
+        owner = _owner_number(t)
+        if not owner:
+            continue
+        tzname = t.get("timezone") or TIMEZONE
+        try:
+            local = now.astimezone(ZoneInfo(tzname))
+        except Exception:  # noqa: BLE001 — bad tz shouldn't stop the run
+            local = now
+        if local.hour < INSIGHTS_DIGEST_HOUR:
+            continue  # before the morning send time in this clinic's zone
+        creds = {"phone_number_id": t.get("wa_phone_number_id"),
+                 "access_token": t.get("wa_access_token")}
+        for kind in ("day", "week"):
+            if kind == "week" and local.weekday() != INSIGHTS_WEEKLY_DOW:
+                continue
+            # Claim BEFORE sending so a flapping send never spams the owner twice.
+            if not await asyncio.to_thread(db.claim_digest, t["id"], kind, local.date()):
+                continue
+            try:
+                rep = await asyncio.to_thread(report, t["id"], kind, tzname, now)
+                await send_text(owner, digest_text(rep, t.get("name") or "Clinic"), **creds)
+                sent += 1
+                log.info("insights %s digest sent to %s (tenant %s)", kind, owner, t["id"])
+            except Exception as ex:  # noqa: BLE001
+                log.exception("insights %s digest failed for tenant %s", kind, t["id"])
+                incidents.record("whatsapp", f"Insights {kind} digest failed",
+                                 detail=repr(ex), tenant_id=t["id"])
+    return sent

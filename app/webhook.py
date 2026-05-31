@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from app.agent import run_agent
 from app import incidents
 from app.config import ADMIN_WA_NUMBER, USAGE_ENFORCEMENT, WA_APP_SECRET, WA_VERIFY_TOKEN
-from app.db import claim_message_id, log_message, recent_history
+from app.db import claim_message_id, log_message, recent_history, set_message_intent
 from app.events import publish
 from app.llm import LLMUnavailable
 from app.tenancy import check_quota, record_usage, resolve_tenant
@@ -156,7 +156,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
     log.info("In  %s: %s", sender, user_text)
     source = "voice" if is_voice else "text"
     history = await asyncio.to_thread(recent_history, tid, sender, 12)
-    await asyncio.to_thread(log_message, tid, sender, "in", user_text, source=source)
+    inbound_id = await asyncio.to_thread(log_message, tid, sender, "in", user_text, source=source)
     publish("message", {"wa_user": sender, "direction": "in", "text": user_text,
                         "tenant_id": tid, "source": source})
     publish("typing", {"wa_user": sender, "tenant_id": tid})  # bot is generating a reply
@@ -198,8 +198,12 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
 
     await send_text(sender, ctx.reply, **creds)
     log.info("Out %s: %s", sender, ctx.reply)
+    intent = ctx.derived_intent()
     await asyncio.to_thread(log_message, tid, sender, "out", ctx.reply,
-                            ctx.derived_intent(), ctx.needs_human)
+                            intent, ctx.needs_human)
+    # Tag the inbound (voice or text) note with the turn's intent — analytics on what
+    # patients actually ask, including voice notes.
+    await asyncio.to_thread(set_message_intent, inbound_id, intent)
     publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
     publish("message", {"wa_user": sender, "direction": "out", "text": ctx.reply,
                         "intent": ctx.derived_intent(), "needs_human": ctx.needs_human,

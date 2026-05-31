@@ -10,6 +10,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.admin import router as admin_router
 from app.config import (
     EVENT_RETENTION_DAYS,
+    INSIGHTS_DIGEST_ENABLED,
+    INSIGHTS_DIGEST_INTERVAL_MIN,
     MAINTENANCE_INTERVAL_HOURS,
     NO_SHOW_ENABLED,
     NO_SHOW_SWEEP_INTERVAL_MIN,
@@ -18,6 +20,7 @@ from app.config import (
     SECRET_KEY,
 )
 from app.db import close_db, init_db, ping, prune_processed_messages, prune_resolved_events
+from app.insights import run_digests
 from app.no_show import sweep as no_show_sweep
 from app.webhook import router as webhook_router
 
@@ -53,12 +56,25 @@ async def _no_show_loop() -> None:
         await asyncio.sleep(NO_SHOW_SWEEP_INTERVAL_MIN * 60)
 
 
+async def _insights_digest_loop() -> None:
+    """Periodically send due daily/weekly insight digests to clinic owners
+    (see app/insights.run_digests). The runner is idempotent per day."""
+    while True:
+        try:
+            await run_digests()
+        except Exception:  # noqa: BLE001
+            log.exception("insights digest run failed")
+        await asyncio.sleep(INSIGHTS_DIGEST_INTERVAL_MIN * 60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     tasks = [asyncio.create_task(_maintenance_loop())]
     if NO_SHOW_ENABLED:
         tasks.append(asyncio.create_task(_no_show_loop()))
+    if INSIGHTS_DIGEST_ENABLED:
+        tasks.append(asyncio.create_task(_insights_digest_loop()))
     yield
     for task in tasks:
         task.cancel()

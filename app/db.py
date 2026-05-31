@@ -102,6 +102,15 @@ CREATE TABLE IF NOT EXISTS conversation_analysis (
     PRIMARY KEY (tenant_id, wa_user)
 );
 
+-- Idempotency log for the scheduled insights digest: one row per (tenant, kind) holding
+-- the last date a digest was sent, so a restart or a 30-min tick can't double-send.
+CREATE TABLE IF NOT EXISTS digest_log (
+    tenant_id BIGINT NOT NULL,
+    kind      TEXT NOT NULL,    -- day | week
+    sent_on   DATE NOT NULL,
+    PRIMARY KEY (tenant_id, kind)
+);
+
 -- --- Multi-tenant SaaS: plans, tenants, usage metering ---
 CREATE TABLE IF NOT EXISTS plans (
     id                   BIGSERIAL PRIMARY KEY,
@@ -276,13 +285,24 @@ def ping() -> bool:
 
 def log_message(tenant_id: int, wa_user: str, direction: str, message: str,
                 intent: str | None = None, needs_human: bool = False,
-                source: str = "text") -> None:
+                source: str = "text") -> int:
+    """Insert a message and return its id (so the caller can backfill the detected
+    intent onto an inbound row once the agent has classified the turn)."""
     with get_conn() as conn:
-        conn.execute(
+        return conn.execute(
             "INSERT INTO conversations (tenant_id, wa_user, direction, message, intent, "
-            "needs_human, source) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "needs_human, source) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (tenant_id, wa_user, direction, message, intent, needs_human, source),
-        )
+        ).fetchone()["id"]
+
+
+def set_message_intent(message_id: int, intent: str | None) -> None:
+    """Backfill the detected intent on a message (used to tag the inbound voice/text
+    note with the turn's classification for analytics)."""
+    if not message_id or not intent:
+        return
+    with get_conn() as conn:
+        conn.execute("UPDATE conversations SET intent = %s WHERE id = %s", (intent, message_id))
 
 
 def recent_history(tenant_id: int, wa_user: str, limit: int = 10) -> list[dict]:
@@ -936,6 +956,19 @@ def upsert_conversation_analysis(tenant_id: int, wa_user: str, data: dict,
              data.get("next_action"), data.get("lead_band"), data.get("lead_score"),
              data.get("lead_rationale"), msg_count, source),
         )
+
+
+def claim_digest(tenant_id: int, kind: str, on_date) -> bool:
+    """Atomically claim today's digest for (tenant, kind). True the first time for a
+    given date, False if it was already sent — prevents double-sends across ticks/restarts."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "INSERT INTO digest_log (tenant_id, kind, sent_on) VALUES (%s, %s, %s) "
+            "ON CONFLICT (tenant_id, kind) DO UPDATE SET sent_on = EXCLUDED.sent_on "
+            "WHERE digest_log.sent_on < EXCLUDED.sent_on RETURNING tenant_id",
+            (tenant_id, kind, on_date),
+        ).fetchone()
+    return row is not None
 
 
 def lead_band_counts(tenant_id: int | None = None) -> dict:

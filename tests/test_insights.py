@@ -57,3 +57,25 @@ def test_narrative_falls_back_on_empty_llm_text(monkeypatch):
     monkeypatch.setattr(insights, "generate", lambda s, m, t: LLMResult(text="   "))
     _text, src = insights.narrative(_metrics(), "Today")
     assert src == "heuristic"
+
+
+# --- Digest delivery (Phase 5 scheduled report) ---
+
+def test_digest_text_has_headline_and_numbers():
+    rep = {"label": "Today", "narrative": "Solid day.", "metrics": _metrics()}
+    t = insights.digest_text(rep, "Smile Clinic")
+    assert "Smile Clinic — Today insights" in t
+    assert "Solid day." in t
+    assert "Bookings: 2 (50% conversion)" in t
+    assert "Peak hour: 18:00" in t
+
+
+def test_owner_number_prefers_clinic_data():
+    t = {"clinic_data": {"owner_wa_number": "966111"}, "slug": "whatever"}
+    assert insights._owner_number(t) == "966111"
+
+
+def test_owner_number_falls_back_to_admin_for_default_only(monkeypatch):
+    monkeypatch.setattr(insights, "ADMIN_WA_NUMBER", "966999")
+    assert insights._owner_number({"clinic_data": {}, "slug": "default"}) == "966999"
+    assert insights._owner_number({"clinic_data": {}, "slug": "other"}) is None

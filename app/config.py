@@ -113,6 +113,16 @@ WA_TEMPLATE_NO_SHOW = os.getenv("WA_TEMPLATE_NO_SHOW", "").strip()
 WA_TEMPLATE_FOLLOWUP = os.getenv("WA_TEMPLATE_FOLLOWUP", "").strip()
 WA_TEMPLATE_REMINDER = os.getenv("WA_TEMPLATE_REMINDER", "").strip()
 
+# --- Scheduled Business-Insights digest (Phase 5 delivery) ---
+# Sends each clinic owner a daily (and weekly) insights summary over WhatsApp. The owner
+# number is clinic_data.owner_wa_number per tenant, falling back to ADMIN_WA_NUMBER for the
+# platform's own clinic. Hour is in the tenant's local timezone; weekly DOW is Python's
+# Mon=0..Sun=6 (default Sunday).
+INSIGHTS_DIGEST_ENABLED = _flag("INSIGHTS_DIGEST_ENABLED", True)
+INSIGHTS_DIGEST_HOUR = int(os.getenv("INSIGHTS_DIGEST_HOUR", "8"))
+INSIGHTS_WEEKLY_DOW = int(os.getenv("INSIGHTS_WEEKLY_DOW", "6"))
+INSIGHTS_DIGEST_INTERVAL_MIN = int(os.getenv("INSIGHTS_DIGEST_INTERVAL_MIN", "30"))
+
 # --- LLM resilience ---
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).
