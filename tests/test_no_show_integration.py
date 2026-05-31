@@ -220,7 +220,8 @@ def test_predictor_scores_and_reminds_high_risk(tenant, wa, monkeypatch):
     monkeypatch.setattr(no_show, "NO_SHOW_PREDICTOR", True)
     monkeypatch.setattr(no_show, "NO_SHOW_AUTO_SEND", False)
     monkeypatch.setattr(no_show, "NO_SHOW_USE_TEMPLATES", False)
-    monkeypatch.setattr(no_show, "NO_SHOW_RISK_REMINDER_LEAD_HOURS", 48)
+    monkeypatch.setattr(no_show, "PRE_APPT_CONFIRM_ENABLED", True)
+    monkeypatch.setattr(no_show, "PRE_APPT_CONFIRM_LEAD_HOURS", 48)
     user = _user()
     now = datetime.now(TZ)
     with db.get_conn() as conn:
@@ -248,3 +249,24 @@ def test_predictor_scores_and_reminds_high_risk(tenant, wa, monkeypatch):
     assert appt["reminded_at"] is not None        # the extra high-risk reminder fired once
     mine = [s for s in wa if s["to"] == user]
     assert any("reminder" in s.get("body", "").lower() for s in mine)
+
+
+def test_pre_appointment_confirmation_sent_to_every_upcoming(tenant, wa, monkeypatch):
+    # A brand-new patient (no history => low risk) still gets a confirmation nudge.
+    monkeypatch.setattr(no_show, "NO_SHOW_AUTO_SEND", False)
+    monkeypatch.setattr(no_show, "NO_SHOW_USE_TEMPLATES", False)
+    monkeypatch.setattr(no_show, "PRE_APPT_CONFIRM_ENABLED", True)
+    monkeypatch.setattr(no_show, "PRE_APPT_CONFIRM_LEAD_HOURS", 24)
+    user = _user()
+    now = datetime.now(TZ)
+    appt = db.create_appointment(tenant, user, "New Pt", "+1", "Dr. Test", "Consult",
+                                 now + timedelta(hours=6), now + timedelta(hours=6, minutes=30))
+    asyncio.run(no_show.sweep())
+    assert db.get_appointment(tenant, appt["id"])["reminded_at"] is not None
+    body = next(s["body"] for s in wa if s["to"] == user)
+    assert "attend" in body.lower() and "1 to confirm" in body
+
+    # Second sweep must NOT re-send (reminded_at already set).
+    wa.clear()
+    asyncio.run(no_show.sweep())
+    assert [s for s in wa if s["to"] == user] == []

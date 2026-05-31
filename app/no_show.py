@@ -32,8 +32,9 @@ from app.config import (
     NO_SHOW_GRACE_MINUTES,
     NO_SHOW_INACTIVE_HOURS,
     NO_SHOW_PREDICTOR,
-    NO_SHOW_RISK_REMINDER_LEAD_HOURS,
     NO_SHOW_TEMPLATE_LANG,
+    PRE_APPT_CONFIRM_ENABLED,
+    PRE_APPT_CONFIRM_LEAD_HOURS,
     NO_SHOW_USE_TEMPLATES,
     TZ,
     WA_TEMPLATE_FOLLOWUP,
@@ -132,8 +133,8 @@ def followup_message(service: str | None, doctor: str | None) -> str:
 
 def reminder_message(service: str | None, doctor: str | None, when: str) -> str:
     return (
-        f"Friendly reminder: you have {_subject(service, doctor)} on {when}. "
-        "Please reply 1 to confirm, 2 to reschedule, or 3 to cancel. See you then!"
+        f"Reminder: you have {_subject(service, doctor)} on {when}. Will you be able to "
+        "attend? Please reply 1 to confirm, 2 to reschedule, or 3 to cancel. See you then!"
     )
 
 
@@ -258,19 +259,24 @@ async def _mark_inactive(now: datetime) -> int:
     return len(due)
 
 
-async def _score_and_remind(now: datetime, tenants: dict[int, dict]) -> tuple[int, int]:
-    # 1) Score any upcoming appointment that doesn't have a risk snapshot yet.
+async def _score_upcoming(now: datetime) -> int:
+    """Give every unscored upcoming appointment a no-show risk snapshot (for the dashboard
+    and analytics). Sends nothing."""
     unscored = await asyncio.to_thread(db.unscored_upcoming_appointments, now)
     for a in unscored:
         stats = await asyncio.to_thread(db.patient_history_stats, a["tenant_id"],
                                         a["wa_user"], a["id"])
         score, band = risk_for_appointment(a, stats)
         await asyncio.to_thread(db.set_appointment_risk, a["tenant_id"], a["id"], score, band)
+    return len(unscored)
 
-    # 2) Give high-risk patients an extra reminder shortly before their appointment.
-    until = now + timedelta(hours=NO_SHOW_RISK_REMINDER_LEAD_HOURS)
-    due = await asyncio.to_thread(db.high_risk_reminders_due, now, until)
-    reminded = 0
+
+async def _send_confirmations(now: datetime, tenants: dict[int, dict]) -> int:
+    """Ask EVERY upcoming patient to confirm/reschedule/cancel before their appointment —
+    the universal pre-appointment 'will you attend?' nudge (once per appointment)."""
+    until = now + timedelta(hours=PRE_APPT_CONFIRM_LEAD_HOURS)
+    due = await asyncio.to_thread(db.upcoming_reminders_due, now, until)
+    sent = 0
     for a in due:
         tenant = tenants.get(a["tenant_id"])
         if not tenant:
@@ -282,12 +288,12 @@ async def _score_and_remind(now: datetime, tenants: dict[int, dict]) -> tuple[in
                                 template=resolve_template("reminder", tenant),
                                 params=[_subject(a["service"], a["doctor"]), when])
             await asyncio.to_thread(db.mark_reminded, a["tenant_id"], a["id"])
-            reminded += 1
+            sent += 1
         except Exception as ex:  # noqa: BLE001
-            log.exception("high-risk reminder failed for %s", a["wa_user"])
-            incidents.record("whatsapp", "High-risk reminder failed", detail=repr(ex),
+            log.exception("pre-appointment confirmation failed for %s", a["wa_user"])
+            incidents.record("whatsapp", "Pre-appointment confirmation failed", detail=repr(ex),
                              tenant_id=a["tenant_id"], wa_user=a["wa_user"])
-    return len(unscored), reminded
+    return sent
 
 
 async def sweep() -> None:
@@ -299,11 +305,10 @@ async def sweep() -> None:
     detected = await _detect_no_shows(now, tenants)
     followed = await _send_followups(now, tenants)
     inactive = await _mark_inactive(now)
-    scored = reminded = 0
-    if NO_SHOW_PREDICTOR:
-        scored, reminded = await _score_and_remind(now, tenants)
+    scored = await _score_upcoming(now) if NO_SHOW_PREDICTOR else 0
+    confirmed = await _send_confirmations(now, tenants) if PRE_APPT_CONFIRM_ENABLED else 0
 
-    if detected or followed or inactive or reminded:
+    if detected or followed or inactive or confirmed:
         log.info("no-show sweep: %s detected, %s followed-up, %s inactive, "
-                 "%s scored, %s high-risk reminders", detected, followed, inactive,
-                 scored, reminded)
+                 "%s scored, %s pre-appointment confirmations", detected, followed, inactive,
+                 scored, confirmed)

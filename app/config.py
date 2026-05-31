@@ -126,6 +126,11 @@ INSIGHTS_DIGEST_INTERVAL_MIN = int(os.getenv("INSIGHTS_DIGEST_INTERVAL_MIN", "30
 # WhatsApp the patient when staff cancel or complete their appointment from the dashboard.
 NOTIFY_ON_STATUS_CHANGE = _flag("NOTIFY_ON_STATUS_CHANGE", True)
 
+# Pre-appointment confirmation: ask EVERY upcoming patient "will you attend?" (confirm /
+# reschedule / cancel) this many hours before their appointment. Cuts no-shows up front.
+PRE_APPT_CONFIRM_ENABLED = _flag("PRE_APPT_CONFIRM_ENABLED", True)
+PRE_APPT_CONFIRM_LEAD_HOURS = int(os.getenv("PRE_APPT_CONFIRM_LEAD_HOURS", "24"))
+
 # --- LLM resilience ---
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).

@@ -763,6 +763,18 @@ def high_risk_reminders_due(now: datetime, until: datetime) -> list[dict]:
         ).fetchall()
 
 
+def upcoming_reminders_due(now: datetime, until: datetime) -> list[dict]:
+    """ALL confirmed appointments starting within the window that haven't had a
+    pre-appointment confirmation yet — the universal 'will you attend?' nudge."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM appointments WHERE status = 'confirmed' "
+            "AND reminded_at IS NULL AND start_at > %s AND start_at <= %s "
+            "ORDER BY start_at ASC LIMIT 500",
+            (now, until),
+        ).fetchall()
+
+
 def mark_reminded(tenant_id: int, appointment_id: int) -> None:
     with get_conn() as conn:
         conn.execute(
