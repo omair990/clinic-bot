@@ -82,6 +82,26 @@ CREATE TABLE IF NOT EXISTS no_show_followups (
 CREATE INDEX IF NOT EXISTS idx_noshow_tenant_stage ON no_show_followups(tenant_id, stage);
 CREATE INDEX IF NOT EXISTS idx_noshow_tenant_created ON no_show_followups(tenant_id, created_at DESC);
 
+-- Cached AI analysis of a conversation: a receptionist-style summary plus a Hot/Warm/Cold
+-- lead score. One row per (tenant, patient); rebuilt when the message count changes.
+CREATE TABLE IF NOT EXISTS conversation_analysis (
+    tenant_id              BIGINT NOT NULL,
+    wa_user                TEXT NOT NULL,
+    customer_name          TEXT,
+    requested_service      TEXT,
+    appointment_preference TEXT,
+    urgency                TEXT,    -- low | medium | high
+    sentiment              TEXT,    -- positive | neutral | negative
+    next_action            TEXT,
+    lead_band              TEXT,    -- hot | warm | cold
+    lead_score             INTEGER, -- 0-100
+    lead_rationale         TEXT,
+    message_count          INTEGER NOT NULL DEFAULT 0,
+    source                 TEXT NOT NULL DEFAULT 'ai',   -- ai | heuristic (LLM fallback)
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, wa_user)
+);
+
 -- --- Multi-tenant SaaS: plans, tenants, usage metering ---
 CREATE TABLE IF NOT EXISTS plans (
     id                   BIGSERIAL PRIMARY KEY,
@@ -138,6 +158,8 @@ CREATE TABLE IF NOT EXISTS tenant_usage (
 
 ALTER TABLE patients      ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
+-- 'text' | 'voice' — lets analytics distinguish transcribed voice notes from typed messages.
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'text';
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS extra JSONB;
@@ -253,12 +275,13 @@ def ping() -> bool:
 # --- Messages / conversations ---
 
 def log_message(tenant_id: int, wa_user: str, direction: str, message: str,
-                intent: str | None = None, needs_human: bool = False) -> None:
+                intent: str | None = None, needs_human: bool = False,
+                source: str = "text") -> None:
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO conversations (tenant_id, wa_user, direction, message, intent, needs_human) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (tenant_id, wa_user, direction, message, intent, needs_human),
+            "INSERT INTO conversations (tenant_id, wa_user, direction, message, intent, "
+            "needs_human, source) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (tenant_id, wa_user, direction, message, intent, needs_human, source),
         )
 
 
@@ -370,6 +393,15 @@ def upcoming_appointments(tenant_id: int, wa_user: str, now: datetime,
             (tenant_id, wa_user, now, limit),
         ).fetchall()
     return rows
+
+
+def has_appointment(tenant_id: int, wa_user: str) -> bool:
+    """Whether this patient has ever booked (any status) — a strong lead signal."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM appointments WHERE tenant_id = %s AND wa_user = %s LIMIT 1",
+            (tenant_id, wa_user),
+        ).fetchone() is not None
 
 
 def get_appointment(tenant_id: int, appointment_id: int) -> dict | None:
@@ -766,10 +798,11 @@ def list_conversations(limit: int = 100, tenant_id: int | None = None) -> list[d
         sub = "AND c2.tenant_id = %s"
         sub3 = "AND c3.tenant_id = %s"
         sub4 = "AND c4.tenant_id = %s"
+        sub5 = "AND ca.tenant_id = %s"
         where = "WHERE c.tenant_id = %s"
-        params: tuple = (tenant_id, tenant_id, tenant_id, tenant_id, limit)
+        params: tuple = (tenant_id, tenant_id, tenant_id, tenant_id, tenant_id, limit)
     else:
-        sub = sub3 = sub4 = where = ""
+        sub = sub3 = sub4 = sub5 = where = ""
         params = (limit,)
     with get_conn() as conn:
         rows = conn.execute(
@@ -783,7 +816,9 @@ def list_conversations(limit: int = 100, tenant_id: int | None = None) -> list[d
                         WHERE c3.wa_user = c.wa_user {sub3} ORDER BY id DESC LIMIT 1) AS last_direction,
                       (SELECT intent FROM conversations c4
                         WHERE c4.wa_user = c.wa_user {sub4} AND c4.direction = 'out'
-                          AND c4.intent IS NOT NULL ORDER BY id DESC LIMIT 1) AS last_intent
+                          AND c4.intent IS NOT NULL ORDER BY id DESC LIMIT 1) AS last_intent,
+                      (SELECT lead_band FROM conversation_analysis ca
+                        WHERE ca.wa_user = c.wa_user {sub5} LIMIT 1) AS lead_band
                FROM conversations c {where}
                GROUP BY c.wa_user
                ORDER BY last_at DESC
@@ -793,9 +828,20 @@ def list_conversations(limit: int = 100, tenant_id: int | None = None) -> list[d
     return rows
 
 
+def tenant_id_for_user(wa_user: str) -> int | None:
+    """The tenant of a patient's most recent message — lets the super-admin view build
+    tenant-scoped analysis for a conversation it isn't itself scoped to."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT tenant_id FROM conversations WHERE wa_user = %s ORDER BY id DESC LIMIT 1",
+            (wa_user,),
+        ).fetchone()
+    return row["tenant_id"] if row else None
+
+
 def conversation_thread(wa_user: str, limit: int = 200,
                         tenant_id: int | None = None) -> list[dict]:
-    sql = ("SELECT id, direction, message, intent, needs_human, created_at "
+    sql = ("SELECT id, direction, message, intent, needs_human, source, created_at "
            "FROM conversations WHERE wa_user = %s")
     params: tuple = (wa_user,)
     if tenant_id is not None:
@@ -847,6 +893,138 @@ def stats(tenant_id: int | None = None) -> dict:
         ).fetchone()["n"]
     return {"messages": msgs, "users": users, "appointments": appts,
             "upcoming_appointments": upcoming, "needs_human_users": needs_human}
+
+
+# --- Conversation analysis (AI summary + lead score) ---
+
+def message_count(tenant_id: int, wa_user: str) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS n FROM conversations WHERE tenant_id = %s AND wa_user = %s",
+            (tenant_id, wa_user),
+        ).fetchone()["n"]
+
+
+def get_conversation_analysis(tenant_id: int, wa_user: str) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM conversation_analysis WHERE tenant_id = %s AND wa_user = %s",
+            (tenant_id, wa_user),
+        ).fetchone()
+
+
+def upsert_conversation_analysis(tenant_id: int, wa_user: str, data: dict,
+                                 msg_count: int, source: str = "ai") -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO conversation_analysis "
+            "(tenant_id, wa_user, customer_name, requested_service, appointment_preference, "
+            " urgency, sentiment, next_action, lead_band, lead_score, lead_rationale, "
+            " message_count, source, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now()) "
+            "ON CONFLICT (tenant_id, wa_user) DO UPDATE SET "
+            "customer_name = EXCLUDED.customer_name, "
+            "requested_service = EXCLUDED.requested_service, "
+            "appointment_preference = EXCLUDED.appointment_preference, "
+            "urgency = EXCLUDED.urgency, sentiment = EXCLUDED.sentiment, "
+            "next_action = EXCLUDED.next_action, lead_band = EXCLUDED.lead_band, "
+            "lead_score = EXCLUDED.lead_score, lead_rationale = EXCLUDED.lead_rationale, "
+            "message_count = EXCLUDED.message_count, source = EXCLUDED.source, "
+            "updated_at = now()",
+            (tenant_id, wa_user, data.get("customer_name"), data.get("requested_service"),
+             data.get("appointment_preference"), data.get("urgency"), data.get("sentiment"),
+             data.get("next_action"), data.get("lead_band"), data.get("lead_score"),
+             data.get("lead_rationale"), msg_count, source),
+        )
+
+
+def lead_band_counts(tenant_id: int | None = None) -> dict:
+    where = ""
+    params: tuple = ()
+    if tenant_id is not None:
+        where = "WHERE tenant_id = %s"
+        params = (tenant_id,)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT lead_band, COUNT(*) AS n FROM conversation_analysis {where} "
+            "GROUP BY lead_band", params,
+        ).fetchall()
+    out = {"hot": 0, "warm": 0, "cold": 0}
+    for r in rows:
+        if r["lead_band"] in out:
+            out[r["lead_band"]] = r["n"]
+    return out
+
+
+# --- Business insights (deterministic aggregates over a [since, until) window) ---
+
+def insight_message_stats(tenant_id: int | None, since: datetime, until: datetime) -> dict:
+    w, p = _scope_window(tenant_id, since, until)
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS messages, "
+            "COUNT(*) FILTER (WHERE direction='in') AS inbound, "
+            "COUNT(*) FILTER (WHERE direction='in' AND source='voice') AS voice_inbound, "
+            "COUNT(DISTINCT wa_user) AS users "
+            f"FROM conversations {w}", p,
+        ).fetchone()
+
+
+def insight_intent_counts(tenant_id: int | None, since: datetime, until: datetime) -> list[dict]:
+    w, p = _scope_window(tenant_id, since, until)
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT intent, COUNT(*) AS n FROM conversations "
+            f"{w} AND direction='out' AND intent IS NOT NULL "
+            "GROUP BY intent ORDER BY n DESC", p,
+        ).fetchall()
+
+
+def insight_peak_hours(tenant_id: int | None, since: datetime, until: datetime,
+                       tz: str = "Asia/Riyadh") -> list[dict]:
+    w, p = _scope_window(tenant_id, since, until)
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE %s)::int AS hour, "
+            "COUNT(*) AS n FROM conversations "
+            f"{w} AND direction='in' GROUP BY hour ORDER BY n DESC",
+            (tz, *p),
+        ).fetchall()
+
+
+def insight_conversion(tenant_id: int | None, since: datetime, until: datetime) -> dict:
+    w, p = _scope_window(tenant_id, since, until)
+    wa, pa = _scope_window(tenant_id, since, until, col="created_at")
+    with get_conn() as conn:
+        messaged = conn.execute(
+            f"SELECT COUNT(DISTINCT wa_user) AS n FROM conversations {w}", p,
+        ).fetchone()["n"]
+        booked = conn.execute(
+            f"SELECT COUNT(DISTINCT wa_user) AS n FROM appointments {wa}", pa,
+        ).fetchone()["n"]
+    rate = round(booked / messaged * 100) if messaged else 0
+    return {"users_messaged": messaged, "users_booked": booked, "conversion_pct": rate}
+
+
+def insight_handover_users(tenant_id: int | None, since: datetime, until: datetime) -> int:
+    w, p = _scope_window(tenant_id, since, until)
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT COUNT(DISTINCT wa_user) AS n FROM conversations {w} AND needs_human = TRUE",
+            p,
+        ).fetchone()["n"]
+
+
+def _scope_window(tenant_id: int | None, since: datetime, until: datetime,
+                  col: str = "created_at") -> tuple[str, tuple]:
+    """WHERE clause + params for a tenant-scoped time window. Always starts with WHERE
+    and ends open (callers may append `AND ...`)."""
+    clauses = [f"{col} >= %s", f"{col} < %s"]
+    params: list = [since, until]
+    if tenant_id is not None:
+        clauses.append("tenant_id = %s")
+        params.append(tenant_id)
+    return "WHERE " + " AND ".join(clauses), tuple(params)
 
 
 # --- Tenancy / plans / usage ---

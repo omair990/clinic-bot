@@ -47,7 +47,10 @@ from app.db import (
     update_tenant_config,
     upsert_plan,
 )
+from app.db import tenant_id_for_user
 from app.events import subscribe, unsubscribe
+from app import analysis as analysis_mod
+from app import insights as insights_mod
 from app import no_show as no_show_mod
 from app.tenancy import current_period
 
@@ -99,6 +102,25 @@ def intent_badge_html(intent: str | None) -> str:
 
 
 templates.env.filters["intent_badge"] = lambda i: Markup(intent_badge_html(i))
+
+
+# --- Lead-score badges (Hot / Warm / Cold) ---
+LEAD_BADGES = {
+    "hot":  ("🔥 Hot",  "bg-rose-100 text-rose-700 ring-rose-200"),
+    "warm": ("🌤️ Warm", "bg-amber-100 text-amber-700 ring-amber-200"),
+    "cold": ("❄️ Cold", "bg-sky-100 text-sky-700 ring-sky-200"),
+}
+
+
+def lead_badge_html(band: str | None) -> str:
+    if not band or band not in LEAD_BADGES:
+        return ""
+    label, classes = LEAD_BADGES[band]
+    return (f'<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full '
+            f'text-[10px] font-medium ring-1 ring-inset {classes}">{html.escape(label)}</span>')
+
+
+templates.env.filters["lead_badge"] = lambda b: Markup(lead_badge_html(b))
 
 
 def _principal(request: Request) -> dict | None:
@@ -202,23 +224,46 @@ async def conversations(request: Request):
     )
 
 
+async def _conversation_analysis(request: Request, wa_user: str, force: bool = False):
+    """Build/fetch the AI summary + lead score for a conversation. Tenant-scoped; for the
+    super-admin we resolve the tenant from the conversation itself. Never raises."""
+    scope = _scope(request)
+    tid = scope if scope is not None else tenant_id_for_user(wa_user)
+    if not tid:
+        return None
+    try:
+        return await asyncio.to_thread(analysis_mod.get_or_build, tid, wa_user, force)
+    except Exception:  # noqa: BLE001 — analysis is best-effort, never block the page
+        log.exception("conversation analysis failed for %s", wa_user)
+        return None
+
+
 @router.get("/conversations/{wa_user}", response_class=HTMLResponse)
 async def conversation_view(request: Request, wa_user: str):
     _require_auth(request)
     return templates.TemplateResponse(
         "conversation_detail.html",
         {"request": request, "wa_user": wa_user,
-         "messages": conversation_thread(wa_user, tenant_id=_scope(request))},
+         "messages": conversation_thread(wa_user, tenant_id=_scope(request)),
+         "analysis": await _conversation_analysis(request, wa_user)},
     )
+
+
+@router.post("/conversations/{wa_user}/analysis/refresh")
+async def refresh_analysis(request: Request, wa_user: str):
+    _require_auth(request)
+    await _conversation_analysis(request, wa_user, force=True)
+    return RedirectResponse(f"/admin/conversations/{wa_user}", status_code=303)
 
 
 def _render_bubble(p: dict) -> str:
     """A single chat bubble for the live conversation view (SSE — one line, no raw \\n)."""
     text = html.escape(p.get("text", "")).replace("\n", "<br>")
     if p.get("direction") == "in":
+        mic = '🎤 ' if p.get("source") == "voice" else ''
         return (
             '<div class="flex justify-start"><div class="max-w-md">'
-            f'<div class="px-3 py-2 rounded-lg rounded-tl-sm bg-slate-100 text-slate-900 text-sm">{text}</div>'
+            f'<div class="px-3 py-2 rounded-lg rounded-tl-sm bg-slate-100 text-slate-900 text-sm">{mic}{text}</div>'
             '<div class="text-[10px] text-slate-400 mt-1">now</div></div></div>'
         )
     badge = intent_badge_html(p.get("intent")) if p.get("intent") else ""
@@ -346,6 +391,15 @@ def _render_plans(request: Request, *, error: str | None = None, status_code: in
          "tenants": list_tenants(period), "period": period, "error": error},
         status_code=status_code,
     )
+
+
+@router.get("/insights", response_class=HTMLResponse)
+async def insights_page(request: Request, period: str = "day"):
+    _require_auth(request)
+    scope = _scope(request)
+    report = await asyncio.to_thread(insights_mod.report, scope, period, str(TZ))
+    return templates.TemplateResponse(
+        "insights.html", {"request": request, "report": report})
 
 
 @router.get("/plans", response_class=HTMLResponse)

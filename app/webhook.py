@@ -154,9 +154,11 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
     await asyncio.to_thread(record_usage, tenant, is_voice=is_voice)
 
     log.info("In  %s: %s", sender, user_text)
+    source = "voice" if is_voice else "text"
     history = await asyncio.to_thread(recent_history, tid, sender, 12)
-    await asyncio.to_thread(log_message, tid, sender, "in", user_text)
-    publish("message", {"wa_user": sender, "direction": "in", "text": user_text, "tenant_id": tid})
+    await asyncio.to_thread(log_message, tid, sender, "in", user_text, source=source)
+    publish("message", {"wa_user": sender, "direction": "in", "text": user_text,
+                        "tenant_id": tid, "source": source})
     publish("typing", {"wa_user": sender, "tenant_id": tid})  # bot is generating a reply
 
     try:

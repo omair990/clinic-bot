@@ -29,6 +29,7 @@
       <a href="/admin/conversations" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='conv' %}bg-slate-800 text-white{% endif %}">Conversations</a>
       <a href="/admin/appointments" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='appt' %}bg-slate-800 text-white{% endif %}">Appointments</a>
       <a href="/admin/no-shows" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='noshow' %}bg-slate-800 text-white{% endif %}">No-shows</a>
+      <a href="/admin/insights" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='insights' %}bg-slate-800 text-white{% endif %}">Insights</a>
       <a href="/admin/logs" class="flex items-center justify-between px-3 py-2 rounded hover:bg-slate-800 {% if active=='logs' %}bg-slate-800 text-white{% endif %}">
         <span>Issues</span>
         {% set _open = open_issue_count(request) %}

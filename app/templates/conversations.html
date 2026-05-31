@@ -13,6 +13,7 @@
         <th class="text-left px-4 py-2">User</th>
         <th class="text-left px-4 py-2">Last message</th>
         <th class="text-left px-4 py-2">Classification</th>
+        <th class="text-left px-4 py-2">Lead</th>
         <th class="text-left px-4 py-2">Msgs</th>
         <th class="text-left px-4 py-2">Last activity</th>
         <th class="text-left px-4 py-2">Flag</th>
@@ -26,6 +27,7 @@
           <span class="text-xs text-slate-400 mr-1">{{ '←' if r.last_direction=='in' else '→' }}</span>{{ r.last_message }}
         </td>
         <td class="px-4 py-3">{% if r.last_intent %}{{ r.last_intent | intent_badge }}{% endif %}</td>
+        <td class="px-4 py-3">{% if r.lead_band %}{{ r.lead_band | lead_badge }}{% endif %}</td>
         <td class="px-4 py-3">{{ r.msg_count }}</td>
         <td class="px-4 py-3 text-slate-500 text-xs">{{ r.last_at | fmt_dt }}</td>
         <td class="px-4 py-3">
@@ -33,7 +35,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400 text-sm">No conversations yet</td></tr>
+      <tr><td colspan="7" class="px-4 py-8 text-center text-slate-400 text-sm">No conversations yet</td></tr>
       {% endfor %}
     </tbody>
   </table>

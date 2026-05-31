@@ -10,6 +10,38 @@
   <div class="text-xs text-slate-500"><span class="pulse-dot mr-1"></span>Live</div>
 </div>
 
+{% if analysis %}
+<div class="bg-white rounded-lg shadow p-4 mb-4">
+  <div class="flex items-center justify-between mb-3">
+    <div class="text-sm font-medium text-slate-900">AI summary &amp; lead score</div>
+    <div class="flex items-center gap-2">
+      {{ analysis.lead_band | lead_badge }}
+      {% if analysis.lead_score is not none %}<span class="text-xs text-slate-400">score {{ analysis.lead_score }}/100</span>{% endif %}
+      <form method="post" action="/admin/conversations/{{ wa_user }}/analysis/refresh" class="inline">
+        <button class="text-xs text-emerald-700 hover:underline">↻ Refresh</button>
+      </form>
+    </div>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-sm">
+    <div><span class="text-xs text-slate-400 block">Customer</span>{{ analysis.customer_name or '—' }}</div>
+    <div><span class="text-xs text-slate-400 block">Requested service</span>{{ analysis.requested_service or '—' }}</div>
+    <div><span class="text-xs text-slate-400 block">Appointment preference</span>{{ analysis.appointment_preference or '—' }}</div>
+    <div><span class="text-xs text-slate-400 block">Urgency</span>
+      {% set uc = {'high':'rose','medium':'amber','low':'slate'}.get(analysis.urgency,'slate') %}
+      <span class="inline-block px-2 py-0.5 text-xs rounded bg-{{uc}}-100 text-{{uc}}-700">{{ analysis.urgency or '—' }}</span>
+    </div>
+    <div><span class="text-xs text-slate-400 block">Sentiment</span>
+      {% set sc = {'positive':'emerald','neutral':'slate','negative':'rose'}.get(analysis.sentiment,'slate') %}
+      <span class="inline-block px-2 py-0.5 text-xs rounded bg-{{sc}}-100 text-{{sc}}-700">{{ analysis.sentiment or '—' }}</span>
+    </div>
+    <div class="col-span-2 md:col-span-3"><span class="text-xs text-slate-400 block">Recommended next action</span>{{ analysis.next_action or '—' }}</div>
+  </div>
+  <div class="mt-2 text-[10px] text-slate-400">
+    {{ 'AI' if analysis.source == 'ai' else 'Heuristic (AI unavailable)' }} · {{ analysis.lead_rationale or '' }}
+  </div>
+</div>
+{% endif %}
+
 <div id="threadWrap" class="bg-white rounded-lg shadow p-4 max-h-[70vh] overflow-auto"
      hx-ext="sse" sse-connect="/admin/conversations/{{ wa_user }}/stream">
   <div id="thread" class="space-y-3" sse-swap="message" hx-swap="beforeend">
@@ -17,7 +49,7 @@
     {% if m.direction == 'in' %}
     <div class="flex justify-start">
       <div class="max-w-md">
-        <div class="px-3 py-2 rounded-lg rounded-tl-sm bg-slate-100 text-slate-900 text-sm whitespace-pre-wrap">{{ m.message }}</div>
+        <div class="px-3 py-2 rounded-lg rounded-tl-sm bg-slate-100 text-slate-900 text-sm whitespace-pre-wrap">{% if m.source == 'voice' %}<span title="Voice note (transcribed)">🎤 </span>{% endif %}{{ m.message }}</div>
         <div class="text-[10px] text-slate-400 mt-1">{{ m.created_at | fmt_dt }}</div>
       </div>
     </div>
