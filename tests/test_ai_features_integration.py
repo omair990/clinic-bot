@@ -279,6 +279,83 @@ def test_run_digests_includes_weekly_on_dow(monkeypatch):
     assert len([b for to, b in sent if to == owner]) == 2
 
 
+def _make_appt(tid, user):
+    now = datetime.now(TZ)
+    return db.create_appointment(tid, user, "Patient", "+1", "Dr. N", "Consult",
+                                 now + timedelta(days=2), now + timedelta(days=2, minutes=30))
+
+
+def test_dashboard_cancel_notifies_patient(monkeypatch):
+    import app.notifications as notif
+    tid, user = _tenant(), _user()
+    appt = _make_appt(tid, user)
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+    monkeypatch.setattr(notif, "send_text", fake_send)
+
+    c = _super_client()
+    r = c.post(f"/admin/appointments/{appt['id']}/status",
+               data={"status": "cancelled"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert db.get_appointment_by_id(appt["id"])["status"] == "cancelled"
+    assert any(to == user and "cancelled" in body for to, body in sent)
+    conv = db.conversation_thread(user, tenant_id=tid)
+    assert any(m["direction"] == "out" and "cancelled" in m["message"]
+               and m["intent"] == "appointment" for m in conv)
+
+
+def test_dashboard_complete_notifies_patient(monkeypatch):
+    import app.notifications as notif
+    tid, user = _tenant(), _user()
+    appt = _make_appt(tid, user)
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+    monkeypatch.setattr(notif, "send_text", fake_send)
+
+    c = _super_client()
+    c.post(f"/admin/appointments/{appt['id']}/status",
+           data={"status": "completed"}, follow_redirects=False)
+    assert any(to == user and "Thank you" in body for to, body in sent)
+
+
+def test_no_show_status_does_not_notify(monkeypatch):
+    import app.notifications as notif
+    tid, user = _tenant(), _user()
+    appt = _make_appt(tid, user)
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+    monkeypatch.setattr(notif, "send_text", fake_send)
+
+    c = _super_client()
+    c.post(f"/admin/appointments/{appt['id']}/status",
+           data={"status": "no_show"}, follow_redirects=False)
+    assert sent == []   # only cancel/complete notify
+
+
+def test_repeat_cancel_does_not_double_notify(monkeypatch):
+    import app.notifications as notif
+    tid, user = _tenant(), _user()
+    appt = _make_appt(tid, user)
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+    monkeypatch.setattr(notif, "send_text", fake_send)
+
+    c = _super_client()
+    c.post(f"/admin/appointments/{appt['id']}/status",
+           data={"status": "cancelled"}, follow_redirects=False)
+    c.post(f"/admin/appointments/{appt['id']}/status",   # already cancelled -> no send
+           data={"status": "cancelled"}, follow_redirects=False)
+    assert len([s for s in sent if s[0] == user]) == 1
+
+
 def test_dashboard_banner_appears_when_sends_are_401ing(monkeypatch):
     import app.wa_client as wa
     c = _super_client()

@@ -16,6 +16,7 @@ from app.config import (
     BASE_DIR,
     NO_SHOW_AUTO_SEND,
     NO_SHOW_PREDICTOR,
+    NOTIFY_ON_STATUS_CHANGE,
     TZ,
 )
 from app.auth import hash_password, verify_password
@@ -23,6 +24,7 @@ from app.db import (
     admin_set_appointment_status,
     conversation_thread,
     create_tenant,
+    get_appointment_by_id,
     get_followup,
     get_tenant,
     get_tenant_by_username,
@@ -50,8 +52,10 @@ from app.db import (
 from app.db import tenant_id_for_user
 from app.events import subscribe, unsubscribe
 from app import analysis as analysis_mod
+from app import incidents
 from app import insights as insights_mod
 from app import no_show as no_show_mod
+from app.notifications import notify_appointment_status
 from app.tenancy import current_period
 
 log = logging.getLogger(__name__)
@@ -345,10 +349,28 @@ async def update_appointment(request: Request, appointment_id: int, status: str 
     scope = _scope(request)
     if status not in APPOINTMENT_STATUSES:
         raise HTTPException(400, "bad status")
+    appt = get_appointment_by_id(appointment_id)   # read details + prior status first
+    prior = appt["status"] if appt else None
     if scope is None:
         admin_set_appointment_status(appointment_id, status)
     else:
         set_appointment_status(scope, appointment_id, status)  # clinic can only touch its own
+
+    # Let the patient know when staff cancel or complete their appointment here.
+    notify = (NOTIFY_ON_STATUS_CHANGE and appt and status != prior
+              and status in ("cancelled", "completed")
+              and (scope is None or appt["tenant_id"] == scope))
+    if notify:
+        try:
+            tenant = get_tenant(appt["tenant_id"])
+            if tenant:
+                await notify_appointment_status(appt, status, tenant)
+        except Exception as e:  # noqa: BLE001 — a send failure must not break the action
+            log.warning("status-change notify failed for appt %s: %s", appointment_id, str(e)[:160])
+            await asyncio.to_thread(
+                incidents.record, "whatsapp", "Appointment status notification failed",
+                level="warning", detail=str(e)[:300],
+                tenant_id=appt["tenant_id"], wa_user=appt.get("wa_user"))
     referrer = request.headers.get("referer", "/admin/appointments")
     return RedirectResponse(referrer, status_code=303)
 

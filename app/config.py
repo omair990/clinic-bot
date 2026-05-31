@@ -123,6 +123,9 @@ INSIGHTS_DIGEST_HOUR = int(os.getenv("INSIGHTS_DIGEST_HOUR", "8"))
 INSIGHTS_WEEKLY_DOW = int(os.getenv("INSIGHTS_WEEKLY_DOW", "6"))
 INSIGHTS_DIGEST_INTERVAL_MIN = int(os.getenv("INSIGHTS_DIGEST_INTERVAL_MIN", "30"))
 
+# WhatsApp the patient when staff cancel or complete their appointment from the dashboard.
+NOTIFY_ON_STATUS_CHANGE = _flag("NOTIFY_ON_STATUS_CHANGE", True)
+
 # --- LLM resilience ---
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).

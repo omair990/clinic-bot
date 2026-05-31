@@ -432,6 +432,15 @@ def get_appointment(tenant_id: int, appointment_id: int) -> dict | None:
         ).fetchone()
 
 
+def get_appointment_by_id(appointment_id: int) -> dict | None:
+    """Fetch an appointment without tenant scoping — used by the super-admin dashboard
+    (which sees all tenants) to read details before a status change."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM appointments WHERE id = %s", (appointment_id,)
+        ).fetchone()
+
+
 def set_appointment_status(tenant_id: int, appointment_id: int, status: str) -> None:
     with get_conn() as conn:
         conn.execute(
