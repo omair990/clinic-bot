@@ -44,7 +44,15 @@
     </div>
   </aside>
   <main class="flex-1 overflow-auto">
-    <div class="max-w-7xl mx-auto p-6">{% block content %}{% endblock %}</div>
+    <div class="max-w-7xl mx-auto p-6">
+      {% if wa_send_failing() %}
+      <div class="mb-4 px-4 py-3 rounded-lg bg-red-600 text-white text-sm flex items-start gap-2 shadow">
+        <span class="text-base leading-none">⚠️</span>
+        <span>WhatsApp messages are <strong>failing to send</strong> (authentication error — the access token is likely expired). Patients are not receiving replies. Update <code class="bg-red-700/60 px-1 rounded">WA_ACCESS_TOKEN</code> and redeploy.</span>
+      </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </div>
   </main>
 </div>
 {% else %}

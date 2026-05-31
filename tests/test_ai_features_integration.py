@@ -279,6 +279,21 @@ def test_run_digests_includes_weekly_on_dow(monkeypatch):
     assert len([b for to, b in sent if to == owner]) == 2
 
 
+def test_dashboard_banner_appears_when_sends_are_401ing(monkeypatch):
+    import app.wa_client as wa
+    c = _super_client()
+    # Healthy: no banner.
+    monkeypatch.setattr(wa, "_auth_failed_at", None)
+    assert "failing to send" not in c.get("/admin/").text
+    # A 401 flips the flag -> banner shows on the dashboard.
+    wa._note_send_result(401)
+    body = c.get("/admin/").text
+    assert "failing to send" in body and "WA_ACCESS_TOKEN" in body
+    # A later success clears it -> banner gone.
+    wa._note_send_result(200)
+    assert "failing to send" not in c.get("/admin/").text
+
+
 def test_run_digests_skips_before_send_hour(monkeypatch):
     import asyncio
     import app.wa_client as wa

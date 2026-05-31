@@ -162,6 +162,19 @@ def _open_issue_count(request: Request) -> int:
 
 
 templates.env.globals["open_issue_count"] = _open_issue_count
+
+
+def _wa_send_failing() -> bool:
+    """Whether outbound WhatsApp is currently failing auth — drives the dashboard banner.
+    Never raises (a banner check must not break the page)."""
+    try:
+        from app.wa_client import auth_failing
+        return auth_failing()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+templates.env.globals["wa_send_failing"] = _wa_send_failing
 templates.env.filters["reason_label"] = lambda r: no_show_mod.REASON_LABELS.get(r, r or "—")
 
 

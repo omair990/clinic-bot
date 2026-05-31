@@ -32,3 +32,16 @@ def test_template_payload_without_params_omits_components():
     p = wa.build_template_payload("966500", "reminder", "ar")
     assert "components" not in p["template"]
     assert p["template"]["language"]["code"] == "ar"
+
+
+def test_auth_health_transitions(monkeypatch):
+    monkeypatch.setattr(wa, "_auth_failed_at", None)
+    assert wa.auth_failing() is False
+    wa._note_send_result(401)
+    assert wa.auth_failing() is True          # token rejected -> failing
+    wa._note_send_result(200)
+    assert wa.auth_failing() is False         # a success clears it
+    wa._note_send_result(401)
+    assert wa.auth_failing() is True
+    wa._note_send_result(429)                 # other errors don't clear the auth flag
+    assert wa.auth_failing() is True

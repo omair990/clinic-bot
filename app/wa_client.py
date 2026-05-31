@@ -1,5 +1,7 @@
 """Thin WhatsApp Cloud API client."""
 import logging
+import threading
+import time
 
 import httpx
 
@@ -7,6 +9,32 @@ from app.config import WA_ACCESS_TOKEN, WA_API_VERSION, WA_PHONE_NUMBER_ID
 from app.formatting import to_whatsapp
 
 log = logging.getLogger(__name__)
+
+# --- Outbound auth health (drives the dashboard banner) ---
+# A 401 from the Graph API means the access token is rejected (expired/invalid), so NO
+# message is going out — patients get silence. We track the latest send outcome in memory
+# (cheap, non-blocking) so the dashboard can warn staff immediately.
+_health_lock = threading.Lock()
+_auth_failed_at: float | None = None   # set on a 401, cleared on the next successful send
+
+
+def _note_send_result(status_code: int) -> None:
+    """Record a send outcome: a 401 flags the token as bad; any success clears it."""
+    global _auth_failed_at
+    with _health_lock:
+        if status_code == 401:
+            if _auth_failed_at is None:   # log once per failure episode, not every send
+                log.error("WhatsApp access token rejected (401) — outbound messages are failing")
+            _auth_failed_at = time.time()
+        elif status_code < 400:
+            _auth_failed_at = None
+
+
+def auth_failing() -> bool:
+    """True if the most recent send was rejected for auth (401) with no later success —
+    i.e. outbound WhatsApp is currently down on a bad/expired token."""
+    with _health_lock:
+        return _auth_failed_at is not None
 
 BASE_URL = f"https://graph.facebook.com/{WA_API_VERSION}/{WA_PHONE_NUMBER_ID}"
 HEADERS = {
@@ -41,6 +69,7 @@ async def send_text(to: str, body: str, *, phone_number_id: str | None = None,
     }
     async with httpx.AsyncClient(timeout=20.0) as client:
         r = await client.post(_messages_url(pn), headers=_auth(token), json=payload)
+        _note_send_result(r.status_code)
         if r.status_code >= 400:
             log.error("WA send_text failed status=%s body=%s", r.status_code, r.text)
         r.raise_for_status()
@@ -61,6 +90,7 @@ async def send_template(to: str, name: str, language: str, params: list | None =
     payload = build_template_payload(to, name, language, params)
     async with httpx.AsyncClient(timeout=20.0) as client:
         r = await client.post(_messages_url(pn), headers=_auth(token), json=payload)
+        _note_send_result(r.status_code)
         if r.status_code >= 400:
             log.error("WA send_template(%s) failed status=%s body=%s", name, r.status_code, r.text)
         r.raise_for_status()
