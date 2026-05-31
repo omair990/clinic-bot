@@ -16,6 +16,7 @@
     <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
       <tr>
         <th class="text-left px-4 py-2">Clinic</th>
+        <th class="text-left px-4 py-2">Connector</th>
         <th class="text-left px-4 py-2">Plan</th>
         <th class="text-left px-4 py-2">Text usage</th>
         <th class="text-left px-4 py-2">Voice usage</th>
@@ -30,6 +31,7 @@
           <div class="text-xs text-slate-400">{{ t.slug }}
             · <a href="/admin/tenants/{{ t.id }}/edit" class="text-emerald-700 hover:underline">edit</a></div>
         </td>
+        <td class="px-4 py-3 text-xs">{{ t.connector_type | connector_label }}</td>
         <td class="px-4 py-3">
           <form method="post" action="/admin/tenants/{{ t.id }}/plan" class="flex items-center gap-2">
             <select name="plan_id" class="border rounded px-2 py-1 text-sm">
@@ -62,7 +64,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400 text-sm">No tenants yet</td></tr>
+      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400 text-sm">No tenants yet</td></tr>
       {% endfor %}
     </tbody>
   </table>

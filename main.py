@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import router as admin_router
 from app.config import (
+    COMMIT_SHA,
     EVENT_RETENTION_DAYS,
     INSIGHTS_DIGEST_ENABLED,
     INSIGHTS_DIGEST_INTERVAL_MIN,
@@ -89,7 +90,7 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=60 * 60 * 2
 def health() -> JSONResponse:
     db_ok = ping()
     return JSONResponse(
-        {"status": "ok" if db_ok else "degraded", "db": db_ok},
+        {"status": "ok" if db_ok else "degraded", "db": db_ok, "version": COMMIT_SHA},
         status_code=200 if db_ok else 503,
     )
 

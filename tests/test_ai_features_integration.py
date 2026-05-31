@@ -485,6 +485,35 @@ def test_handover_notifies_staff_with_ai_summary(monkeypatch):
     assert "Insurance: Bupa" in admin[0] and "Service: Dermatology" in admin[0]
 
 
+def test_health_endpoint_reports_version():
+    from fastapi.testclient import TestClient
+    import main
+    r = TestClient(main.app).get("/")
+    assert "version" in r.json()          # commit SHA marker for deploy verification
+
+
+def test_list_tenants_includes_connector_type():
+    from app.tenancy import current_period
+    sfx = uuid.uuid4().hex[:8]
+    tid = db.create_tenant(f"Cn {sfx}", f"cn-{sfx}", f"PNCN{sfx}", None, "Asia/Riyadh", None,
+                           {"clinic": {"name": "X"},
+                            "connector": {"type": "cliniko", "api_key": "k", "business_id": "b"}})
+    rows = db.list_tenants(current_period("Asia/Riyadh"))
+    row = next(r for r in rows if r["id"] == tid)
+    assert row["connector_type"] == "cliniko"        # type is readable (not a secret)
+
+
+def test_plans_page_shows_connector_column():
+    sfx = uuid.uuid4().hex[:8]
+    db.create_tenant(f"Cn2 {sfx}", f"cn2-{sfx}", f"PNCN2{sfx}", None, "Asia/Riyadh", None,
+                     {"clinic": {"name": "X"},
+                      "connector": {"type": "cliniko", "api_key": "k", "business_id": "b"}})
+    c = _super_client()
+    r = c.get("/admin/plans")
+    assert r.status_code == 200
+    assert "Connector" in r.text and "Cliniko" in r.text and "Native" in r.text
+
+
 def test_dashboard_banner_appears_when_sends_are_401ing(monkeypatch):
     import app.wa_client as wa
     c = _super_client()

@@ -157,6 +157,10 @@ LLM_BREAKER_COOLDOWN_S = float(os.getenv("LLM_BREAKER_COOLDOWN_S", "60"))
 USAGE_ENFORCEMENT = os.getenv("USAGE_ENFORCEMENT", "true").lower() in ("1", "true", "yes", "on")
 ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "").strip()
 PORT = int(os.getenv("PORT", "8000"))
+# Deployed commit — Railway injects RAILWAY_GIT_COMMIT_SHA on GitHub deploys; surfaced on
+# the health endpoint so the running version is verifiable.
+COMMIT_SHA = (os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+              or os.environ.get("GIT_COMMIT") or "unknown").strip()[:12]
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-please-rotate")
 # Encryption key for secrets at rest (WhatsApp token, connector credentials). A Fernet key;

@@ -1344,6 +1344,7 @@ def list_tenants(period: str) -> list[dict]:
     with get_conn() as conn:
         return conn.execute(
             "SELECT t.id, t.name, t.slug, t.status, t.wa_phone_number_id, "
+            "       COALESCE(t.clinic_data->'connector'->>'type', 'native') AS connector_type, "
             "       p.name AS plan_name, p.monthly_text_quota, p.voice_enabled, "
             "       p.monthly_voice_quota, "
             "       COALESCE(u.text_count, 0) AS text_count, "

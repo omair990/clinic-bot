@@ -40,7 +40,12 @@
       </div>
     </div>
     <div>
-      <label class="block text-xs text-slate-500 mb-1">Clinic data (JSON: clinic, services, doctors, appointment_policy, faqs)</label>
+      <div class="flex items-center gap-2 mb-1">
+        <span class="text-xs text-slate-500">Appointment backend (connector):</span>
+        {% set _ct = (t.clinic_data.connector.type if t.clinic_data and t.clinic_data.connector else 'native') %}
+        <span class="inline-block px-2 py-0.5 text-xs rounded bg-slate-100 text-slate-700">{{ _ct | connector_label }}</span>
+      </div>
+      <label class="block text-xs text-slate-500 mb-1">Clinic data (JSON: clinic, services, doctors, appointment_policy, faqs — and an optional <code>connector</code> block for Google Calendar / Cliniko / Custom ERP / FHIR; secrets are encrypted at rest — see docs/connectors.md)</label>
       <textarea name="clinic_data" rows="18" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ clinic_json }}</textarea>
     </div>
     <div class="flex gap-2">

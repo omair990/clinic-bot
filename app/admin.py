@@ -129,6 +129,18 @@ def lead_badge_html(band: str | None) -> str:
 templates.env.filters["lead_badge"] = lambda b: Markup(lead_badge_html(b))
 
 
+# --- Connector labels (which appointment backend a clinic is on) ---
+CONNECTOR_LABELS = {
+    "native": "🗄️ Native (our DB)",
+    "google_calendar": "📅 Google Calendar",
+    "cliniko": "🩺 Cliniko",
+    "custom_erp": "🔌 Custom ERP",
+    "fhir": "🏥 FHIR / HIS",
+}
+templates.env.filters["connector_label"] = lambda c: CONNECTOR_LABELS.get(c or "native",
+                                                                          c or "native")
+
+
 def _principal(request: Request) -> dict | None:
     role = request.session.get("role")
     if not role:
