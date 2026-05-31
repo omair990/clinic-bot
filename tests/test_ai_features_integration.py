@@ -485,6 +485,46 @@ def test_handover_notifies_staff_with_ai_summary(monkeypatch):
     assert "Insurance: Bupa" in admin[0] and "Service: Dermatology" in admin[0]
 
 
+def test_webhook_blocks_suspended_tenant_end_to_end(monkeypatch):
+    """Plan/status enforcement actually gates WhatsApp: a suspended (non-default) clinic's
+    inbound message is blocked — the agent never runs, the patient gets the block notice,
+    and no usage is charged."""
+    import asyncio
+    from app import webhook
+    from app.tenancy import current_period
+    from app.tools import AgentContext
+
+    sfx = uuid.uuid4().hex[:8]
+    pnid = f"PNBLK{sfx}"
+    tid = db.create_tenant(f"Blk {sfx}", f"blk-{sfx}", pnid, None, "Asia/Riyadh", None,
+                           {"clinic": {"name": "B"}})
+    db.set_tenant_status(tid, "suspended")
+    user = _user()
+    sent, agent_ran = [], {"v": False}
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+
+    async def fake_mark(*a, **k):
+        return None
+
+    def fake_agent(*a, **k):
+        agent_ran["v"] = True
+        return AgentContext(wa_user=user, reply="should not run")
+
+    monkeypatch.setattr(webhook, "send_text", fake_send)
+    monkeypatch.setattr(webhook, "mark_read", fake_mark)
+    monkeypatch.setattr(webhook, "run_agent", fake_agent)
+    monkeypatch.setattr(webhook, "USAGE_ENFORCEMENT", True)
+
+    msg = {"from": user, "id": "wamid." + uuid.uuid4().hex, "type": "text", "text": {"body": "hi"}}
+    asyncio.run(webhook._handle_message(msg, pnid))
+
+    assert agent_ran["v"] is False                                  # agent never invoked
+    assert sent and "currently unavailable" in sent[0][1]           # MSG_UNAVAILABLE sent
+    assert db.get_usage(tid, current_period("Asia/Riyadh"))["text_count"] == 0   # not charged
+
+
 def test_health_endpoint_reports_version():
     from fastapi.testclient import TestClient
     import main

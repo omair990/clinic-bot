@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from app import db
+from app.config import ENFORCE_DEFAULT_TENANT
 
 log = logging.getLogger(__name__)
 
@@ -49,9 +50,9 @@ def check_quota(tenant: dict | None, *, is_voice: bool) -> Decision:
     if not tenant:
         return Decision(True)
 
-    # Safeguard: the platform's own clinic is never blocked by enforcement, so it
-    # can't be accidentally locked out via the dashboard (status/plan/quota).
-    if tenant.get("slug") == "default":
+    # Safeguard: the platform's own clinic is exempt by default, so it can't be accidentally
+    # locked out via the dashboard. Set ENFORCE_DEFAULT_TENANT to gate it like any other.
+    if tenant.get("slug") == "default" and not ENFORCE_DEFAULT_TENANT:
         return Decision(True)
 
     if tenant.get("status") in ("suspended", "expired"):

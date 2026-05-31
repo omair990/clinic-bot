@@ -155,6 +155,10 @@ LLM_BREAKER_COOLDOWN_S = float(os.getenv("LLM_BREAKER_COOLDOWN_S", "60"))
 # --- Operations ---
 # Master switch for plan/quota enforcement (counting always happens regardless).
 USAGE_ENFORCEMENT = os.getenv("USAGE_ENFORCEMENT", "true").lower() in ("1", "true", "yes", "on")
+# By default the platform's own 'default' clinic is exempt from plan/quota/status enforcement
+# (so a dashboard misclick can't lock out the operator). Set this true to also enforce the
+# plan on the default clinic — e.g. a single-tenant deployment that wants its own limits.
+ENFORCE_DEFAULT_TENANT = os.getenv("ENFORCE_DEFAULT_TENANT", "false").lower() in ("1", "true", "yes", "on")
 ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "").strip()
 PORT = int(os.getenv("PORT", "8000"))
 # Deployed commit — Railway injects RAILWAY_GIT_COMMIT_SHA on GitHub deploys; surfaced on

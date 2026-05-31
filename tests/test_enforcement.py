@@ -80,3 +80,21 @@ def test_trial_active_allows(monkeypatch):
     future = datetime.now(timezone.utc) + timedelta(days=3)
     assert ten.check_quota(_tenant(is_trial=True, trial_ends_at=future,
                                    monthly_text_quota=50), is_voice=False).allowed
+
+
+def test_default_tenant_enforced_when_flag_on(monkeypatch):
+    # With ENFORCE_DEFAULT_TENANT on, the default clinic is gated like any other tenant.
+    monkeypatch.setattr(ten, "ENFORCE_DEFAULT_TENANT", True)
+    _usage(monkeypatch, text=50)
+    d = ten.check_quota(_tenant(slug="default", monthly_text_quota=50), is_voice=False)
+    assert not d.allowed and d.reason == "text_quota"
+    # ...and a suspended default clinic is blocked too.
+    d = ten.check_quota(_tenant(slug="default", status="suspended"), is_voice=False)
+    assert not d.allowed and d.reason == "suspended"
+
+
+def test_default_tenant_still_exempt_when_flag_off(monkeypatch):
+    monkeypatch.setattr(ten, "ENFORCE_DEFAULT_TENANT", False)
+    _usage(monkeypatch, text=999)
+    assert ten.check_quota(_tenant(slug="default", status="suspended",
+                                   monthly_text_quota=1), is_voice=False).allowed
