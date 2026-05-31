@@ -211,9 +211,18 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
 
     if ctx.needs_human:
         flag = "EMERGENCY" if ctx.emergency else "HANDOVER"
-        await _notify_admin(
-            f"[{flag}] +{sender}\nReason: {ctx.escalation_reason}\n"
-            f"User: {user_text}\nAI: {ctx.reply}")
+        summary = ""
+        try:  # an AI summary so staff don't have to read the whole thread
+            from app import analysis
+            row = await asyncio.to_thread(analysis.get_or_build, tid, sender)
+            summary = analysis.staff_summary_line(row)
+        except Exception:  # noqa: BLE001 — summary is best-effort
+            log.warning("handover summary build failed for %s", sender)
+        msg = (f"[{flag}] +{sender}\nReason: {ctx.escalation_reason}\n"
+               f"User: {user_text}\nAI: {ctx.reply}")
+        if summary:
+            msg += f"\n--- AI summary ---\n{summary}"
+        await _notify_admin(msg)
     elif ctx.booked_ids or ctx.changed_ids:
         await _notify_admin(f"[BOOKING] +{sender}\n" + "\n".join(ctx.actions))
 

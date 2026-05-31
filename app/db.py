@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS conversation_analysis (
     customer_name          TEXT,
     requested_service      TEXT,
     appointment_preference TEXT,
+    insurance              TEXT,    -- provider if mentioned (Bupa, Tawuniya, …)
     urgency                TEXT,    -- low | medium | high
     sentiment              TEXT,    -- positive | neutral | negative
     next_action            TEXT,
@@ -192,6 +193,7 @@ ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS extra JSONB;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS risk_score INTEGER;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS risk_band TEXT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
+ALTER TABLE conversation_analysis ADD COLUMN IF NOT EXISTS insurance TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_username TEXT;
@@ -991,22 +993,23 @@ def upsert_conversation_analysis(tenant_id: int, wa_user: str, data: dict,
         conn.execute(
             "INSERT INTO conversation_analysis "
             "(tenant_id, wa_user, customer_name, requested_service, appointment_preference, "
-            " urgency, sentiment, next_action, lead_band, lead_score, lead_rationale, "
+            " insurance, urgency, sentiment, next_action, lead_band, lead_score, lead_rationale, "
             " message_count, source, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now()) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now()) "
             "ON CONFLICT (tenant_id, wa_user) DO UPDATE SET "
             "customer_name = EXCLUDED.customer_name, "
             "requested_service = EXCLUDED.requested_service, "
             "appointment_preference = EXCLUDED.appointment_preference, "
+            "insurance = EXCLUDED.insurance, "
             "urgency = EXCLUDED.urgency, sentiment = EXCLUDED.sentiment, "
             "next_action = EXCLUDED.next_action, lead_band = EXCLUDED.lead_band, "
             "lead_score = EXCLUDED.lead_score, lead_rationale = EXCLUDED.lead_rationale, "
             "message_count = EXCLUDED.message_count, source = EXCLUDED.source, "
             "updated_at = now()",
             (tenant_id, wa_user, data.get("customer_name"), data.get("requested_service"),
-             data.get("appointment_preference"), data.get("urgency"), data.get("sentiment"),
-             data.get("next_action"), data.get("lead_band"), data.get("lead_score"),
-             data.get("lead_rationale"), msg_count, source),
+             data.get("appointment_preference"), data.get("insurance"), data.get("urgency"),
+             data.get("sentiment"), data.get("next_action"), data.get("lead_band"),
+             data.get("lead_score"), data.get("lead_rationale"), msg_count, source),
         )
 
 

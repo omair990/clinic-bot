@@ -26,6 +26,7 @@
     <div><span class="text-xs text-slate-400 block">Customer</span>{{ analysis.customer_name or '—' }}</div>
     <div><span class="text-xs text-slate-400 block">Requested service</span>{{ analysis.requested_service or '—' }}</div>
     <div><span class="text-xs text-slate-400 block">Appointment preference</span>{{ analysis.appointment_preference or '—' }}</div>
+    <div><span class="text-xs text-slate-400 block">Insurance</span>{{ analysis.insurance or '—' }}</div>
     <div><span class="text-xs text-slate-400 block">Urgency</span>
       {% set uc = {'high':'rose','medium':'amber','low':'slate'}.get(analysis.urgency,'slate') %}
       <span class="inline-block px-2 py-0.5 text-xs rounded bg-{{uc}}-100 text-{{uc}}-700">{{ analysis.urgency or '—' }}</span>

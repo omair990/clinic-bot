@@ -29,6 +29,7 @@ Return ONLY a single JSON object (no prose, no code fence) with EXACTLY these ke
   "customer_name": string|null,
   "requested_service": string|null,
   "appointment_preference": string|null,   // preferred day/time/doctor if mentioned
+  "insurance": string|null,                 // insurance provider if mentioned (e.g. Bupa)
   "urgency": "low"|"medium"|"high",
   "sentiment": "positive"|"neutral"|"negative",
   "next_action": string,                    // the single best next step for staff
@@ -93,6 +94,7 @@ def heuristic_analysis(thread: list[dict], patient_name: str | None,
         "customer_name": patient_name,
         "requested_service": None,
         "appointment_preference": None,
+        "insurance": None,
         "urgency": "medium" if engaged else "low",
         "sentiment": "neutral",
         "next_action": ("Confirm the upcoming appointment." if has_booking
@@ -108,7 +110,7 @@ def _normalize(data: dict, fallback: dict) -> dict:
     """Coerce model output into the stored shape, backfilling from the heuristic."""
     out = dict(fallback)  # start from safe defaults
     for key in ("customer_name", "requested_service", "appointment_preference",
-                "next_action", "lead_rationale"):
+                "insurance", "next_action", "lead_rationale"):
         val = data.get(key)
         if isinstance(val, str) and val.strip():
             out[key] = val.strip()[:500]
@@ -143,6 +145,17 @@ def analyze_conversation(thread: list[dict], patient_name: str | None,
     if not parsed:
         return fallback, "heuristic"
     return _normalize(parsed, fallback), "ai"
+
+
+def staff_summary_line(a: dict | None) -> str:
+    """A compact handover summary for staff (so they don't read 50 messages)."""
+    if not a:
+        return ""
+    fields = [("Customer", a.get("customer_name")), ("Service", a.get("requested_service")),
+              ("Preference", a.get("appointment_preference")), ("Insurance", a.get("insurance")),
+              ("Urgency", a.get("urgency")), ("Sentiment", a.get("sentiment")),
+              ("Next", a.get("next_action"))]
+    return "\n".join(f"{label}: {val}" for label, val in fields if val)
 
 
 def get_or_build(tenant_id: int, wa_user: str, force: bool = False) -> dict | None:

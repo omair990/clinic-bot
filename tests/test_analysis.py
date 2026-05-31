@@ -55,8 +55,8 @@ def test_normalize_clamps_score_and_fixes_enums():
 
 def test_analyze_conversation_uses_llm(monkeypatch):
     payload = {"customer_name": "Sara", "requested_service": "Dental Cleaning",
-               "appointment_preference": "tomorrow evening", "urgency": "high",
-               "sentiment": "positive", "next_action": "Offer the 6pm slot",
+               "appointment_preference": "tomorrow evening", "insurance": "Bupa",
+               "urgency": "high", "sentiment": "positive", "next_action": "Offer the 6pm slot",
                "lead_band": "hot", "lead_score": 90, "lead_rationale": "ready to book"}
     monkeypatch.setattr(analysis, "generate",
                         lambda s, m, t: LLMResult(text=json.dumps(payload)))
@@ -65,6 +65,17 @@ def test_analyze_conversation_uses_llm(monkeypatch):
     assert src == "ai"
     assert data["lead_band"] == "hot" and data["requested_service"] == "Dental Cleaning"
     assert data["urgency"] == "high" and data["sentiment"] == "positive"
+    assert data["insurance"] == "Bupa"
+
+
+def test_staff_summary_line_formats_and_skips_empties():
+    a = {"customer_name": "Sara", "requested_service": "Dermatology",
+         "appointment_preference": "Thursday evening", "insurance": "Bupa",
+         "urgency": "high", "sentiment": None, "next_action": "Call back"}
+    s = analysis.staff_summary_line(a)
+    assert "Customer: Sara" in s and "Insurance: Bupa" in s and "Urgency: high" in s
+    assert "Sentiment" not in s            # empty fields omitted
+    assert analysis.staff_summary_line(None) == ""
 
 
 def test_analyze_conversation_falls_back_when_llm_down(monkeypatch):

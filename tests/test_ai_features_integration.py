@@ -445,6 +445,46 @@ def test_repeat_cancel_does_not_double_notify(monkeypatch):
     assert len([s for s in sent if s[0] == user]) == 1
 
 
+def test_handover_notifies_staff_with_ai_summary(monkeypatch):
+    import asyncio
+    from app import webhook, analysis
+    from app.tools import AgentContext
+    tid = db.get_default_tenant()["id"]
+    user = _user()
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append((to, body))
+
+    async def fake_mark(*a, **k):
+        return None
+
+    monkeypatch.setattr(webhook, "send_text", fake_send)
+    monkeypatch.setattr(webhook, "mark_read", fake_mark)
+    monkeypatch.setattr(webhook, "ADMIN_WA_NUMBER", "999admin")
+
+    def run(tenant, sender, text, hist):
+        c = AgentContext(wa_user=sender, reply="A staff member will follow up.")
+        c.needs_human = True
+        c.escalation_reason = "complaint"
+        return c
+    monkeypatch.setattr(webhook, "run_agent", run)
+    monkeypatch.setattr(analysis, "generate", lambda s, m, t: LLMResult(text=json.dumps(
+        {"customer_name": "Sara", "requested_service": "Dermatology",
+         "appointment_preference": "Thursday evening", "insurance": "Bupa",
+         "urgency": "high", "sentiment": "neutral", "next_action": "Call back",
+         "lead_band": "warm", "lead_score": 50})))
+
+    msg = {"from": user, "id": "wamid." + uuid.uuid4().hex,
+           "type": "text", "text": {"body": "I have a complaint"}}
+    asyncio.run(webhook._handle_message(msg, None))
+
+    admin = [b for to, b in sent if to == "999admin"]
+    assert admin, "staff was not notified"
+    assert "AI summary" in admin[0]
+    assert "Insurance: Bupa" in admin[0] and "Service: Dermatology" in admin[0]
+
+
 def test_dashboard_banner_appears_when_sends_are_401ing(monkeypatch):
     import app.wa_client as wa
     c = _super_client()
