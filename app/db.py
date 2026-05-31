@@ -973,13 +973,16 @@ def create_tenant(name: str, slug: str, wa_phone_number_id: str | None, plan_id:
 def update_tenant_config(tenant_id: int, *, name: str, wa_phone_number_id: str | None,
                          wa_access_token: str | None, timezone: str,
                          clinic_data: dict | None) -> None:
-    from psycopg.types.json import Json
+    # clinic_data is a jsonb column; COALESCE needs both branches the SAME type, and
+    # there's no implicit json->jsonb cast — so the parameter must be Jsonb, not Json,
+    # or "COALESCE($5, clinic_data)" raises CannotCoerce (jsonb vs json).
+    from psycopg.types.json import Jsonb
     with get_conn() as conn:
         conn.execute(
             "UPDATE tenants SET name = %s, wa_phone_number_id = %s, wa_access_token = %s, "
             "timezone = %s, clinic_data = COALESCE(%s, clinic_data) WHERE id = %s",
             (name, wa_phone_number_id or None, wa_access_token or None, timezone,
-             Json(clinic_data) if clinic_data is not None else None, tenant_id),
+             Jsonb(clinic_data) if clinic_data is not None else None, tenant_id),
         )
 
 
