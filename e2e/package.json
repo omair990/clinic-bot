@@ -1,0 +1,12 @@
+{
+  "name": "clinic-bot-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser end-to-end tests (Playwright) for the admin panel.",
+  "scripts": {
+    "test": "node clinic_editor.spec.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

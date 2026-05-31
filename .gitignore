@@ -9,3 +9,5 @@ __pycache__/
 .railway-token
 .openrouter-key
 .mistral-key
+
+e2e/node_modules/
