@@ -201,8 +201,14 @@ def test_reschedule_revives_a_no_show(tenant, wa, monkeypatch):
     ctx = AgentContext(wa_user=user, tenant_id=tenant, clinic_data=CLINIC,
                        no_show=db.open_no_show_followup(tenant, user))
     # Ask the real availability tool for a concrete free slot, then reschedule into it.
+    # Use the next *future* day the doctor works — a bare weekday name resolves to *today*
+    # when today is that weekday (e.g. "sunday" on a Sunday), leaving no bookable slots.
+    work = set(CLINIC["doctors"][0]["available_days"])
+    target = datetime.now(TZ).date() + timedelta(days=1)
+    while target.strftime("%A") not in work:
+        target += timedelta(days=1)
     avail = dispatch("check_availability",
-                     {"doctor": "Dr. Test", "date": "sunday", "service": "Consult"}, ctx)
+                     {"doctor": "Dr. Test", "date": target.isoformat(), "service": "Consult"}, ctx)
     assert avail.get("available_times"), avail
     out = dispatch("reschedule_appointment",
                    {"appointment_id": appt_id, "date": avail["date"],
