@@ -76,6 +76,8 @@ def test_owner_number_prefers_clinic_data():
 
 
 def test_owner_number_falls_back_to_admin_for_default_only(monkeypatch):
+    from app import settings
+    monkeypatch.setattr(settings, "get", lambda key, default=None: default)  # ignore DB override
     monkeypatch.setattr(insights, "ADMIN_WA_NUMBER", "966999")
     assert insights._owner_number({"clinic_data": {}, "slug": "default"}) == "966999"
     assert insights._owner_number({"clinic_data": {}, "slug": "other"}) is None

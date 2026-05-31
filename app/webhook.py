@@ -262,13 +262,15 @@ async def connector_webhook(request: Request, tenant_id: int):
 
 
 async def _notify_admin(text: str) -> None:
-    if not ADMIN_WA_NUMBER:
+    from app import settings
+    number = settings.get("ADMIN_WA_NUMBER", ADMIN_WA_NUMBER)
+    if not number:
         return
     try:
-        await send_text(ADMIN_WA_NUMBER, text)
+        await send_text(number, text)
     except Exception as e:  # noqa: BLE001
         # Common in dev mode (#131030: admin number not on the WhatsApp allowed list).
         # Doesn't affect the patient reply — log concisely instead of a full traceback.
-        log.warning("Could not notify admin (%s): %s", ADMIN_WA_NUMBER, str(e)[:160])
+        log.warning("Could not notify admin (%s): %s", number, str(e)[:160])
         await asyncio.to_thread(incidents.record, "whatsapp", "Could not notify staff number",
                                 level="warning", detail=str(e)[:300])

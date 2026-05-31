@@ -103,6 +103,14 @@ CREATE TABLE IF NOT EXISTS conversation_analysis (
     PRIMARY KEY (tenant_id, wa_user)
 );
 
+-- Platform settings editable from the admin UI (overrides env at runtime; secrets encrypted).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    is_secret  BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Idempotency log for the scheduled insights digest: one row per (tenant, kind) holding
 -- the last date a digest was sent, so a restart or a 30-min tick can't double-send.
 CREATE TABLE IF NOT EXISTS digest_log (
@@ -319,6 +327,22 @@ def get_conn():
         raise RuntimeError("DB pool not initialised — call init_db() first")
     with _pool.connection() as conn:
         yield conn
+
+
+def get_setting(key: str) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT key, value, is_secret FROM app_settings WHERE key = %s",
+                            (key,)).fetchone()
+
+
+def upsert_setting(key: str, value: str | None, is_secret: bool = False) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value, is_secret, updated_at) "
+            "VALUES (%s, %s, %s, now()) ON CONFLICT (key) DO UPDATE SET "
+            "value = EXCLUDED.value, is_secret = EXCLUDED.is_secret, updated_at = now()",
+            (key, value, is_secret),
+        )
 
 
 def ping() -> bool:

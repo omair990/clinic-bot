@@ -38,6 +38,7 @@
       </a>
       {% if request.session.get('role')=='super' %}
       <a href="/admin/plans" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='plans' %}bg-slate-800 text-white{% endif %}">Plans &amp; Usage</a>
+      <a href="/admin/settings" class="block px-3 py-2 rounded hover:bg-slate-800 {% if active=='settings' %}bg-slate-800 text-white{% endif %}">Settings</a>
       {% endif %}
     </nav>
     <div class="px-3 py-3 border-t border-slate-800 text-xs text-slate-400">

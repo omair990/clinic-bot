@@ -171,8 +171,9 @@ def _owner_number(tenant: dict) -> str | None:
     owner = ((tenant.get("clinic_data") or {}).get("owner_wa_number") or "").strip()
     if owner:
         return owner
-    if tenant.get("slug") == "default" and ADMIN_WA_NUMBER:
-        return ADMIN_WA_NUMBER
+    if tenant.get("slug") == "default":
+        from app import settings
+        return settings.get("ADMIN_WA_NUMBER", ADMIN_WA_NUMBER) or None
     return None
 
 

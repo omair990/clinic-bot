@@ -615,6 +615,28 @@ async def connector_save(request: Request, tenant_id: int):
     return RedirectResponse(f"/admin/tenants/{tenant_id}/connector", status_code=303)
 
 
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, saved: str = ""):
+    _require_super(request)
+    from app import settings as settings_mod
+    editable = {k: (settings_mod.get(k) or "", lbl, grp)
+                for k, (lbl, grp) in settings_mod.EDITABLE.items()}
+    return templates.TemplateResponse(
+        "settings.html", {"request": request, "inventory": settings_mod.inventory_status(),
+                          "editable": editable, "saved": saved})
+
+
+@router.post("/settings")
+async def settings_save(request: Request):
+    _require_super(request)
+    from app import settings as settings_mod
+    form = await request.form()
+    for key in settings_mod.EDITABLE:
+        if key in form:
+            settings_mod.set_value(key, (form.get(key) or "").strip() or None)
+    return RedirectResponse("/admin/settings?saved=1", status_code=303)
+
+
 @router.get("/plans", response_class=HTMLResponse)
 async def plans_page(request: Request):
     _require_super(request)
