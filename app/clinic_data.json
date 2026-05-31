@@ -8,6 +8,17 @@
     "website": "https://alshifa-clinic.sa",
     "languages": ["Arabic", "English"]
   },
+  "branches": [
+    {"name": "Al-Shifa Olaya (Main)", "city": "Riyadh", "district": "Al-Olaya",
+     "address": "Olaya Street, Al-Olaya District, Riyadh", "phone": "+966-11-234-5678",
+     "hours": "9:00 AM - 11:00 PM"},
+    {"name": "Al-Shifa Al-Naseem", "city": "Riyadh", "district": "Al-Naseem",
+     "address": "King Abdullah Road, Al-Naseem District, Riyadh", "phone": "+966-11-234-9012",
+     "hours": "9:00 AM - 11:00 PM"},
+    {"name": "Al-Shifa Jeddah Corniche", "city": "Jeddah", "district": "Corniche",
+     "address": "Corniche Road, Al-Shati District, Jeddah", "phone": "+966-12-345-6789",
+     "hours": "10:00 AM - 11:00 PM"}
+  ],
   "timings": {
     "sunday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",
     "monday": "9:00 AM - 1:00 PM, 4:00 PM - 11:00 PM",

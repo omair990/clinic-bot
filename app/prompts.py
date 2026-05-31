@@ -54,6 +54,19 @@ def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = 
         f"\nPATIENT ON FILE: this patient's {' and '.join(known)}. "
         "Reuse this — do NOT ask for it again.\n" if known else "")
 
+    # Multi-branch routing: when the clinic has several locations, steer the patient to the
+    # right one based on the city/area they mention.
+    branches_block = ""
+    branches = data.get("branches") or []
+    if branches:
+        cities = ", ".join(sorted({b.get("city", "") for b in branches if b.get("city")}))
+        branches_block = (
+            f"\n\nMULTIPLE BRANCHES: this clinic has {len(branches)} locations ({cities}). "
+            "When the patient mentions a city/district/area or asks which branch to visit, call "
+            "find_branch with their location (and the service if given) and route them to the "
+            "matching branch — give its address and phone. Only use branch details that "
+            "find_branch returns; never invent a location.")
+
     # Returning-patient memory: recall recent visits so the bot can greet them back and
     # offer to rebook the same doctor/service instead of starting from scratch.
     history_block = ""
@@ -180,5 +193,5 @@ CONVERSATION RULES:
 10. STAY IN SCOPE. You only handle three things: (a) appointment booking/reschedule/cancel,
    (b) service pricing, (c) general clinic info (hours, location, insurance, services).
    For anything else (medical advice, chit-chat, unrelated topics), politely decline in one
-   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.{booking_fields_block}{no_show_block}{history_block}{review_block}
+   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.{booking_fields_block}{branches_block}{no_show_block}{history_block}{review_block}
 """

@@ -136,6 +136,15 @@ TOOL_SPECS: list[ToolSpec] = [
                  "extra": {"type": "object", "description": "Clinic-specific intake fields "
                            "(keys/labels listed in the system prompt), e.g. payment method."}},
               "required": ["patient_name", "doctor", "service", "date", "time"]}),
+    ToolSpec("find_branch",
+             "Route a patient to the right clinic branch. Call when they mention a city, "
+             "district or area, or ask which location to visit. Returns matching branches "
+             "with address and phone (nearest/best match first).",
+             {"type": "object", "properties": {
+                 "location": {"type": "string", "description": "City/district/area the patient "
+                              "mentioned, e.g. 'Riyadh' or 'Olaya'. Omit to list all branches."},
+                 "service": {"type": "string", "description": "Optional service they want, to "
+                             "prefer branches that offer it."}}}),
     ToolSpec("get_faqs",
              "Clinic FAQs: insurance, parking, home service, prescription refills, "
              "cancellation/reschedule policy, treating non-Saudis.",
@@ -310,6 +319,34 @@ def _snapshot_risk(ctx: AgentContext, appt_row: dict) -> None:
         log.warning("risk snapshot failed for appt %s", appt_row.get("id"))
 
 
+def _find_branch(args: dict, ctx: AgentContext) -> dict:
+    branches = (ctx.clinic_data or {}).get("branches") or []
+    if not branches:
+        return {"error": "no_branches", "note": "This clinic has a single location."}
+    loc = (args.get("location") or "").lower().strip()
+    svc = (args.get("service") or "").lower().strip()
+
+    def loc_match(b: dict) -> bool:
+        if not loc:
+            return True
+        hay = " ".join(str(b.get(k, "")) for k in ("name", "city", "district", "address")).lower()
+        return loc in hay
+
+    matched = [b for b in branches if loc_match(b)]
+    cands = matched or branches            # fall back to all if nothing matched the location
+    if svc:                                # prefer branches that offer the requested service
+        svc_ok = [b for b in cands if not b.get("services")
+                  or any(svc in str(s).lower() for s in b.get("services", []))]
+        cands = svc_ok or cands
+    return {
+        "branches": [{"name": b.get("name"), "city": b.get("city"), "district": b.get("district"),
+                      "address": b.get("address"), "phone": b.get("phone"),
+                      "hours": b.get("hours")} for b in cands[:3]],
+        "matched_location": bool(loc and matched),
+        "total_branches": len(branches),
+    }
+
+
 def _get_faqs(args: dict, ctx: AgentContext) -> dict:
     data = ctx.clinic_data or {}
     return {"faqs": data.get("faqs", []),
@@ -457,6 +494,7 @@ _HANDLERS = {
     "list_doctors": _list_doctors,
     "check_availability": _check_availability,
     "book_appointment": _book_appointment,
+    "find_branch": _find_branch,
     "get_faqs": _get_faqs,
     "get_my_appointments": _get_my_appointments,
     "reschedule_appointment": _reschedule_appointment,
