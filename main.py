@@ -11,11 +11,14 @@ from app.admin import router as admin_router
 from app.config import (
     EVENT_RETENTION_DAYS,
     MAINTENANCE_INTERVAL_HOURS,
+    NO_SHOW_ENABLED,
+    NO_SHOW_SWEEP_INTERVAL_MIN,
     PORT,
     PROCESSED_MSG_RETENTION_HOURS,
     SECRET_KEY,
 )
 from app.db import close_db, init_db, ping, prune_processed_messages, prune_resolved_events
+from app.no_show import sweep as no_show_sweep
 from app.webhook import router as webhook_router
 
 logging.basicConfig(
@@ -39,12 +42,26 @@ async def _maintenance_loop() -> None:
         await asyncio.sleep(MAINTENANCE_INTERVAL_HOURS * 3600)
 
 
+async def _no_show_loop() -> None:
+    """Periodically detect no-shows, run recovery outreach, and score upcoming
+    appointments for no-show risk (see app/no_show.py)."""
+    while True:
+        try:
+            await no_show_sweep()
+        except Exception:  # noqa: BLE001 — a bad pass must not kill the loop
+            log.exception("no-show sweep failed")
+        await asyncio.sleep(NO_SHOW_SWEEP_INTERVAL_MIN * 60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    task = asyncio.create_task(_maintenance_loop())
+    tasks = [asyncio.create_task(_maintenance_loop())]
+    if NO_SHOW_ENABLED:
+        tasks.append(asyncio.create_task(_no_show_loop()))
     yield
-    task.cancel()
+    for task in tasks:
+        task.cancel()
     close_db()
 
 

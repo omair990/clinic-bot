@@ -74,6 +74,8 @@ class AgentContext:
     booked_ids: list[int] = field(default_factory=list)
     changed_ids: list[int] = field(default_factory=list)
     actions: list[str] = field(default_factory=list)
+    # The patient's open no-show follow-up (missed appointment we're recovering), if any.
+    no_show: dict | None = None
 
     @property
     def doctors(self) -> list[dict]:
@@ -152,6 +154,19 @@ TOOL_SPECS: list[ToolSpec] = [
                  "reason": {"type": "string"},
                  "emergency": {"type": "boolean", "description": "True for medical emergencies."}},
               "required": ["reason"]}),
+    ToolSpec("record_no_show_response",
+             "ONLY when a NO-SHOW FOLLOW-UP is in progress (see system prompt): log how the "
+             "patient who missed their appointment responded — their chosen outcome and/or the "
+             "reason they missed. Call this in addition to actually rescheduling/cancelling.",
+             {"type": "object", "properties": {
+                 "appointment_id": {"type": "integer", "description": "The missed appointment id "
+                                    "shown in the NO-SHOW FOLLOW-UP note."},
+                 "outcome": {"type": "string", "enum": ["reschedule", "call", "cancel"],
+                             "description": "What the patient chose."},
+                 "reason": {"type": "string", "enum": ["forgot", "busy", "emergency", "price",
+                            "other_clinic", "other"],
+                            "description": "Why they missed, mapped to the closest option."}},
+              "required": ["appointment_id"]}),
 ]
 
 
@@ -248,11 +263,24 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
     db.upsert_patient(ctx.tenant_id, ctx.wa_user, name)
+    _snapshot_risk(ctx, row)
     ctx.booked_ids.append(row["id"])
     ctx.actions.append(f"booked #{row['id']} {doctor['name']} {_fmt(start)} ({name}, {phone})")
     return {"booked": True, "appointment_id": row["id"], "patient_name": name, "phone": phone,
             "doctor": doctor["name"], "service": service["name"], "when": _fmt(start),
             "details": extra or None}
+
+
+def _snapshot_risk(ctx: AgentContext, appt_row: dict) -> None:
+    """Record a no-show risk snapshot on a freshly booked/rescheduled appointment.
+    Best-effort — never blocks the booking if scoring fails."""
+    try:
+        from app.no_show import risk_for_appointment
+        stats = db.patient_history_stats(ctx.tenant_id, ctx.wa_user, appt_row["id"])
+        score, band = risk_for_appointment(appt_row, stats)
+        db.set_appointment_risk(ctx.tenant_id, appt_row["id"], score, band)
+    except Exception:  # noqa: BLE001
+        log.warning("risk snapshot failed for appt %s", appt_row.get("id"))
 
 
 def _get_faqs(args: dict, ctx: AgentContext) -> dict:
@@ -279,7 +307,8 @@ def _reschedule_appointment(args: dict, ctx: AgentContext) -> dict:
     appt = _owned(int(args["appointment_id"]), ctx)
     if not appt:
         return {"error": "appointment_not_found"}
-    if appt["status"] != "confirmed":
+    # A no-show can be rescheduled too — that's the whole point of recovery outreach.
+    if appt["status"] not in ("confirmed", "no_show"):
         return {"error": "not_active", "status": appt["status"]}
 
     on = parse_date(args.get("date", ""), _now().date())
@@ -301,6 +330,9 @@ def _reschedule_appointment(args: dict, ctx: AgentContext) -> dict:
     row = db.reschedule(ctx.tenant_id, appt["id"], start, end)
     if row.get("conflict"):
         return {"error": "just_taken"}
+    # Rescheduling closes any open no-show recovery, and the new slot gets a fresh score.
+    db.resolve_followup_for_appointment(ctx.tenant_id, appt["id"], "reschedule")
+    _snapshot_risk(ctx, row)
     ctx.changed_ids.append(appt["id"])
     ctx.actions.append(f"rescheduled #{appt['id']} -> {_fmt(start)}")
     return {"rescheduled": True, "appointment_id": appt["id"], "when": _fmt(start)}
@@ -313,6 +345,7 @@ def _cancel_appointment(args: dict, ctx: AgentContext) -> dict:
     if appt["status"] == "cancelled":
         return {"already_cancelled": True}
     db.set_appointment_status(ctx.tenant_id, appt["id"], "cancelled")
+    db.resolve_followup_for_appointment(ctx.tenant_id, appt["id"], "cancel")
     ctx.changed_ids.append(appt["id"])
     ctx.actions.append(f"cancelled #{appt['id']}")
     return {"cancelled": True, "appointment_id": appt["id"]}
@@ -326,6 +359,50 @@ def _escalate_to_human(args: dict, ctx: AgentContext) -> dict:
     return {"escalated": True}
 
 
+_REASON_KEYWORDS = {
+    "forgot": "forgot", "forget": "forgot", "slip": "forgot",
+    "busy": "busy", "work": "busy", "time": "busy",
+    "emergency": "emergency", "sick": "emergency", "urgent": "emergency",
+    "price": "price", "cost": "price", "expensive": "price", "money": "price",
+    "another clinic": "other_clinic", "other clinic": "other_clinic",
+    "different clinic": "other_clinic", "switched": "other_clinic", "elsewhere": "other_clinic",
+}
+
+
+def _normalize_reason(value) -> str | None:
+    from app.no_show import REASONS
+    if not value:
+        return None
+    v = str(value).strip().lower()
+    if v in REASONS:
+        return v
+    for kw, reason in _REASON_KEYWORDS.items():
+        if kw in v:
+            return reason
+    return "other"
+
+
+def _record_no_show_response(args: dict, ctx: AgentContext) -> dict:
+    appt_id = args.get("appointment_id")
+    try:
+        appt_id = int(appt_id)
+    except (TypeError, ValueError):
+        appt_id = (ctx.no_show or {}).get("appointment_id")
+    # Only the patient's own missed appointment can be annotated. Fall back to the
+    # open follow-up if the model passed an id this patient doesn't own.
+    if not appt_id or not _owned(int(appt_id), ctx):
+        appt_id = (ctx.no_show or {}).get("appointment_id")
+    if not appt_id:
+        return {"error": "no_open_no_show"}
+    outcome = (args.get("outcome") or "").strip().lower() or None
+    if outcome not in ("reschedule", "call", "cancel"):
+        outcome = None
+    reason = _normalize_reason(args.get("reason"))
+    ok = db.record_no_show_response(ctx.tenant_id, int(appt_id), outcome=outcome, reason=reason)
+    ctx.actions.append(f"no-show response #{appt_id}: outcome={outcome}, reason={reason}")
+    return {"recorded": ok, "appointment_id": int(appt_id), "outcome": outcome, "reason": reason}
+
+
 _HANDLERS = {
     "list_services": _list_services,
     "list_doctors": _list_doctors,
@@ -336,6 +413,7 @@ _HANDLERS = {
     "reschedule_appointment": _reschedule_appointment,
     "cancel_appointment": _cancel_appointment,
     "escalate_to_human": _escalate_to_human,
+    "record_no_show_response": _record_no_show_response,
 }
 
 

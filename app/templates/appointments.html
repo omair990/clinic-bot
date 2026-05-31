@@ -22,6 +22,7 @@
         <th class="text-left px-4 py-2">Service</th>
         <th class="text-left px-4 py-2">Doctor</th>
         <th class="text-left px-4 py-2">When</th>
+        <th class="text-left px-4 py-2">Risk</th>
         <th class="text-left px-4 py-2">Details</th>
         <th class="text-left px-4 py-2">Created</th>
         <th class="text-left px-4 py-2">Status</th>
@@ -38,6 +39,12 @@
         <td class="px-4 py-3">{{ a.service or '—' }}</td>
         <td class="px-4 py-3">{{ a.doctor or '—' }}</td>
         <td class="px-4 py-3">{{ a.start_at | fmt_dt }}</td>
+        <td class="px-4 py-3">
+          {% if a.risk_band %}
+          {% set rc = {'low':'emerald','medium':'amber','high':'rose'}.get(a.risk_band, 'slate') %}
+          <span class="inline-block px-2 py-0.5 text-xs rounded bg-{{rc}}-100 text-{{rc}}-700" title="No-show risk score {{ a.risk_score }}/100">{{ a.risk_band }}{% if a.risk_score is not none %} {{ a.risk_score }}{% endif %}</span>
+          {% else %}<span class="text-slate-300">—</span>{% endif %}
+        </td>
         <td class="px-4 py-3 text-xs text-slate-600">
           {% if a.extra %}{% for k, v in a.extra.items() %}<span class="inline-block mr-2"><span class="text-slate-400">{{ k }}:</span> {{ v }}</span>{% endfor %}{% else %}—{% endif %}
         </td>
@@ -55,7 +62,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="11" class="px-4 py-8 text-center text-slate-400 text-sm">No appointments</td></tr>
+      <tr><td colspan="12" class="px-4 py-8 text-center text-slate-400 text-sm">No appointments</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -10,21 +10,33 @@ from markupsafe import Markup
 
 import json
 
-from app.config import ADMIN_PASSWORD, BASE_DIR, TZ
+from app.config import (
+    ADMIN_PASSWORD,
+    BASE_DIR,
+    NO_SHOW_AUTO_SEND,
+    NO_SHOW_PREDICTOR,
+    TZ,
+)
 from app.auth import hash_password, verify_password
 from app.db import (
     admin_set_appointment_status,
     conversation_thread,
     create_tenant,
+    get_followup,
     get_tenant,
     get_tenant_by_username,
     list_appointments,
     list_conversations,
     list_events,
+    list_no_show_followups,
     list_plans,
     list_tenants,
+    no_show_count_since,
+    no_show_reason_breakdown,
     resolve_event,
+    risk_band_counts,
     set_appointment_status,
+    set_followup_stage,
     set_tenant_credentials,
     set_tenant_plan,
     set_tenant_status,
@@ -34,6 +46,7 @@ from app.db import (
     upsert_plan,
 )
 from app.events import subscribe, unsubscribe
+from app import no_show as no_show_mod
 from app.tenancy import current_period
 
 log = logging.getLogger(__name__)
@@ -65,6 +78,7 @@ INTENT_BADGES = {
     "emergency":   ("🚨 Emergency",   "bg-red-100 text-red-700 ring-red-200"),
     "handover":    ("🙋 Handover",    "bg-amber-100 text-amber-700 ring-amber-200"),
     "appointment": ("📅 Appointment", "bg-emerald-100 text-emerald-700 ring-emerald-200"),
+    "no_show":     ("🔁 No-show",     "bg-rose-100 text-rose-700 ring-rose-200"),
     "chat":        ("💬 Chat",        "bg-slate-100 text-slate-600 ring-slate-200"),
     "error":       ("⚠️ Error",        "bg-red-100 text-red-700 ring-red-200"),
 }
@@ -124,6 +138,13 @@ def _open_issue_count(request: Request) -> int:
 
 
 templates.env.globals["open_issue_count"] = _open_issue_count
+templates.env.filters["reason_label"] = lambda r: no_show_mod.REASON_LABELS.get(r, r or "—")
+
+
+def _month_start():
+    """First moment of the current month in clinic time — the 'This month' window."""
+    now = datetime.now(TZ)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -163,8 +184,10 @@ async def do_logout(request: Request):
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     _require_auth(request)
+    scope = _scope(request)
     return templates.TemplateResponse(
-        "home.html", {"request": request, "stats": stats(_scope(request))}
+        "home.html", {"request": request, "stats": stats(scope),
+                      "no_shows_month": no_show_count_since(_month_start(), scope)}
     )
 
 
@@ -268,6 +291,48 @@ async def update_appointment(request: Request, appointment_id: int, status: str 
         set_appointment_status(scope, appointment_id, status)  # clinic can only touch its own
     referrer = request.headers.get("referer", "/admin/appointments")
     return RedirectResponse(referrer, status_code=303)
+
+
+@router.get("/no-shows", response_class=HTMLResponse)
+async def no_shows_page(request: Request):
+    _require_auth(request)
+    scope = _scope(request)
+    since = _month_start()
+    return templates.TemplateResponse(
+        "no_shows.html",
+        {"request": request,
+         "rows": list_no_show_followups(tenant_id=scope),
+         "month_count": no_show_count_since(since, scope),
+         "reasons": no_show_reason_breakdown(since, scope),
+         "risk": risk_band_counts(scope),
+         "predictor_on": NO_SHOW_PREDICTOR,
+         "auto_send": NO_SHOW_AUTO_SEND},
+    )
+
+
+@router.post("/no-shows/{followup_id}/action")
+async def no_show_action(request: Request, followup_id: int, action: str = Form(...)):
+    scope = _scope(request)
+    fu = get_followup(followup_id, tenant_id=scope)  # enforces tenant ownership
+    if not fu:
+        raise HTTPException(404, "Follow-up not found")
+    if action in ("send", "resend"):
+        tenant = get_tenant(fu["tenant_id"])
+        if tenant:
+            creds = {"phone_number_id": tenant.get("wa_phone_number_id"),
+                     "access_token": tenant.get("wa_access_token")}
+            try:
+                await no_show_mod.send_no_show_notification(
+                    to=fu["wa_user"], service=fu.get("service"), doctor=fu.get("doctor"),
+                    creds=creds, tenant_id=fu["tenant_id"], followup_id=fu["id"],
+                    advance=(fu["stage"] == "detected"))
+            except Exception as e:  # noqa: BLE001
+                log.warning("manual no-show send failed: %s", str(e)[:160])
+    elif action == "resolve":
+        set_followup_stage(followup_id, "resolved", stamp="resolved_at")
+    elif action == "inactive":
+        set_followup_stage(followup_id, "inactive", stamp="resolved_at")
+    return RedirectResponse(request.headers.get("referer", "/admin/no-shows"), status_code=303)
 
 
 @router.get("/plans", response_class=HTMLResponse)

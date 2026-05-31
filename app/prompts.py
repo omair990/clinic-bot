@@ -11,7 +11,8 @@ from app.config import CLINIC_DATA, TIMEZONE, TZ
 
 
 def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = None,
-                        patient_name: str | None = None, wa_user: str | None = None) -> str:
+                        patient_name: str | None = None, wa_user: str | None = None,
+                        no_show: dict | None = None) -> str:
     now = now or datetime.now(TZ)
     data = clinic_data or CLINIC_DATA
     clinic = data.get("clinic", {})
@@ -51,6 +52,25 @@ def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = 
     patient_block = (
         f"\nPATIENT ON FILE: this patient's {' and '.join(known)}. "
         "Reuse this — do NOT ask for it again.\n" if known else "")
+
+    # When the patient missed a recent appointment, the bot has already reached out;
+    # this turn is their reply. Steer it through the recovery flow.
+    no_show_block = ""
+    if no_show:
+        when = no_show["start_at"].astimezone(TZ).strftime("%A %d %B, %I:%M %p")
+        no_show_block = (
+            f"\n\nNO-SHOW FOLLOW-UP IN PROGRESS: this patient missed appointment "
+            f"#{no_show['appointment_id']} ({no_show.get('service')} with "
+            f"{no_show.get('doctor')}, was {when}). We already messaged them offering to "
+            "(1) reschedule, (2) request a call, or (3) cancel. Handle their reply:\n"
+            f"- Reschedule / '1': call check_availability then reschedule_appointment with "
+            f"appointment_id {no_show['appointment_id']} (do NOT create a new booking).\n"
+            "- Request a call / '2': call escalate_to_human (not an emergency) so staff call them.\n"
+            f"- Cancel / '3': call cancel_appointment for appointment_id {no_show['appointment_id']}.\n"
+            "- Gently ask, once, why they missed (forgot / busy / emergency / price / chose "
+            "another clinic) if they haven't said. Whatever they choose or tell you, ALSO call "
+            f"record_no_show_response with appointment_id {no_show['appointment_id']} and the "
+            "outcome and/or reason. Keep it warm and brief — never guilt-trip the patient.")
 
     return f"""You are the AI assistant for {_CLINIC['name']}, a clinic in Riyadh, Saudi Arabia,
 talking to patients over WhatsApp. You handle appointments (book, reschedule, cancel),
@@ -129,5 +149,5 @@ CONVERSATION RULES:
 10. STAY IN SCOPE. You only handle three things: (a) appointment booking/reschedule/cancel,
    (b) service pricing, (c) general clinic info (hours, location, insurance, services).
    For anything else (medical advice, chit-chat, unrelated topics), politely decline in one
-   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.{booking_fields_block}
+   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.{booking_fields_block}{no_show_block}
 """

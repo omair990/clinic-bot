@@ -76,6 +76,29 @@ MAINTENANCE_INTERVAL_HOURS = int(os.getenv("MAINTENANCE_INTERVAL_HOURS", "24"))
 PROCESSED_MSG_RETENTION_HOURS = int(os.getenv("PROCESSED_MSG_RETENTION_HOURS", "24"))
 EVENT_RETENTION_DAYS = int(os.getenv("EVENT_RETENTION_DAYS", "30"))
 
+
+def _flag(name: str, default: bool) -> bool:
+    return os.getenv(name, "true" if default else "false").lower() in ("1", "true", "yes", "on")
+
+
+# --- No-show recovery & risk prediction ---
+# Master switch for the no-show feature (detection sweep + recovery outreach).
+NO_SHOW_ENABLED = _flag("NO_SHOW_ENABLED", True)
+# Auto-send the recovery WhatsApp the moment a no-show is detected. When off, staff
+# send it manually from the No-shows dashboard ("Both" mode keeps manual controls either way).
+NO_SHOW_AUTO_SEND = _flag("NO_SHOW_AUTO_SEND", True)
+# How long after an appointment's end time we treat a still-confirmed booking as a no-show.
+NO_SHOW_GRACE_MINUTES = int(os.getenv("NO_SHOW_GRACE_MINUTES", "30"))
+# How often the background sweep runs.
+NO_SHOW_SWEEP_INTERVAL_MIN = int(os.getenv("NO_SHOW_SWEEP_INTERVAL_MIN", "15"))
+# Silence windows before the day-later follow-up, then before marking the lead inactive.
+NO_SHOW_FOLLOWUP_HOURS = int(os.getenv("NO_SHOW_FOLLOWUP_HOURS", "24"))
+NO_SHOW_INACTIVE_HOURS = int(os.getenv("NO_SHOW_INACTIVE_HOURS", "24"))
+# Premium predictor: score upcoming appointments and send high-risk patients an extra
+# reminder this many hours before the appointment.
+NO_SHOW_PREDICTOR = _flag("NO_SHOW_PREDICTOR", True)
+NO_SHOW_RISK_REMINDER_LEAD_HOURS = int(os.getenv("NO_SHOW_RISK_REMINDER_LEAD_HOURS", "24"))
+
 # --- LLM resilience ---
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).

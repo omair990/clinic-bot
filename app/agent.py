@@ -37,12 +37,16 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
     tenant_id = (tenant or {}).get("id") or 0
     ctx = AgentContext(wa_user=wa_user, tenant_id=tenant_id, clinic_data=clinic_data)
     known_name = None
+    no_show = None
     if tenant_id:
         try:
             known_name = db.get_patient_name(tenant_id, wa_user)
-        except Exception:  # noqa: BLE001 — name lookup must never block a turn
-            known_name = None
-    system = build_system_prompt(clinic_data, patient_name=known_name, wa_user=wa_user)
+            no_show = db.open_no_show_followup(tenant_id, wa_user)
+        except Exception:  # noqa: BLE001 — these lookups must never block a turn
+            pass
+    ctx.no_show = no_show
+    system = build_system_prompt(clinic_data, patient_name=known_name, wa_user=wa_user,
+                                 no_show=no_show)
     messages = _history_to_messages(history)
     messages.append(Msg(role="user", content=user_text))
 

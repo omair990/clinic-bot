@@ -60,6 +60,28 @@ CREATE TABLE IF NOT EXISTS processed_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_processed_at ON processed_messages(processed_at);
 
+-- One row per no-show: tracks the recovery outreach (notify -> follow-up -> inactive),
+-- the patient's chosen outcome, the reason they missed, and a risk snapshot.
+CREATE TABLE IF NOT EXISTS no_show_followups (
+    id             BIGSERIAL PRIMARY KEY,
+    tenant_id      BIGINT,
+    appointment_id BIGINT NOT NULL UNIQUE,
+    wa_user        TEXT NOT NULL,
+    stage          TEXT NOT NULL DEFAULT 'detected'
+                   CHECK (stage IN ('detected', 'notified', 'followed_up', 'resolved', 'inactive')),
+    outcome        TEXT,    -- reschedule | call | cancel
+    reason         TEXT,    -- forgot | busy | emergency | price | other_clinic | other
+    risk_score     INTEGER,
+    risk_band      TEXT,
+    notified_at    TIMESTAMPTZ,
+    followup_at    TIMESTAMPTZ,
+    resolved_at    TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_noshow_tenant_stage ON no_show_followups(tenant_id, stage);
+CREATE INDEX IF NOT EXISTS idx_noshow_tenant_created ON no_show_followups(tenant_id, created_at DESC);
+
 -- --- Multi-tenant SaaS: plans, tenants, usage metering ---
 CREATE TABLE IF NOT EXISTS plans (
     id                   BIGSERIAL PRIMARY KEY,
@@ -119,6 +141,10 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS extra JSONB;
+-- No-show prediction snapshot + extra-reminder bookkeeping.
+ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS risk_score INTEGER;
+ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS risk_band TEXT;
+ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_username TEXT;
@@ -462,6 +488,273 @@ def reschedule(tenant_id: int, appointment_id: int, start_at: datetime,
     return row
 
 
+# --- No-shows & risk prediction ---
+
+# A patient who replied since `ts` should no longer get automated nagging.
+_NO_INBOUND_SINCE = (
+    "NOT EXISTS (SELECT 1 FROM conversations c WHERE c.tenant_id = f.tenant_id "
+    "AND c.wa_user = f.wa_user AND c.direction = 'in' AND c.created_at > %s)"
+)
+
+
+def all_active_tenants() -> list[dict]:
+    """Every active tenant's WhatsApp creds, timezone and clinic data — the sweep
+    needs these to message patients on the right number per clinic."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT id, slug, wa_phone_number_id, wa_access_token, timezone, clinic_data "
+            "FROM tenants WHERE status = 'active'"
+        ).fetchall()
+
+
+def patient_history_stats(tenant_id: int, wa_user: str,
+                          exclude_appointment_id: int | None = None) -> dict:
+    """Counts that feed the no-show risk score: prior no-shows, cancellations and
+    completed visits for this patient at this clinic."""
+    sql = ("SELECT "
+           "COUNT(*) FILTER (WHERE status = 'no_show')   AS no_shows, "
+           "COUNT(*) FILTER (WHERE status = 'cancelled') AS cancellations, "
+           "COUNT(*) FILTER (WHERE status = 'completed') AS completed "
+           "FROM appointments WHERE tenant_id = %s AND wa_user = %s")
+    params: tuple = (tenant_id, wa_user)
+    if exclude_appointment_id is not None:
+        sql += " AND id <> %s"
+        params += (exclude_appointment_id,)
+    with get_conn() as conn:
+        row = conn.execute(sql, params).fetchone()
+    return {"no_shows": row["no_shows"], "cancellations": row["cancellations"],
+            "completed": row["completed"]}
+
+
+def set_appointment_risk(tenant_id: int, appointment_id: int, score: int, band: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE appointments SET risk_score = %s, risk_band = %s WHERE tenant_id = %s AND id = %s",
+            (score, band, tenant_id, appointment_id),
+        )
+
+
+def find_no_shows(cutoff: datetime) -> list[dict]:
+    """Confirmed appointments whose end time passed (before `cutoff`) and that don't
+    yet have a no-show record — i.e. the patient never checked in. Across all tenants."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT a.* FROM appointments a "
+            "LEFT JOIN no_show_followups f ON f.appointment_id = a.id "
+            "WHERE a.status = 'confirmed' AND a.end_at < %s AND f.id IS NULL "
+            "ORDER BY a.end_at ASC LIMIT 200",
+            (cutoff,),
+        ).fetchall()
+
+
+def mark_no_show(tenant_id: int, appointment_id: int, wa_user: str,
+                 risk_score: int | None, risk_band: str | None) -> dict | None:
+    """Atomically flip an appointment to no_show and open its follow-up record.
+    Returns the new follow-up row, or None if one already exists (raced)."""
+    with get_conn() as conn:
+        with conn.transaction():
+            conn.execute(
+                "UPDATE appointments SET status = 'no_show', updated_at = now() "
+                "WHERE tenant_id = %s AND id = %s AND status = 'confirmed'",
+                (tenant_id, appointment_id),
+            )
+            return conn.execute(
+                "INSERT INTO no_show_followups "
+                "(tenant_id, appointment_id, wa_user, risk_score, risk_band) "
+                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (appointment_id) DO NOTHING "
+                "RETURNING *",
+                (tenant_id, appointment_id, wa_user, risk_score, risk_band),
+            ).fetchone()
+
+
+def open_no_show_followup(tenant_id: int, wa_user: str) -> dict | None:
+    """The patient's most recent unresolved no-show outreach, with the missed
+    appointment's details — so the agent can handle their reply in context."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT f.id, f.appointment_id, f.stage, a.doctor, a.service, a.start_at "
+            "FROM no_show_followups f JOIN appointments a ON a.id = f.appointment_id "
+            "WHERE f.tenant_id = %s AND f.wa_user = %s "
+            "AND f.stage IN ('detected', 'notified', 'followed_up') "
+            "ORDER BY f.created_at DESC LIMIT 1",
+            (tenant_id, wa_user),
+        ).fetchone()
+
+
+def set_followup_stage(followup_id: int, stage: str, *, stamp: str | None = None) -> None:
+    """Advance a follow-up's stage. `stamp` optionally sets notified_at/followup_at/
+    resolved_at to now() in the same write."""
+    cols = "stage = %s, updated_at = now()"
+    params: list = [stage]
+    if stamp in ("notified_at", "followup_at", "resolved_at"):
+        cols += f", {stamp} = now()"
+    params.append(followup_id)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE no_show_followups SET {cols} WHERE id = %s", tuple(params))
+
+
+def followups_due_followup(cutoff: datetime) -> list[dict]:
+    """Notified > cutoff ago with no patient reply since — send the day-later nudge."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT f.*, a.doctor, a.service, a.start_at FROM no_show_followups f "
+            "JOIN appointments a ON a.id = f.appointment_id "
+            "WHERE f.stage = 'notified' AND f.notified_at < %s AND "
+            + _NO_INBOUND_SINCE.replace("%s", "f.notified_at"),
+            (cutoff,),
+        ).fetchall()
+
+
+def followups_due_inactive(cutoff: datetime) -> list[dict]:
+    """Followed-up > cutoff ago, still silent — the lead goes inactive."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT f.* FROM no_show_followups f "
+            "WHERE f.stage = 'followed_up' AND f.followup_at < %s AND "
+            + _NO_INBOUND_SINCE.replace("%s", "f.followup_at"),
+            (cutoff,),
+        ).fetchall()
+
+
+def record_no_show_response(tenant_id: int, appointment_id: int,
+                            outcome: str | None = None, reason: str | None = None) -> bool:
+    """Store the patient's chosen outcome and/or stated reason on the follow-up and
+    resolve it. Only fills fields that are provided. Returns True if a row matched."""
+    sets, params = ["stage = 'resolved'", "resolved_at = now()", "updated_at = now()"], []
+    if outcome:
+        sets.insert(0, "outcome = %s")
+        params.append(outcome)
+    if reason:
+        sets.insert(0, "reason = %s")
+        params.append(reason)
+    params += [tenant_id, appointment_id]
+    with get_conn() as conn:
+        cur = conn.execute(
+            f"UPDATE no_show_followups SET {', '.join(sets)} "
+            "WHERE tenant_id = %s AND appointment_id = %s AND stage <> 'inactive'",
+            tuple(params),
+        )
+        return cur.rowcount > 0
+
+
+def resolve_followup_for_appointment(tenant_id: int, appointment_id: int,
+                                     outcome: str) -> None:
+    """Auto-close a no-show follow-up when the patient reschedules/cancels via a tool,
+    so analytics capture the outcome even if the model didn't log it explicitly.
+    Never overwrites an outcome already set by record_no_show_response."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE no_show_followups SET outcome = COALESCE(outcome, %s), "
+            "stage = 'resolved', resolved_at = now(), updated_at = now() "
+            "WHERE tenant_id = %s AND appointment_id = %s "
+            "AND stage IN ('detected', 'notified', 'followed_up')",
+            (outcome, tenant_id, appointment_id),
+        )
+
+
+def unscored_upcoming_appointments(now: datetime, limit: int = 200) -> list[dict]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM appointments WHERE status = 'confirmed' "
+            "AND start_at > %s AND risk_score IS NULL ORDER BY start_at ASC LIMIT %s",
+            (now, limit),
+        ).fetchall()
+
+
+def high_risk_reminders_due(now: datetime, until: datetime) -> list[dict]:
+    """High-risk confirmed appointments starting soon that haven't had the extra
+    reminder yet — the premium predictor's preventive nudge."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM appointments WHERE status = 'confirmed' AND risk_band = 'high' "
+            "AND reminded_at IS NULL AND start_at > %s AND start_at <= %s "
+            "ORDER BY start_at ASC LIMIT 200",
+            (now, until),
+        ).fetchall()
+
+
+def mark_reminded(tenant_id: int, appointment_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE appointments SET reminded_at = now() WHERE tenant_id = %s AND id = %s",
+            (tenant_id, appointment_id),
+        )
+
+
+# --- No-show dashboard ---
+
+def get_followup(followup_id: int, tenant_id: int | None = None) -> dict | None:
+    sql = ("SELECT f.*, a.doctor, a.service, a.start_at, a.patient_name "
+           "FROM no_show_followups f JOIN appointments a ON a.id = f.appointment_id "
+           "WHERE f.id = %s")
+    params: tuple = (followup_id,)
+    if tenant_id is not None:
+        sql += " AND f.tenant_id = %s"
+        params += (tenant_id,)
+    with get_conn() as conn:
+        return conn.execute(sql, params).fetchone()
+
+
+def list_no_show_followups(tenant_id: int | None = None, limit: int = 200) -> list[dict]:
+    sql = ("SELECT f.id, f.appointment_id, f.wa_user, f.stage, f.outcome, f.reason, "
+           "f.risk_score, f.risk_band, f.created_at, f.notified_at, "
+           "a.doctor, a.service, a.start_at, a.patient_name "
+           "FROM no_show_followups f JOIN appointments a ON a.id = f.appointment_id")
+    params: list = []
+    if tenant_id is not None:
+        sql += " WHERE f.tenant_id = %s"
+        params.append(tenant_id)
+    sql += " ORDER BY f.created_at DESC LIMIT %s"
+    params.append(limit)
+    with get_conn() as conn:
+        return conn.execute(sql, tuple(params)).fetchall()
+
+
+def no_show_count_since(since: datetime, tenant_id: int | None = None) -> int:
+    where = "WHERE created_at >= %s"
+    params: list = [since]
+    if tenant_id is not None:
+        where += " AND tenant_id = %s"
+        params.append(tenant_id)
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT COUNT(*) AS n FROM no_show_followups {where}", tuple(params)
+        ).fetchone()["n"]
+
+
+def no_show_reason_breakdown(since: datetime, tenant_id: int | None = None) -> list[dict]:
+    where = "WHERE created_at >= %s AND reason IS NOT NULL"
+    params: list = [since]
+    if tenant_id is not None:
+        where += " AND tenant_id = %s"
+        params.append(tenant_id)
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT reason, COUNT(*) AS n FROM no_show_followups {where} "
+            "GROUP BY reason ORDER BY n DESC", tuple(params)
+        ).fetchall()
+
+
+def risk_band_counts(tenant_id: int | None = None) -> dict:
+    """How many upcoming confirmed appointments fall in each risk band — the
+    predictor overview on the dashboard."""
+    where = "WHERE status = 'confirmed' AND start_at > now() AND risk_band IS NOT NULL"
+    params: tuple = ()
+    if tenant_id is not None:
+        where += " AND tenant_id = %s"
+        params = (tenant_id,)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT risk_band, COUNT(*) AS n FROM appointments {where} GROUP BY risk_band",
+            params,
+        ).fetchall()
+    out = {"low": 0, "medium": 0, "high": 0}
+    for r in rows:
+        if r["risk_band"] in out:
+            out[r["risk_band"]] = r["n"]
+    return out
+
+
 # --- Admin queries ---
 
 def list_conversations(limit: int = 100, tenant_id: int | None = None) -> list[dict]:
@@ -515,7 +808,7 @@ def conversation_thread(wa_user: str, limit: int = 200,
 def list_appointments(status: str | None = None, limit: int = 200,
                       tenant_id: int | None = None) -> list[dict]:
     sql = ("SELECT id, wa_user, patient_name, phone, doctor, service, start_at, end_at, "
-           "status, notes, extra, created_at FROM appointments")
+           "status, notes, extra, risk_score, risk_band, created_at FROM appointments")
     clauses, params = [], []
     if tenant_id is not None:
         clauses.append("tenant_id = %s")
