@@ -9,11 +9,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from app import db
-from app.config import TZ
+from app.config import BOOKING_LEAD_HOURS, TZ
 from app.llm import ToolSpec
 from app.scheduling import (
     available_slots,
     day_bounds,
+    doctor_works_on,
     find_doctor,
     find_service,
     parse_clock,
@@ -200,10 +201,11 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
     service = find_service(args.get("service", ""), ctx.services) if args.get("service") else None
     duration = service["duration_min"] if service else DEFAULT_DURATION_MIN
 
+    now = _now()
     start, end = day_bounds(on)
     booked = db.booked_intervals(ctx.tenant_id, doctor["name"], start, end)
-    slots = available_slots(doctor, on, duration, booked, _now())
-    return {
+    slots = available_slots(doctor, on, duration, booked, now)
+    result = {
         "doctor": doctor["name"],
         "date": on.isoformat(),
         "day": on.strftime("%A"),          # weekday name — use this, don't compute it
@@ -213,7 +215,21 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
         "available_times": [s.strftime("%H:%M") for s in slots[:12]],
         "more_available": len(slots) > 12,
         "note": None if slots else "No free slots that day — suggest another day.",
+        "booking_lead_hours": BOOKING_LEAD_HOURS,
     }
+    # Today only: times before now + lead-time can't be booked even though the clinic is
+    # open then. Surface this so the bot explains "that's too soon" instead of wrongly
+    # telling the patient the clinic/doctor isn't available at that hour.
+    if on == now.date() and doctor_works_on(doctor, on):
+        earliest = (now + timedelta(hours=BOOKING_LEAD_HOURS)).strftime("%H:%M")
+        result["earliest_bookable_today"] = earliest
+        result["lead_time_note"] = (
+            f"Bookings need at least {BOOKING_LEAD_HOURS}h notice, so the earliest time "
+            f"bookable today is {earliest}. If the patient asks for an earlier time today, "
+            "tell them it's too soon to book (not that it's unavailable) and offer the "
+            "listed times or another day."
+        )
+    return result
 
 
 def _resolve_slot(args: dict, ctx: AgentContext):
