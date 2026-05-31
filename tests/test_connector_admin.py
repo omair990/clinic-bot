@@ -49,6 +49,16 @@ def test_build_erp_and_fhir():
     assert err is None and cfg["booking_status"] == "proposed" and cfg["auth"]["token"] == "T"
 
 
+def test_build_includes_webhook_secret_and_keeps_on_blank():
+    cfg, err = admin._build_connector_config(
+        "cliniko", {"c_api_key": "k", "c_business_id": "b", "webhook_secret": "WS"}, {})
+    assert err is None and cfg["webhook_secret"] == "WS"
+    cfg, _ = admin._build_connector_config(
+        "cliniko", {"c_api_key": "", "c_business_id": "b", "webhook_secret": ""},
+        {"api_key": "k", "business_id": "b", "webhook_secret": "OLD"})
+    assert cfg["webhook_secret"] == "OLD"          # kept when blank
+
+
 # --- routes (DB + TestClient) ---
 
 @pytest.fixture

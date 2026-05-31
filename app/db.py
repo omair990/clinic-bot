@@ -493,6 +493,41 @@ def get_appointment(tenant_id: int, appointment_id: int) -> dict | None:
         ).fetchone()
 
 
+def appointment_by_external_id(tenant_id: int, external_id: str) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM appointments WHERE tenant_id = %s AND external_id = %s "
+            "ORDER BY id DESC LIMIT 1", (tenant_id, external_id),
+        ).fetchone()
+
+
+def create_mirror_appointment(tenant_id: int, external_id: str, wa_user: str,
+                              patient_name: str | None, phone: str | None, doctor: str,
+                              service: str, start_at: datetime, end_at: datetime,
+                              status: str = "confirmed") -> dict:
+    """Mirror an appointment that already exists in an external system (inbound webhook).
+    Plain insert — no conflict check, because the external system is the authority."""
+    with get_conn() as conn:
+        return conn.execute(
+            "INSERT INTO appointments (tenant_id, wa_user, patient_name, phone, doctor, "
+            "service, start_at, end_at, status, external_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            (tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at,
+             status, external_id),
+        ).fetchone()
+
+
+def update_appointment_times(tenant_id: int, appointment_id: int, start_at: datetime,
+                             end_at: datetime) -> None:
+    """Update a mirrored appointment's time from an external reschedule (no conflict check)."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE appointments SET start_at = %s, end_at = %s, status = 'confirmed', "
+            "updated_at = now() WHERE tenant_id = %s AND id = %s",
+            (start_at, end_at, tenant_id, appointment_id),
+        )
+
+
 def get_appointment_by_id(appointment_id: int) -> dict | None:
     """Fetch an appointment without tenant scoping — used by the super-admin dashboard
     (which sees all tenants) to read details before a status change."""

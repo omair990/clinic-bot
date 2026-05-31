@@ -823,6 +823,58 @@ def _build_fhir_client(conf: dict) -> FhirApi:
     return FhirClient(base_url=conf["base_url"], auth=conf.get("auth"))
 
 
+def _parse_dt(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def apply_inbound_event(tenant_id: int, event: dict) -> str:
+    """Reconcile our local mirror from an inbound connector event (staff booked/changed/
+    cancelled directly in the external system). Canonical event shape:
+      {event: created|updated|cancelled|completed|no_show, external_id, wa_user|phone,
+       doctor, service, start, end, patient_name}
+    Returns a short status string. Idempotency/dedup is handled by the webhook route."""
+    etype = (event.get("event") or "").strip().lower()
+    ext = event.get("external_id")
+    if not ext:
+        return "ignored:no_external_id"
+    existing = db.appointment_by_external_id(tenant_id, ext)
+
+    if etype in ("cancelled", "completed", "no_show"):
+        if not existing:
+            return "ignored:unknown_appointment"
+        db.set_appointment_status(tenant_id, existing["id"], etype)
+        return f"status:{etype}"
+
+    start, end = _parse_dt(event.get("start")), _parse_dt(event.get("end"))
+    if etype in ("updated", "rescheduled"):
+        if not existing:
+            return "ignored:unknown_appointment"
+        if not (start and end):
+            return "ignored:bad_times"
+        db.update_appointment_times(tenant_id, existing["id"], start, end)
+        return "updated"
+
+    if etype in ("created", "booked"):
+        if existing:
+            if start and end:
+                db.update_appointment_times(tenant_id, existing["id"], start, end)
+            return "updated"
+        wa_user = (event.get("wa_user") or event.get("phone") or "").strip()
+        if not (wa_user and start and end):
+            return "ignored:incomplete"
+        db.create_mirror_appointment(
+            tenant_id, ext, wa_user, event.get("patient_name"), event.get("phone") or wa_user,
+            event.get("doctor") or "", event.get("service") or "", start, end, "confirmed")
+        return "created"
+
+    return "ignored:unknown_event"
+
+
 def probe(connector: ClinicConnector) -> dict:
     """Test that a connector can actually reach its backend. Returns {ok, detail}. Native is
     always ok; external connectors call their client's ping() (a cheap authenticated read)."""

@@ -116,6 +116,17 @@
         <textarea name="f_practitioners" rows="3" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ (conn.practitioners or {}) | tojson }}</textarea></div>
     </div>
 
+    <div id="sec-webhook" class="space-y-2 pt-2 border-t">
+      <label class="block text-xs text-slate-500 mb-1">Inbound webhook secret
+        <span class="text-slate-400">({% if conn.webhook_secret %}set — leave blank to keep{% else %}not set{% endif %})</span></label>
+      <input type="password" name="webhook_secret" class="w-full border rounded px-2 py-1"
+             placeholder="shared secret the external system sends back">
+      <div class="text-xs text-slate-500">For keeping our records in sync when staff book/change/cancel directly in the external
+        system, point it to: <code class="bg-slate-100 px-1 rounded">{{ request.base_url }}connector/{{ t.id }}/webhook</code>
+        with header <code class="bg-slate-100 px-1 rounded">X-Connector-Token: &lt;secret&gt;</code>.
+        Canonical event: <code>{event, external_id, wa_user, doctor, service, start, end}</code>.</div>
+    </div>
+
     <div class="flex gap-2 pt-2 border-t">
       <button name="action" value="test" class="px-4 py-2 rounded border">Test connection</button>
       <button name="action" value="save" class="px-4 py-2 rounded bg-emerald-600 text-white">Save</button>
@@ -131,6 +142,8 @@
     document.querySelectorAll('.conn-sec').forEach(function (el) {
       el.style.display = (el.id === 'sec-' + t) ? '' : 'none';
     });
+    var wh = document.getElementById('sec-webhook');
+    if (wh) wh.style.display = (t === 'native') ? 'none' : '';
   }
   showSection();
 </script>

@@ -10,7 +10,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from app.agent import run_agent
 from app import incidents
 from app.config import ADMIN_WA_NUMBER, USAGE_ENFORCEMENT, WA_APP_SECRET, WA_VERIFY_TOKEN
-from app.db import claim_message_id, log_message, recent_history, set_message_intent
+from app import connectors
+from app.db import (
+    claim_message_id,
+    get_tenant,
+    log_message,
+    recent_history,
+    set_message_intent,
+)
 from app.events import publish
 from app.llm import LLMUnavailable
 from app.tenancy import check_quota, record_usage, resolve_tenant
@@ -225,6 +232,33 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         await _notify_admin(msg)
     elif ctx.booked_ids or ctx.changed_ids:
         await _notify_admin(f"[BOOKING] +{sender}\n" + "\n".join(ctx.actions))
+
+
+@router.post("/connector/{tenant_id}/webhook")
+async def connector_webhook(request: Request, tenant_id: int):
+    """Inbound sync: the tenant's external system POSTs appointment changes here so our
+    mirror stays accurate. Auth = the connector's webhook_secret via X-Connector-Token."""
+    raw = await request.body()
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid JSON")
+    tenant = await asyncio.to_thread(get_tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    conn = (tenant.get("clinic_data") or {}).get("connector") or {}
+    secret = conn.get("webhook_secret")
+    token = request.headers.get("x-connector-token", "")
+    if not secret or not hmac.compare_digest(str(secret), token):
+        raise HTTPException(status_code=401, detail="invalid connector token")
+    # Idempotency: skip events we've already applied (reuses the dedup table).
+    eid = payload.get("event_id")
+    if eid and not await asyncio.to_thread(claim_message_id, f"conn:{tenant_id}:{eid}"):
+        return {"status": "duplicate"}
+    result = await asyncio.to_thread(connectors.apply_inbound_event, tenant_id, payload)
+    log.info("connector webhook tenant=%s event=%s -> %s", tenant_id,
+             payload.get("event"), result)
+    return {"status": result}
 
 
 async def _notify_admin(text: str) -> None:

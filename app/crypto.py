@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 PREFIX = "enc:"
 # Secret-bearing keys inside a clinic_data.connector config (top level + nested "auth").
-_CONNECTOR_SECRET_KEYS = ("api_key", "refresh_token", "token", "client_secret")
+_CONNECTOR_SECRET_KEYS = ("api_key", "refresh_token", "token", "client_secret", "webhook_secret")
 _AUTH_SECRET_KEYS = ("token", "value", "client_secret")
 
 _fernet: Fernet | None = None

@@ -178,3 +178,28 @@ request). Reschedule/cancel patch the Appointment; a HIS failure keeps the local
 > Production SMART backend auth often needs a signed **JWT client assertion** rather than a
 > plain client_secret — wire that into `FhirClient._token()` for your server. The `token`/
 > `client_secret` are secrets (encrypt at rest). Logic tested with a fake; HTTP client not.
+
+## Inbound webhook sync (reconciliation)
+
+When staff create/change/cancel appointments **directly in the external system** (walk-ins,
+phone bookings), it POSTs us a canonical event so our local mirror stays accurate (the AI
+features read the mirror).
+
+- **Endpoint:** `POST /connector/{tenant_id}/webhook`
+- **Auth:** header `X-Connector-Token: <connector.webhook_secret>` (set per tenant on the
+  connector page; encrypted at rest). Missing/wrong → 401.
+- **Idempotency:** optional `event_id` — duplicates are skipped (reuses the dedup table).
+- **Canonical event:**
+
+```json
+{ "event": "created|updated|cancelled|completed|no_show",
+  "event_id": "optional-unique-id",
+  "external_id": "id in the external system",
+  "wa_user": "patient phone", "phone": "...", "patient_name": "...",
+  "doctor": "...", "service": "...",
+  "start": "<ISO>", "end": "<ISO>" }
+```
+
+Reconciliation: `created` mirrors a new appointment (no conflict check — the external system
+is the authority); `updated`/`rescheduled` adjusts times; `cancelled`/`completed`/`no_show`
+sets status. Unknown `external_id` or incomplete payloads are safely ignored.

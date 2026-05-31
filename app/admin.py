@@ -485,6 +485,13 @@ def _build_connector_config(ctype: str, form, existing: dict):
 
     if ctype == "native":
         return None, None
+
+    def with_webhook(cfg):
+        ws = secret("webhook_secret", "webhook_secret")
+        if ws:
+            cfg["webhook_secret"] = ws
+        return cfg
+
     if ctype == "google_calendar":
         cals, err = jmap("g_calendars", "Calendars (doctor → calendarId)")
         if err:
@@ -499,7 +506,7 @@ def _build_connector_config(ctype: str, form, existing: dict):
             cfg["default_calendar"] = form["g_default_calendar"].strip()
         if not cfg.get("refresh_token"):
             return None, "Refresh token is required for Google Calendar."
-        return cfg, None
+        return with_webhook(cfg), None
     if ctype == "cliniko":
         pr, err = jmap("c_practitioners", "Practitioners")
         if err:
@@ -517,7 +524,7 @@ def _build_connector_config(ctype: str, form, existing: dict):
             return None, "API key is required for Cliniko."
         if not cfg["business_id"]:
             return None, "Business id is required for Cliniko."
-        return cfg, None
+        return with_webhook(cfg), None
     if ctype == "custom_erp":
         base = (form.get("e_base_url") or "").strip()
         if not base:
@@ -534,7 +541,7 @@ def _build_connector_config(ctype: str, form, existing: dict):
             val = secret("e_header_value", "value", ex_auth)
             if val:
                 auth["value"] = val
-        return {"type": "custom_erp", "base_url": base, "auth": auth}, None
+        return with_webhook({"type": "custom_erp", "base_url": base, "auth": auth}), None
     if ctype == "fhir":
         base = (form.get("f_base_url") or "").strip()
         if not base:
@@ -559,9 +566,9 @@ def _build_connector_config(ctype: str, form, existing: dict):
             cs = secret("f_client_secret", "client_secret", ex_auth)
             if cs:
                 auth["client_secret"] = cs
-        return {"type": "fhir", "base_url": base, "auth": auth,
-                "booking_status": (form.get("f_booking_status") or "booked").strip(),
-                "schedules": sch, "practitioners": pr}, None
+        return with_webhook({"type": "fhir", "base_url": base, "auth": auth,
+                             "booking_status": (form.get("f_booking_status") or "booked").strip(),
+                             "schedules": sch, "practitioners": pr}), None
     return None, f"Unknown connector type: {ctype}"
 
 
