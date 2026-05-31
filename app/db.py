@@ -870,13 +870,17 @@ def tenant_id_for_user(wa_user: str) -> int | None:
 
 def conversation_thread(wa_user: str, limit: int = 200,
                         tenant_id: int | None = None) -> list[dict]:
-    sql = ("SELECT id, direction, message, intent, needs_human, source, created_at "
-           "FROM conversations WHERE wa_user = %s")
+    # Take the MOST RECENT `limit` messages (newest first), then flip to chronological
+    # order for display. A plain "ORDER BY id ASC LIMIT" returns the OLDEST messages, which
+    # hides recent activity once a thread exceeds the limit.
+    inner = ("SELECT id, direction, message, intent, needs_human, source, created_at "
+             "FROM conversations WHERE wa_user = %s")
     params: tuple = (wa_user,)
     if tenant_id is not None:
-        sql += " AND tenant_id = %s"
+        inner += " AND tenant_id = %s"
         params += (tenant_id,)
-    sql += " ORDER BY id ASC LIMIT %s"
+    inner += " ORDER BY id DESC LIMIT %s"
+    sql = f"SELECT * FROM ({inner}) recent ORDER BY id ASC"
     with get_conn() as conn:
         rows = conn.execute(sql, params + (limit,)).fetchall()
     return rows

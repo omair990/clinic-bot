@@ -38,6 +38,15 @@ def _stub_llm(monkeypatch, payload: dict):
 
 # --- Phase 1: voice-note source tracking ---
 
+def test_conversation_thread_returns_most_recent_in_chronological_order():
+    tid, user = _tenant(), _user()
+    for i in range(5):
+        db.log_message(tid, user, "in", f"msg{i}")
+    rows = db.conversation_thread(user, limit=3, tenant_id=tid)
+    # newest 3 messages, displayed oldest-first (not the oldest 3)
+    assert [r["message"] for r in rows] == ["msg2", "msg3", "msg4"]
+
+
 def test_voice_source_is_stored_and_counted():
     tid, user = _tenant(), _user()
     db.log_message(tid, user, "in", "I'd like to book", source="voice")
