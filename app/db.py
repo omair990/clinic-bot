@@ -194,6 +194,9 @@ ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS risk_score INTEGER;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS risk_band TEXT;
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
 ALTER TABLE conversation_analysis ADD COLUMN IF NOT EXISTS insurance TEXT;
+-- Maps a mirrored appointment to its record in an external system (e.g. a Google Calendar
+-- event id) when the tenant is backed by a connector other than Native.
+ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS external_id TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_username TEXT;
@@ -468,6 +471,16 @@ def get_appointment_by_id(appointment_id: int) -> dict | None:
         return conn.execute(
             "SELECT * FROM appointments WHERE id = %s", (appointment_id,)
         ).fetchone()
+
+
+def set_appointment_external_id(tenant_id: int, appointment_id: int, external_id: str) -> None:
+    """Link a mirrored appointment to its external-system record (e.g. Google event id)."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE appointments SET external_id = %s, updated_at = now() "
+            "WHERE tenant_id = %s AND id = %s",
+            (external_id, tenant_id, appointment_id),
+        )
 
 
 def set_appointment_status(tenant_id: int, appointment_id: int, status: str) -> None:

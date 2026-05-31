@@ -62,9 +62,34 @@ availability/bookings (no double-booking), we keep a write-through mirror so ana
 ## Phasing
 
 0. **(done)** Extract `ClinicConnector` + `NativeConnector`; route tools through `ctx.connector`. Behavior-identical.
-1. Google Calendar (calendar-only clinics).
+1. **(done)** Google Calendar — hybrid (Google free/busy + events, local mirror). See config below.
 2. Cliniko (first PMS; hybrid SoR + webhooks).
 3. Custom ERP via a generic webhook/REST adapter + config-driven mapping.
 4. FHIR (hospital + modern dental); closed/on-prem via edge agent or calendar fallback.
 
-`get_connector(tenant)` is where future dispatch on `tenant['connector_type']` goes.
+`get_connector(tenant)` dispatches on `clinic_data.connector.type`.
+
+## Google Calendar connector config
+
+Platform OAuth app creds in env: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`.
+Per-tenant, in `clinic_data.connector`:
+
+```json
+{
+  "type": "google_calendar",
+  "refresh_token": "<tenant's OAuth refresh token>",
+  "timezone": "Asia/Riyadh",
+  "calendars": { "Dr. Khalid Al-Otaibi": "<calendarId>", "Dr. Sara Al-Subaie": "<calendarId>" },
+  "default_calendar": "<optional fallback calendarId>"
+}
+```
+
+Behaviour: working hours come from each doctor's `available_hours` in `clinic_data`; Google
+free/busy removes booked times; bookings are written as calendar events **and** mirrored to
+our `appointments` table (with `external_id` = event id) so analytics keep working. A
+calendar write failure never loses the booking (mirror is authoritative for the patient).
+
+> Live I/O (`GoogleCalendarClient`) needs the tenant's Google authorization and is not
+> covered by tests — verify against a real calendar. The refresh token is a secret and must
+> not live in plaintext `clinic_data` in production (encrypt at rest / use a secret store).
+

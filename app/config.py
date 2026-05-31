@@ -131,6 +131,13 @@ NOTIFY_ON_STATUS_CHANGE = _flag("NOTIFY_ON_STATUS_CHANGE", True)
 PRE_APPT_CONFIRM_ENABLED = _flag("PRE_APPT_CONFIRM_ENABLED", True)
 PRE_APPT_CONFIRM_LEAD_HOURS = int(os.getenv("PRE_APPT_CONFIRM_LEAD_HOURS", "24"))
 
+# --- Clinic connectors (integration layer) ---
+# Platform-level Google OAuth app credentials. A tenant opts into the Google Calendar
+# connector via clinic_data.connector = {"type":"google_calendar","refresh_token":"…",
+# "calendars":{"Dr. Khalid Al-Otaibi":"<calendarId>"}, "timezone":"Asia/Riyadh"}.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+
 # --- LLM resilience ---
 # Per-call wall-clock budget for any single provider request (seconds). Stops a
 # slow/hung provider from holding a worker thread (Anthropic's SDK default is 600s).
