@@ -9,6 +9,7 @@
 </div>
 
 <div class="bg-white rounded-lg shadow p-5 max-w-3xl">
+  {% if error %}<div class="mb-4 px-3 py-2 rounded bg-red-100 text-red-700 text-sm ring-1 ring-inset ring-red-200">{{ error }}</div>{% endif %}
   <form method="post" action="/admin/tenants/{{ t.id }}/edit" class="space-y-4 text-sm">
     <div>
       <label class="block text-xs text-slate-500 mb-1">Clinic name</label>

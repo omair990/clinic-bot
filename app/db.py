@@ -998,6 +998,18 @@ def get_tenant_by_username(username: str) -> dict | None:
         ).fetchone()
 
 
+def staff_username_taken(username: str | None, exclude_tenant_id: int | None = None) -> bool:
+    """True if another tenant already owns this staff login username (it's UNIQUE).
+    `exclude_tenant_id` lets a clinic keep its own username when editing itself."""
+    if not username:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM tenants WHERE staff_username = %s", (username,)
+        ).fetchone()
+    return bool(row and row["id"] != exclude_tenant_id)
+
+
 def set_tenant_credentials(tenant_id: int, username: str | None,
                            password_hash: str | None) -> None:
     """Set/clear a clinic's staff login. Password hash is only updated when provided."""

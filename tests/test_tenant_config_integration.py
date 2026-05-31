@@ -51,3 +51,61 @@ def test_edit_then_set_staff_password(tenant):
     t = db.get_tenant_by_username(uname)
     assert t and t["id"] == tenant
     assert verify_password("pw-123", t["staff_password_hash"])
+
+
+# --- Graceful handling of a duplicate staff username (UNIQUE constraint) ---
+
+def test_staff_username_taken_helper(tenant):
+    u = "u-" + uuid.uuid4().hex[:8]
+    db.set_tenant_credentials(tenant, u, None)
+    assert db.staff_username_taken(u) is True
+    assert db.staff_username_taken(u, exclude_tenant_id=tenant) is False   # its own is fine
+    assert db.staff_username_taken("free-" + uuid.uuid4().hex[:8]) is False
+    assert db.staff_username_taken(None) is False
+
+
+def _super_client():
+    from fastapi.testclient import TestClient
+    from app.config import ADMIN_PASSWORD
+    import main
+    c = TestClient(main.app)
+    r = c.post("/admin/login", data={"username": "", "password": ADMIN_PASSWORD},
+               follow_redirects=False)
+    assert r.status_code == 303, "super-admin login failed (check ADMIN_PASSWORD env)"
+    return c
+
+
+def test_duplicate_username_on_create_is_graceful(tenant):
+    uname = "dup-" + uuid.uuid4().hex[:8]
+    db.set_tenant_credentials(tenant, uname, None)            # tenant already owns it
+    c = _super_client()
+    r = c.post("/admin/tenants", follow_redirects=False, data={
+        "name": "New Clinic", "slug": "new-" + uuid.uuid4().hex[:8], "timezone": "Asia/Riyadh",
+        "plan_id": "1", "staff_username": uname, "staff_password": "x"})
+    assert r.status_code == 409          # not a 500
+    assert "already in use" in r.text    # friendly banner, not a stack trace
+
+
+def test_duplicate_username_on_edit_is_graceful(tenant):
+    other = db.create_tenant("Other " + uuid.uuid4().hex[:6], "oth-" + uuid.uuid4().hex[:6],
+                             None, None, "Asia/Riyadh", None, {"clinic": {"name": "O"}})
+    taken = "taken-" + uuid.uuid4().hex[:8]
+    db.set_tenant_credentials(other, taken, None)
+    c = _super_client()
+    r = c.post(f"/admin/tenants/{tenant}/edit", follow_redirects=False, data={
+        "name": "X", "timezone": "Asia/Riyadh",
+        "clinic_data": '{"clinic": {"name": "X"}}', "staff_username": taken})
+    assert r.status_code == 409
+    assert "already in use" in r.text
+    assert db.get_tenant(tenant)["staff_username"] != taken   # not stolen from the other clinic
+
+
+def test_edit_keeping_own_username_succeeds(tenant):
+    mine = "mine-" + uuid.uuid4().hex[:8]
+    db.set_tenant_credentials(tenant, mine, None)
+    c = _super_client()
+    r = c.post(f"/admin/tenants/{tenant}/edit", follow_redirects=False, data={
+        "name": "Y", "timezone": "Asia/Riyadh",
+        "clinic_data": '{"clinic": {"name": "Y"}}', "staff_username": mine})
+    assert r.status_code == 303                               # saved, no false collision
+    assert db.get_tenant(tenant)["staff_username"] == mine

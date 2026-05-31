@@ -7,6 +7,8 @@
   <span class="text-xs text-slate-500">Period {{ period }}</span>
 </div>
 
+{% if error %}<div class="mb-4 px-3 py-2 rounded bg-red-100 text-red-700 text-sm ring-1 ring-inset ring-red-200">{{ error }}</div>{% endif %}
+
 <!-- Tenants -->
 <div class="bg-white rounded-lg shadow overflow-hidden mb-8">
   <div class="px-4 py-3 border-b text-sm font-medium text-slate-700">Clinics (tenants)</div>

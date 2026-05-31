@@ -3,6 +3,7 @@ import html
 import logging
 from datetime import datetime
 
+import psycopg
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -40,6 +41,7 @@ from app.db import (
     set_tenant_credentials,
     set_tenant_plan,
     set_tenant_status,
+    staff_username_taken,
     stats,
     unresolved_event_count,
     update_tenant_config,
@@ -335,15 +337,21 @@ async def no_show_action(request: Request, followup_id: int, action: str = Form(
     return RedirectResponse(request.headers.get("referer", "/admin/no-shows"), status_code=303)
 
 
-@router.get("/plans", response_class=HTMLResponse)
-async def plans_page(request: Request):
-    _require_super(request)
+def _render_plans(request: Request, *, error: str | None = None, status_code: int = 200):
+    """Render the Plans & Usage page (optionally with an error banner)."""
     period = current_period(str(TZ))
     return templates.TemplateResponse(
         "plans.html",
         {"request": request, "plans": list_plans(),
-         "tenants": list_tenants(period), "period": period},
+         "tenants": list_tenants(period), "period": period, "error": error},
+        status_code=status_code,
     )
+
+
+@router.get("/plans", response_class=HTMLResponse)
+async def plans_page(request: Request):
+    _require_super(request)
+    return _render_plans(request)
 
 
 def _int_or_none(value: str) -> int | None:
@@ -413,12 +421,23 @@ async def add_tenant(request: Request,
                      staff_username: str = Form(""),
                      staff_password: str = Form("")):
     _require_super(request)
-    tid = create_tenant(name.strip(), slug.strip(), wa_phone_number_id.strip() or None,
-                        plan_id, timezone.strip() or "Asia/Riyadh",
-                        wa_access_token.strip() or None, _parse_clinic_data(clinic_data))
-    if staff_username.strip():
+    uname = staff_username.strip() or None
+    if uname and staff_username_taken(uname):
+        return _render_plans(request, status_code=409,
+                             error=f'Staff username "{uname}" is already in use by '
+                             "another clinic. Choose a different one.")
+    try:
+        tid = create_tenant(name.strip(), slug.strip(), wa_phone_number_id.strip() or None,
+                            plan_id, timezone.strip() or "Asia/Riyadh",
+                            wa_access_token.strip() or None, _parse_clinic_data(clinic_data))
+    except psycopg.errors.UniqueViolation as e:
+        log.warning("create_tenant rejected (duplicate): %s", str(e)[:160])
+        return _render_plans(request, status_code=409,
+                             error="Could not create clinic — the slug, WhatsApp "
+                             "number, or staff username is already in use.")
+    if uname:
         pw_hash = hash_password(staff_password) if staff_password else None
-        set_tenant_credentials(tid, staff_username.strip(), pw_hash)
+        set_tenant_credentials(tid, uname, pw_hash)
     return RedirectResponse("/admin/plans", status_code=303)
 
 
@@ -433,6 +452,21 @@ async def edit_tenant_page(request: Request, tenant_id: int):
         "tenant_edit.html", {"request": request, "t": tenant, "clinic_json": pretty})
 
 
+def _render_tenant_edit(request: Request, tenant_id: int, *, name, wa_phone_number_id,
+                        timezone, wa_access_token, clinic_data_raw, staff_username, error):
+    """Re-render the clinic edit form with an error, preserving what was just typed."""
+    existing = get_tenant(tenant_id)
+    t = {"id": tenant_id, "name": name, "slug": (existing or {}).get("slug", ""),
+         "wa_phone_number_id": wa_phone_number_id, "timezone": timezone,
+         "wa_access_token": wa_access_token, "staff_username": staff_username}
+    clinic_json = clinic_data_raw if clinic_data_raw.strip() else json.dumps(
+        (existing or {}).get("clinic_data") or {}, indent=2, ensure_ascii=False)
+    return templates.TemplateResponse(
+        "tenant_edit.html",
+        {"request": request, "t": t, "clinic_json": clinic_json, "error": error},
+        status_code=409)
+
+
 @router.post("/tenants/{tenant_id}/edit")
 async def edit_tenant(request: Request, tenant_id: int,
                       name: str = Form(...),
@@ -443,6 +477,16 @@ async def edit_tenant(request: Request, tenant_id: int,
                       staff_username: str = Form(""),
                       staff_password: str = Form("")):
     _require_super(request)
+    uname = staff_username.strip() or None
+    # Check the username up front so we don't half-save the config then 500 on the
+    # UNIQUE constraint. (The try/except below is a backstop for the rare race.)
+    if uname and staff_username_taken(uname, exclude_tenant_id=tenant_id):
+        return _render_tenant_edit(
+            request, tenant_id, name=name, wa_phone_number_id=wa_phone_number_id,
+            timezone=timezone, wa_access_token=wa_access_token, clinic_data_raw=clinic_data,
+            staff_username=staff_username,
+            error=f'Staff username "{uname}" is already in use by another clinic.')
+
     update_tenant_config(tenant_id, name=name.strip(),
                          wa_phone_number_id=wa_phone_number_id.strip() or None,
                          wa_access_token=wa_access_token.strip() or None,
@@ -450,7 +494,14 @@ async def edit_tenant(request: Request, tenant_id: int,
                          clinic_data=_parse_clinic_data(clinic_data))
     # Update credentials: username always; password only if a new one was typed.
     pw_hash = hash_password(staff_password) if staff_password.strip() else None
-    set_tenant_credentials(tenant_id, staff_username.strip() or None, pw_hash)
+    try:
+        set_tenant_credentials(tenant_id, uname, pw_hash)
+    except psycopg.errors.UniqueViolation:
+        return _render_tenant_edit(
+            request, tenant_id, name=name, wa_phone_number_id=wa_phone_number_id,
+            timezone=timezone, wa_access_token=wa_access_token, clinic_data_raw=clinic_data,
+            staff_username=staff_username,
+            error=f'Staff username "{uname}" is already in use by another clinic.')
     return RedirectResponse("/admin/plans", status_code=303)
 
 
