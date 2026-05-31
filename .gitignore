@@ -11,3 +11,4 @@ __pycache__/
 .mistral-key
 
 e2e/node_modules/
+.elevenlabs-key
