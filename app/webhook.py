@@ -204,6 +204,16 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
         return
 
+    # The reply guard blocked a booking confirmation the DB couldn't back — page staff.
+    if getattr(ctx, "guard_tripped", False):
+        await asyncio.to_thread(incidents.record, "booking",
+                                "Blocked an unbacked booking confirmation before it reached the patient",
+                                detail=f"User: {user_text}", level="warning",
+                                tenant_id=tid, wa_user=sender)
+        await _notify_admin(f"[BOOKING UNCONFIRMED] +{sender}\nUser: {user_text}\n"
+                            "The assistant tried to confirm a booking with no matching "
+                            "appointment in the system. Please follow up.")
+
     # Mirror modality: if the patient sent a voice note, reply with one (gated; falls
     # back to text on any TTS/send failure so the answer is never dropped).
     spoke = await voice_reply.maybe_send(sender, ctx.reply, tenant, creds,

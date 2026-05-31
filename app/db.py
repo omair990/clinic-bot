@@ -509,6 +509,18 @@ def has_appointment(tenant_id: int, wa_user: str) -> bool:
         ).fetchone() is not None
 
 
+def has_confirmed_upcoming(tenant_id: int, wa_user: str) -> bool:
+    """True if the patient currently has a confirmed appointment that hasn't ended yet.
+    Used by the reply guard to validate that a 'your appointment is confirmed' message
+    reflects real database state."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM appointments WHERE tenant_id = %s AND wa_user = %s "
+            "AND status = 'confirmed' AND end_at >= now() LIMIT 1",
+            (tenant_id, wa_user),
+        ).fetchone() is not None
+
+
 def get_appointment(tenant_id: int, appointment_id: int) -> dict | None:
     with get_conn() as conn:
         return conn.execute(

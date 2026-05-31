@@ -73,6 +73,8 @@ class AgentContext:
     booked_ids: list[int] = field(default_factory=list)
     changed_ids: list[int] = field(default_factory=list)
     actions: list[str] = field(default_factory=list)
+    # Set by the reply guard when it blocks an unbacked booking confirmation (for incidents).
+    guard_tripped: bool = False
     # The patient's open no-show follow-up (missed appointment we're recovering), if any.
     no_show: dict | None = None
     # A pending post-visit review request awaiting the patient's star rating, if any.
@@ -305,11 +307,23 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
         return {"error": "just_taken",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
+    # STRICT: never report a booking the database can't confirm. Re-read the row — only a
+    # persisted, confirmed appointment counts as booked. A phantom write (e.g. an external
+    # connector returned an id but nothing landed locally) becomes an error, not a "booked".
+    appt_id = row.get("id")
+    persisted = db.get_appointment(ctx.tenant_id, appt_id) if appt_id else None
+    if not persisted or persisted.get("status") != "confirmed":
+        log.error("Booking NOT persisted: connector returned %s, DB row=%s (tenant %s, user %s)",
+                  row, persisted, ctx.tenant_id, ctx.wa_user)
+        return {"error": "booking_failed",
+                "note": "The appointment could not be confirmed in the system. Do not tell the "
+                        "patient it is booked; offer to have staff confirm."}
+
     db.upsert_patient(ctx.tenant_id, ctx.wa_user, name)
-    _snapshot_risk(ctx, row)
-    ctx.booked_ids.append(row["id"])
-    ctx.actions.append(f"booked #{row['id']} {doctor['name']} {_fmt(start)} ({name}, {phone})")
-    return {"booked": True, "appointment_id": row["id"], "patient_name": name, "phone": phone,
+    _snapshot_risk(ctx, persisted)
+    ctx.booked_ids.append(appt_id)
+    ctx.actions.append(f"booked #{appt_id} {doctor['name']} {_fmt(start)} ({name}, {phone})")
+    return {"booked": True, "appointment_id": appt_id, "patient_name": name, "phone": phone,
             "doctor": doctor["name"], "service": service["name"], "when": _fmt(start),
             "details": extra or None}
 
@@ -400,9 +414,17 @@ def _reschedule_appointment(args: dict, ctx: AgentContext) -> dict:
     row = conn.reschedule(appt["id"], start, end)
     if row.get("conflict"):
         return {"error": "just_taken"}
+    # STRICT: confirm the new time actually persisted before reporting success.
+    persisted = db.get_appointment(ctx.tenant_id, appt["id"])
+    if not persisted or persisted.get("status") != "confirmed":
+        log.error("Reschedule NOT persisted: appt %s, DB row=%s (tenant %s)",
+                  appt["id"], persisted, ctx.tenant_id)
+        return {"error": "reschedule_failed",
+                "note": "Could not confirm the new time in the system. Do not tell the patient "
+                        "it is rescheduled; offer to have staff confirm."}
     # Rescheduling closes any open no-show recovery, and the new slot gets a fresh score.
     db.resolve_followup_for_appointment(ctx.tenant_id, appt["id"], "reschedule")
-    _snapshot_risk(ctx, row)
+    _snapshot_risk(ctx, persisted)
     ctx.changed_ids.append(appt["id"])
     ctx.actions.append(f"rescheduled #{appt['id']} -> {_fmt(start)}")
     return {"rescheduled": True, "appointment_id": appt["id"], "when": _fmt(start)}

@@ -6,7 +6,7 @@ so it never blocks the event loop.
 """
 import logging
 
-from app import db
+from app import db, reply_guard
 from app.config import AGENT_MAX_STEPS, CLINIC_DATA
 from app.connectors import get_connector
 from app.llm import Msg, generate
@@ -62,6 +62,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
 
         if not result.tool_calls:
             ctx.reply = (result.text or "").strip() or _FALLBACK_REPLY
+            reply_guard.verify(ctx)   # never confirm a booking the DB can't back
             return ctx
 
         messages.append(Msg(role="assistant", content=result.text or "",
@@ -76,6 +77,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
     ctx.needs_human = True
     if not ctx.reply:
         ctx.reply = _FALLBACK_REPLY
+    reply_guard.verify(ctx)
     return ctx
 
 
