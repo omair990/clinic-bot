@@ -20,6 +20,7 @@ from app.db import (
 )
 from app.events import publish
 from app.llm import LLMUnavailable
+from app import voice_reply
 from app.tenancy import check_quota, record_usage, resolve_tenant
 from app.tools import AgentContext
 from app.transcribe import transcribe_audio
@@ -203,8 +204,13 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
         return
 
-    await send_text(sender, ctx.reply, **creds)
-    log.info("Out %s: %s", sender, ctx.reply)
+    # Mirror modality: if the patient sent a voice note, reply with one (gated; falls
+    # back to text on any TTS/send failure so the answer is never dropped).
+    spoke = await voice_reply.maybe_send(sender, ctx.reply, tenant, creds,
+                                         inbound_is_voice=is_voice)
+    if not spoke:
+        await send_text(sender, ctx.reply, **creds)
+    log.info("Out %s (%s): %s", sender, "voice" if spoke else "text", ctx.reply)
     intent = ctx.derived_intent()
     await asyncio.to_thread(log_message, tid, sender, "out", ctx.reply,
                             intent, ctx.needs_human)

@@ -33,6 +33,8 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "").strip()
+# ElevenLabs powers both Scribe STT (inbound voice notes) and TTS (spoken replies).
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
 
 # Self-hosted / "own" model via any OpenAI-compatible server (Ollama, vLLM, RunPod
 # serverless). The always-available tail of the chain — no per-token credit to run out of.
@@ -49,9 +51,12 @@ MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 SELFHOSTED_MODEL = os.getenv("SELFHOSTED_MODEL", "qwen2.5:14b-instruct")
 
 # Voice notes: transcription fallback chain (tried in order, missing keys skipped).
+# ElevenLabs Scribe is included but placed after Gemini — validate its Arabic accuracy
+# before promoting it to primary (reorder via the TRANSCRIBE_PROVIDERS env var).
 TRANSCRIBE_PROVIDERS = [
     p.strip()
-    for p in os.environ.get("TRANSCRIBE_PROVIDERS", "gemini,groq,openrouter,openai").split(",")
+    for p in os.environ.get(
+        "TRANSCRIBE_PROVIDERS", "gemini,elevenlabs,groq,openrouter,openai").split(",")
     if p.strip()
 ]
 TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gemini-2.5-flash")        # Gemini
@@ -59,12 +64,25 @@ GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 OPENAI_WHISPER_MODEL = os.getenv("OPENAI_WHISPER_MODEL", "whisper-1")
 # OpenRouter has no Whisper endpoint; it transcribes via an audio-capable chat model.
 OPENROUTER_TRANSCRIBE_MODEL = os.getenv("OPENROUTER_TRANSCRIBE_MODEL", "google/gemini-2.0-flash-001")
+ELEVENLABS_STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL", "scribe_v1")
+
+# --- Spoken replies (ElevenLabs TTS) ---
+# When a patient sends a voice note we can reply with a voice note (modality mirroring).
+# Off by default: it costs per character, so opt in per deploy and/or per clinic
+# (clinic_data.voice.enabled). Replies longer than the cap fall back to text.
+VOICE_REPLY_ENABLED = os.getenv("VOICE_REPLY_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+VOICE_REPLY_MAX_CHARS = int(os.getenv("VOICE_REPLY_MAX_CHARS", "600"))
+ELEVENLABS_TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2")
+# A multilingual default voice (handles Arabic + English). Override per clinic.
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+# WhatsApp shows ogg/opus as a push-to-talk voice note; mp3 plays as a generic audio clip.
+ELEVENLABS_TTS_FORMAT = os.getenv("ELEVENLABS_TTS_FORMAT", "opus")  # "opus" | "mp3"
 
 AI_PROVIDERS = [
     p.strip()
     for p in os.environ.get(
         "AI_PROVIDERS",
-        "claude,mistral,openrouter,gemini,groq,deepseek,selfhosted").split(",")
+        "claude,openrouter,gemini,groq,mistral,deepseek,selfhosted").split(",")
     if p.strip()
 ]
 

@@ -15,6 +15,8 @@ from google import genai
 from google.genai import types
 
 from app.config import (
+    ELEVENLABS_API_KEY,
+    ELEVENLABS_STT_MODEL,
     GEMINI_API_KEY,
     GROQ_API_KEY,
     GROQ_WHISPER_MODEL,
@@ -78,6 +80,20 @@ def _openai(audio_bytes: bytes, mime_type: str) -> str:
                     OPENAI_API_KEY, OPENAI_WHISPER_MODEL, audio_bytes, mime_type)
 
 
+def _elevenlabs(audio_bytes: bytes, mime_type: str) -> str:
+    """ElevenLabs Scribe speech-to-text. Language is auto-detected, so Arabic stays
+    Arabic and English stays English (same contract as the other backends)."""
+    mime = _bare_mime(mime_type)
+    ext = mime.split("/")[-1] or "ogg"
+    files = {"file": (f"audio.{ext}", audio_bytes, mime)}
+    data = {"model_id": ELEVENLABS_STT_MODEL}
+    with httpx.Client(timeout=LLM_TIMEOUT_S) as client:
+        r = client.post("https://api.elevenlabs.io/v1/speech-to-text",
+                        headers={"xi-api-key": ELEVENLABS_API_KEY}, files=files, data=data)
+        r.raise_for_status()
+        return (r.json().get("text") or "").strip()
+
+
 def _to_wav(audio_bytes: bytes) -> bytes:
     """Transcode arbitrary audio (WhatsApp ogg/opus) to 16kHz mono wav via ffmpeg."""
     proc = subprocess.run(
@@ -113,6 +129,7 @@ def _openrouter(audio_bytes: bytes, mime_type: str) -> str:
 # name -> (fn, is_configured)
 _AVAILABLE = {
     "gemini": (_gemini, bool(_gemini_client)),
+    "elevenlabs": (_elevenlabs, bool(ELEVENLABS_API_KEY)),
     "openrouter": (_openrouter, bool(OPENROUTER_API_KEY)),
     "groq": (_groq, bool(GROQ_API_KEY)),
     "openai": (_openai, bool(OPENAI_API_KEY)),

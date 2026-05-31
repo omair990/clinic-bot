@@ -109,6 +109,40 @@ def build_template_payload(to: str, name: str, language: str, params: list | Non
             "to": to, "type": "template", "template": template}
 
 
+async def upload_media(audio_bytes: bytes, mime: str, *, phone_number_id: str | None = None,
+                       access_token: str | None = None) -> str:
+    """Upload media to WhatsApp and return its media id (step 1 of sending audio)."""
+    pn, token = _resolve_creds(phone_number_id, access_token)
+    ext = "ogg" if "ogg" in mime else ("mp3" if "mpeg" in mime else "bin")
+    files = {"file": (f"reply.{ext}", audio_bytes, mime)}
+    data = {"messaging_product": "whatsapp", "type": mime}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.post(f"https://graph.facebook.com/{WA_API_VERSION}/{pn}/media",
+                              headers={"Authorization": f"Bearer {token}"}, data=data, files=files)
+        _note_send_result(r.status_code)
+        if r.status_code >= 400:
+            log.error("WA upload_media failed status=%s body=%s", r.status_code, r.text)
+        r.raise_for_status()
+        return r.json()["id"]
+
+
+async def send_audio(to: str, audio_bytes: bytes, mime: str, *,
+                     phone_number_id: str | None = None, access_token: str | None = None) -> dict:
+    """Send a voice/audio reply. OGG/Opus renders as a push-to-talk voice note in WhatsApp.
+    Two hops: upload the media for an id, then send a message that references it."""
+    pn, token = _resolve_creds(phone_number_id, access_token)
+    media_id = await upload_media(audio_bytes, mime, phone_number_id=pn, access_token=token)
+    payload = {"messaging_product": "whatsapp", "recipient_type": "individual",
+               "to": to, "type": "audio", "audio": {"id": media_id}}
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(_messages_url(pn), headers=_auth(token), json=payload)
+        _note_send_result(r.status_code)
+        if r.status_code >= 400:
+            log.error("WA send_audio failed status=%s body=%s", r.status_code, r.text)
+        r.raise_for_status()
+        return r.json()
+
+
 async def download_media(media_id: str, *, access_token: str | None = None) -> tuple[bytes, str]:
     """Resolve a WhatsApp media id to (bytes, mime_type).
 
