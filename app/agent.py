@@ -8,6 +8,7 @@ import logging
 
 from app import db
 from app.config import AGENT_MAX_STEPS, CLINIC_DATA
+from app.connectors import get_connector
 from app.llm import Msg, generate
 from app.prompts import build_system_prompt
 from app.tools import TOOL_SPECS, AgentContext, dispatch
@@ -35,7 +36,8 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
     (oldest first), excluding the current message."""
     clinic_data = (tenant or {}).get("clinic_data") or CLINIC_DATA
     tenant_id = (tenant or {}).get("id") or 0
-    ctx = AgentContext(wa_user=wa_user, tenant_id=tenant_id, clinic_data=clinic_data)
+    ctx = AgentContext(wa_user=wa_user, tenant_id=tenant_id, clinic_data=clinic_data,
+                       connector=get_connector(tenant))
     known_name = None
     no_show = None
     review = None

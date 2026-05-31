@@ -1,0 +1,70 @@
+# Clinic connector layer
+
+The agent never talks to an appointment backend directly. It goes through a per-tenant
+`ClinicConnector` (`app/connectors.py`). Today every tenant uses `NativeConnector` (our
+Postgres is the system of record); the layer exists so a tenant can instead be backed by
+Cliniko, Google Calendar, a custom ERP, a dental PMS, or a hospital HIS without touching the
+agent or the booking tools.
+
+## The seam
+
+The five booking tools (`check_availability`, `book_appointment`, `get_my_appointments`,
+`reschedule_appointment`, `cancel_appointment`) call `ctx.connector` for **appointment store +
+availability**:
+
+```
+available_slots(doctor, on, duration_min, now) -> [datetime]
+create_appointment(...) -> row | {"conflict": True}
+upcoming_appointments(wa_user, now) -> [row]
+get_appointment(id) -> row | None
+reschedule(id, start, end) -> row | {"conflict"/"not_found": True}
+set_status(id, status) -> None
+capabilities() -> {read_availability, create, reschedule, cancel, list}
+```
+
+Everything else stays local on purpose — patient records, no-show risk, lead scoring,
+reviews, insights — so the AI features keep working **regardless of the backend**. That local
+data is the "mirror" referenced below and the actual product moat.
+
+## System-of-record strategies
+
+| Strategy | Use when | Cost |
+|---|---|---|
+| Native (our DB = SoR) | clinic has no system | none — today's mode |
+| External = SoR, thin client | clinic insists their PMS rules | latency, their downtime, AI loses data |
+| You = SoR, push out | calendar you fully own | double-booking with walk-ins |
+| **Hybrid: external SoR + local mirror** | **integrated tenants (default)** | mirror drift → reconcile via webhook/poll |
+
+Recommended default for integrated tenants is **hybrid**: the external system owns
+availability/bookings (no double-booking), we keep a write-through mirror so analytics survive.
+
+## Backends & feasibility
+
+- **No system** → Native (ideal).
+- **Calendar-only** (Google/Outlook) → OAuth + FreeBusy + Events; map 1 calendar per doctor.
+- **Open cloud PMS** (Cliniko, Dentrix Ascend, OpenDental API) → full two-way + webhooks.
+- **Closed / on-prem PMS** → fallback ladder: calendar export → integration engine/HL7 →
+  edge agent → CSV import → native + human-in-the-loop. (Avoid scraping.)
+- **Hospital HIS** (Epic/Cerner/local) → FHIR R4 (`Slot`/`Appointment`) or HL7v2 SIU via an
+  integration engine; often read-availability + request-to-book (staff confirms), not direct write.
+
+## Hard problems (and reused patterns)
+
+- **Idempotency / dedup** of inbound connector webhooks → reuse `claim_message_id` /
+  `processed_messages`.
+- **Resilience** → mirror the LLM circuit-breaker: connector breaker open ⇒ degrade to
+  request-to-book + `escalate_to_human`; never tell the patient "booked" without success.
+- **Double-booking race** → re-validate at write time / trust the backend's conflict response.
+- **Secrets/PHI** → connector credentials must be encrypted at rest (not in `clinic_data`
+  JSONB plaintext, which is also a pre-existing gap for `wa_access_token`); BAA/DPA apply.
+- **Mapping** → per-tenant maps of their services↔ours and providers↔our doctors.
+
+## Phasing
+
+0. **(done)** Extract `ClinicConnector` + `NativeConnector`; route tools through `ctx.connector`. Behavior-identical.
+1. Google Calendar (calendar-only clinics).
+2. Cliniko (first PMS; hybrid SoR + webhooks).
+3. Custom ERP via a generic webhook/REST adapter + config-driven mapping.
+4. FHIR (hospital + modern dental); closed/on-prem via edge agent or calendar fallback.
+
+`get_connector(tenant)` is where future dispatch on `tenant['connector_type']` goes.

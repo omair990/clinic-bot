@@ -12,8 +12,6 @@ from app import db
 from app.config import BOOKING_LEAD_HOURS, TZ
 from app.llm import ToolSpec
 from app.scheduling import (
-    available_slots,
-    day_bounds,
     doctor_works_on,
     find_doctor,
     find_service,
@@ -79,6 +77,9 @@ class AgentContext:
     no_show: dict | None = None
     # A pending post-visit review request awaiting the patient's star rating, if any.
     review: dict | None = None
+    # The clinic connector backing this tenant (our DB by default; could be Cliniko, a
+    # calendar, etc.). Lazily defaults to NativeConnector via _conn().
+    connector: object | None = None
 
     @property
     def doctors(self) -> list[dict]:
@@ -100,6 +101,15 @@ class AgentContext:
 
 def _now() -> datetime:
     return datetime.now(TZ)
+
+
+def _conn(ctx: AgentContext):
+    """The tenant's clinic connector — defaults to NativeConnector (our DB) when unset,
+    so direct AgentContext construction (e.g. in tests) still works."""
+    if ctx.connector is None:
+        from app.connectors import NativeConnector
+        ctx.connector = NativeConnector(ctx.tenant_id)
+    return ctx.connector
 
 
 def _fmt(dt: datetime) -> str:
@@ -222,9 +232,7 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
     duration = service["duration_min"] if service else DEFAULT_DURATION_MIN
 
     now = _now()
-    start, end = day_bounds(on)
-    booked = db.booked_intervals(ctx.tenant_id, doctor["name"], start, end)
-    slots = available_slots(doctor, on, duration, booked, now)
+    slots = _conn(ctx).available_slots(doctor, on, duration, now)
     result = {
         "doctor": doctor["name"],
         "date": on.isoformat(),
@@ -275,9 +283,8 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
         return resolved
     doctor, service, start, end = resolved
 
-    day_start, day_end = day_bounds(start.date())
-    booked = db.booked_intervals(ctx.tenant_id, doctor["name"], day_start, day_end)
-    valid = available_slots(doctor, start.date(), service["duration_min"], booked, _now())
+    conn = _conn(ctx)
+    valid = conn.available_slots(doctor, start.date(), service["duration_min"], _now())
     if start not in valid:
         return {"error": "slot_unavailable",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
@@ -290,11 +297,11 @@ def _book_appointment(args: dict, ctx: AgentContext) -> dict:
 
     name = (args.get("patient_name") or "").strip() or db.get_patient_name(ctx.tenant_id, ctx.wa_user)
     phone = (args.get("phone") or "").strip() or ctx.wa_user
-    row = db.create_appointment(ctx.tenant_id, ctx.wa_user, name, phone, doctor["name"],
-                                service["name"], start, end, extra=extra or None)
+    row = conn.create_appointment(wa_user=ctx.wa_user, patient_name=name, phone=phone,
+                                  doctor=doctor["name"], service=service["name"],
+                                  start=start, end=end, extra=extra or None)
     if row.get("conflict"):
-        booked = db.booked_intervals(ctx.tenant_id, doctor["name"], day_start, day_end)
-        valid = available_slots(doctor, start.date(), service["duration_min"], booked, _now())
+        valid = conn.available_slots(doctor, start.date(), service["duration_min"], _now())
         return {"error": "just_taken",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
@@ -354,14 +361,14 @@ def _get_faqs(args: dict, ctx: AgentContext) -> dict:
 
 
 def _get_my_appointments(args: dict, ctx: AgentContext) -> dict:
-    rows = db.upcoming_appointments(ctx.tenant_id, ctx.wa_user, _now())
+    rows = _conn(ctx).upcoming_appointments(ctx.wa_user, _now())
     return {"appointments": [
         {"appointment_id": r["id"], "doctor": r["doctor"], "service": r["service"],
          "when": _fmt(r["start_at"]), "status": r["status"]} for r in rows]}
 
 
 def _owned(appointment_id: int, ctx: AgentContext) -> dict | None:
-    appt = db.get_appointment(ctx.tenant_id, appointment_id)
+    appt = _conn(ctx).get_appointment(appointment_id)
     if not appt or appt["wa_user"] != ctx.wa_user:
         return None
     return appt
@@ -383,15 +390,14 @@ def _reschedule_appointment(args: dict, ctx: AgentContext) -> dict:
     duration = (appt["end_at"] - appt["start_at"])
     end = start + duration
 
+    conn = _conn(ctx)
     doctor = find_doctor(appt["doctor"], ctx.doctors)
-    day_start, day_end = day_bounds(start.date())
-    booked = db.booked_intervals(ctx.tenant_id, appt["doctor"], day_start, day_end)
-    valid = available_slots(doctor, start.date(), int(duration.total_seconds() // 60), booked, _now())
+    valid = conn.available_slots(doctor, start.date(), int(duration.total_seconds() // 60), _now())
     if start not in valid:
         return {"error": "slot_unavailable",
                 "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
-    row = db.reschedule(ctx.tenant_id, appt["id"], start, end)
+    row = conn.reschedule(appt["id"], start, end)
     if row.get("conflict"):
         return {"error": "just_taken"}
     # Rescheduling closes any open no-show recovery, and the new slot gets a fresh score.
@@ -408,7 +414,7 @@ def _cancel_appointment(args: dict, ctx: AgentContext) -> dict:
         return {"error": "appointment_not_found"}
     if appt["status"] == "cancelled":
         return {"already_cancelled": True}
-    db.set_appointment_status(ctx.tenant_id, appt["id"], "cancelled")
+    _conn(ctx).set_status(appt["id"], "cancelled")
     db.resolve_followup_for_appointment(ctx.tenant_id, appt["id"], "cancel")
     ctx.changed_ids.append(appt["id"])
     ctx.actions.append(f"cancelled #{appt['id']}")
