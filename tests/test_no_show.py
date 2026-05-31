@@ -75,3 +75,51 @@ def test_resolve_template_none_when_no_name(monkeypatch):
     monkeypatch.setattr(ns, "NO_SHOW_USE_TEMPLATES", True)
     monkeypatch.setattr(ns, "_ENV_TEMPLATES", {"no_show": ""})
     assert ns.resolve_template("no_show", {"clinic_data": {}}) is None
+
+
+# --- Send-path routing (regression for the WhatsApp template path) ---
+# No DB/network: the WhatsApp client and the two DB writes in _send_and_log are stubbed,
+# so this asserts purely how send_no_show_notification *routes* the outbound message.
+
+def _run_notification(monkeypatch, *, templates_on, tenant):
+    import asyncio
+    import app.no_show as ns
+    sent = []
+
+    async def fake_template(to, name, language, params, **creds):
+        sent.append({"kind": "template", "to": to, "name": name,
+                     "language": language, "params": params})
+
+    async def fake_text(to, body, **creds):
+        sent.append({"kind": "text", "to": to, "body": body})
+
+    monkeypatch.setattr(ns, "send_template", fake_template)
+    monkeypatch.setattr(ns, "send_text", fake_text)
+    monkeypatch.setattr(ns, "NO_SHOW_USE_TEMPLATES", templates_on)
+    monkeypatch.setattr(ns, "_ENV_TEMPLATES", {"no_show": "no_show_recovery"})
+    monkeypatch.setattr(ns, "NO_SHOW_TEMPLATE_LANG", "en")
+    monkeypatch.setattr(ns.db, "log_message", lambda *a, **k: None)
+    monkeypatch.setattr(ns.db, "set_followup_stage", lambda *a, **k: None)
+
+    asyncio.run(ns.send_no_show_notification(
+        to="966500000001", service="Dental Checkup", doctor="Dr. Khalid",
+        creds={"phone_number_id": None, "access_token": None},
+        tenant_id=1, followup_id=1, tenant=tenant))
+    return sent
+
+
+def test_notification_uses_template_when_enabled(monkeypatch):
+    sent = _run_notification(monkeypatch, templates_on=True, tenant={"clinic_data": {}})
+    assert len(sent) == 1
+    msg = sent[0]
+    assert msg["kind"] == "template"
+    assert msg["name"] == "no_show_recovery"
+    assert msg["language"] == "en"
+    assert msg["params"] == ["Dental Checkup with Dr. Khalid"]
+
+
+def test_notification_uses_free_text_when_disabled(monkeypatch):
+    sent = _run_notification(monkeypatch, templates_on=False, tenant=None)
+    assert len(sent) == 1
+    assert sent[0]["kind"] == "text"
+    assert "missed" in sent[0]["body"].lower()

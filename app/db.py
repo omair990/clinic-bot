@@ -620,13 +620,15 @@ def record_no_show_response(tenant_id: int, appointment_id: int,
                             outcome: str | None = None, reason: str | None = None) -> bool:
     """Store the patient's chosen outcome and/or stated reason on the follow-up and
     resolve it. Only fills fields that are provided. Returns True if a row matched."""
-    sets, params = ["stage = 'resolved'", "resolved_at = now()", "updated_at = now()"], []
+    # Build SET clauses and params in the SAME order so the placeholders line up.
+    sets, params = [], []
     if outcome:
-        sets.insert(0, "outcome = %s")
+        sets.append("outcome = %s")
         params.append(outcome)
     if reason:
-        sets.insert(0, "reason = %s")
+        sets.append("reason = %s")
         params.append(reason)
+    sets += ["stage = 'resolved'", "resolved_at = now()", "updated_at = now()"]
     params += [tenant_id, appointment_id]
     with get_conn() as conn:
         cur = conn.execute(
