@@ -57,6 +57,7 @@ from app.events import subscribe, unsubscribe
 from app import analysis as analysis_mod
 from app import connectors as connectors_mod
 from app import incidents
+from app import clinic_schema as cs
 from app import insights as insights_mod
 from app import no_show as no_show_mod
 from app.notifications import notify_appointment_status
@@ -685,17 +686,29 @@ async def change_tenant_status(request: Request, tenant_id: int, status: str = F
     return RedirectResponse("/admin/plans", status_code=303)
 
 
-def _parse_clinic_data(raw: str) -> dict | None:
+class ClinicDataError(Exception):
+    """Carries field-level validation messages so the route can re-render the form."""
+    def __init__(self, errors: list[str], warnings: list[str] | None = None):
+        self.errors = errors
+        self.warnings = warnings or []
+        super().__init__("; ".join(errors))
+
+
+def _parse_clinic_data(raw: str) -> tuple[dict | None, list[str]]:
+    """Parse → validate → normalize the clinic-data JSON. Returns ``(normalized, warnings)``.
+    An empty box means "no clinic data" (``None``). Raises :class:`ClinicDataError` on a
+    JSON syntax error or any schema error, so the save is rejected, not silently accepted."""
     raw = (raw or "").strip()
     if not raw:
-        return None
+        return None, []
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise HTTPException(400, f"Invalid clinic data JSON: {e}")
-    if not isinstance(data, dict):
-        raise HTTPException(400, "Clinic data must be a JSON object")
-    return data
+        raise ClinicDataError([f"Invalid JSON: {e}"])
+    norm, errors, warnings = cs.validate_and_normalize(data)
+    if errors:
+        raise ClinicDataError(errors, warnings)
+    return norm, warnings
 
 
 @router.post("/tenants")
@@ -716,9 +729,14 @@ async def add_tenant(request: Request,
                              error=f'Staff username "{uname}" is already in use by '
                              "another clinic. Choose a different one.")
     try:
+        parsed, _warnings = _parse_clinic_data(clinic_data)
+    except ClinicDataError as e:
+        return _render_plans(request, status_code=409,
+                             error="Clinic data invalid — " + "; ".join(e.errors))
+    try:
         tid = create_tenant(name.strip(), slug.strip(), wa_phone_number_id.strip() or None,
                             plan_id, timezone.strip() or "Asia/Riyadh",
-                            wa_access_token.strip() or None, _parse_clinic_data(clinic_data))
+                            wa_access_token.strip() or None, parsed)
     except psycopg.errors.UniqueViolation as e:
         log.warning("create_tenant rejected (duplicate): %s", str(e)[:160])
         return _render_plans(request, status_code=409,
@@ -736,24 +754,36 @@ async def edit_tenant_page(request: Request, tenant_id: int):
     tenant = get_tenant(tenant_id)
     if not tenant:
         raise HTTPException(404, "Tenant not found")
-    pretty = json.dumps(tenant.get("clinic_data") or {}, indent=2, ensure_ascii=False)
+    data = tenant.get("clinic_data") or {}
+    pretty = json.dumps(data, indent=2, ensure_ascii=False)
     return templates.TemplateResponse(
-        "tenant_edit.html", {"request": request, "t": tenant, "clinic_json": pretty})
+        "tenant_edit.html", {"request": request, "t": tenant, "clinic_json": pretty,
+                             "clinic_obj": cs.normalize(data)})
 
 
 def _render_tenant_edit(request: Request, tenant_id: int, *, name, wa_phone_number_id,
-                        timezone, wa_access_token, clinic_data_raw, staff_username, error):
-    """Re-render the clinic edit form with an error, preserving what was just typed."""
+                        timezone, wa_access_token, clinic_data_raw, staff_username,
+                        error=None, errors=None, warnings=None, saved=False,
+                        status_code=409):
+    """Re-render the clinic edit form, preserving what was just typed. Shows blocking
+    ``errors`` (or a single ``error``), advisory ``warnings``, and a ``saved`` notice."""
     existing = get_tenant(tenant_id)
     t = {"id": tenant_id, "name": name, "slug": (existing or {}).get("slug", ""),
          "wa_phone_number_id": wa_phone_number_id, "timezone": timezone,
          "wa_access_token": wa_access_token, "staff_username": staff_username}
-    clinic_json = clinic_data_raw if clinic_data_raw.strip() else json.dumps(
+    raw = clinic_data_raw or ""
+    clinic_json = raw if raw.strip() else json.dumps(
         (existing or {}).get("clinic_data") or {}, indent=2, ensure_ascii=False)
+    # Best-effort object for the guided editor from whatever was typed.
+    try:
+        obj = cs.normalize(json.loads(clinic_json))
+    except json.JSONDecodeError:
+        obj = cs.normalize((existing or {}).get("clinic_data") or {})
     return templates.TemplateResponse(
         "tenant_edit.html",
-        {"request": request, "t": t, "clinic_json": clinic_json, "error": error},
-        status_code=409)
+        {"request": request, "t": t, "clinic_json": clinic_json, "clinic_obj": obj,
+         "error": error, "errors": errors or [], "warnings": warnings or [], "saved": saved},
+        status_code=status_code)
 
 
 @router.post("/tenants/{tenant_id}/edit")
@@ -767,6 +797,14 @@ async def edit_tenant(request: Request, tenant_id: int,
                       staff_password: str = Form("")):
     _require_super(request)
     uname = staff_username.strip() or None
+    # Validate clinic data up front — reject broken config instead of silently saving it.
+    try:
+        parsed, warnings = _parse_clinic_data(clinic_data)
+    except ClinicDataError as e:
+        return _render_tenant_edit(
+            request, tenant_id, name=name, wa_phone_number_id=wa_phone_number_id,
+            timezone=timezone, wa_access_token=wa_access_token, clinic_data_raw=clinic_data,
+            staff_username=staff_username, errors=e.errors, warnings=e.warnings)
     # Check the username up front so we don't half-save the config then 500 on the
     # UNIQUE constraint. (The try/except below is a backstop for the rare race.)
     if uname and staff_username_taken(uname, exclude_tenant_id=tenant_id):
@@ -780,7 +818,7 @@ async def edit_tenant(request: Request, tenant_id: int,
                          wa_phone_number_id=wa_phone_number_id.strip() or None,
                          wa_access_token=wa_access_token.strip() or None,
                          timezone=timezone.strip() or "Asia/Riyadh",
-                         clinic_data=_parse_clinic_data(clinic_data))
+                         clinic_data=parsed)
     # Update credentials: username always; password only if a new one was typed.
     pw_hash = hash_password(staff_password) if staff_password.strip() else None
     try:
@@ -791,6 +829,14 @@ async def edit_tenant(request: Request, tenant_id: int,
             timezone=timezone, wa_access_token=wa_access_token, clinic_data_raw=clinic_data,
             staff_username=staff_username,
             error=f'Staff username "{uname}" is already in use by another clinic.')
+    if warnings:
+        # Saved fine, but show advisory notes (e.g. no doctors yet) rather than hiding them.
+        return _render_tenant_edit(
+            request, tenant_id, name=name.strip(),
+            wa_phone_number_id=wa_phone_number_id, timezone=timezone,
+            wa_access_token=wa_access_token,
+            clinic_data_raw=json.dumps(parsed or {}, indent=2, ensure_ascii=False),
+            staff_username=staff_username, warnings=warnings, saved=True, status_code=200)
     return RedirectResponse("/admin/plans", status_code=303)
 
 
