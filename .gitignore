@@ -8,3 +8,4 @@ __pycache__/
 .claude/
 .railway-token
 .openrouter-key
+.mistral-key
