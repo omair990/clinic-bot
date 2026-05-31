@@ -64,7 +64,7 @@ availability/bookings (no double-booking), we keep a write-through mirror so ana
 0. **(done)** Extract `ClinicConnector` + `NativeConnector`; route tools through `ctx.connector`. Behavior-identical.
 1. **(done)** Google Calendar — hybrid (Google free/busy + events, local mirror). See config below.
 2. **(done)** Cliniko — hybrid (busy overlay + bookings via REST, local mirror). See config below.
-3. Custom ERP via a generic webhook/REST adapter + config-driven mapping.
+3. **(done)** Custom ERP — config-driven adapter over a small canonical REST contract. See below.
 4. FHIR (hospital + modern dental); closed/on-prem via edge agent or calendar fallback.
 
 `get_connector(tenant)` dispatches on `clinic_data.connector.type`.
@@ -119,3 +119,33 @@ Reschedule/cancel propagate to Cliniko; a Cliniko failure keeps the local bookin
 > the connector *logic* is tested with a fake, the HTTP client is not.
 
 
+
+## Custom ERP connector config + contract
+
+Per-tenant, in `clinic_data.connector`:
+
+```json
+{
+  "type": "custom_erp",
+  "base_url": "https://erp.clinic.com/api",
+  "auth": { "type": "bearer", "token": "<secret>" }
+}
+```
+
+`auth.type` is `bearer` | `header` (`{name,value}`) | `none`. The ERP (or a thin shim it
+hosts) implements four endpoints; the ERP owns availability, we mirror bookings locally:
+
+```
+GET    {base}/availability?doctor=&service=&date=YYYY-MM-DD  -> {"slots": ["<ISO start>", …]}
+POST   {base}/appointments  {external_ref, doctor, service, patient_name, phone, start, end} -> {"id": "…"}
+PATCH  {base}/appointments/{id}  {start, end}
+DELETE {base}/appointments/{id}
+```
+
+`external_ref` is our local appointment id (so the ERP can correlate back). A failed ERP
+write keeps the local booking. To keep the mirror fresh when staff book directly in the
+ERP, have it POST changes to an inbound webhook (reconciliation — dedup like
+`processed_messages`); that ingress endpoint is a later add-on.
+
+> `auth.token` is a secret — same storage caveat (encrypt at rest, don't leave plaintext in
+> `clinic_data`). The connector logic is tested with a fake; `GenericErpClient` HTTP is not.

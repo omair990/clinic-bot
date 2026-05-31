@@ -460,6 +460,152 @@ def _build_cliniko_client(conf: dict) -> ClinikoApi:
                          user_agent=conf.get("user_agent", "ClinicAIAssistant (support@example.com)"))
 
 
+# --- Custom ERP (Phase 3) — config-driven adapter over a small canonical REST contract ---
+#
+# Rather than a bespoke connector per ERP, the ERP exposes (or a thin shim provides) four
+# endpoints speaking a fixed shape; we point GenericErpClient at its base_url + auth:
+#   GET    {base}/availability?doctor=&service=&date=YYYY-MM-DD  -> {"slots": ["<ISO start>", …]}
+#   POST   {base}/appointments  {external_ref,doctor,service,patient_name,phone,start,end} -> {"id": "…"}
+#   PATCH  {base}/appointments/{id}  {start,end}
+#   DELETE {base}/appointments/{id}
+# The ERP owns availability; we mirror bookings locally for the AI features.
+
+class ErpApi(ABC):
+    """I/O boundary for a custom ERP speaking the canonical contract above."""
+
+    @abstractmethod
+    def get_availability(self, doctor: str, service: str | None,
+                         on: date_cls) -> list[datetime]: ...
+
+    @abstractmethod
+    def create_appointment(self, *, external_ref: str, doctor: str, service: str,
+                           patient_name: str | None, phone: str,
+                           start: datetime, end: datetime) -> str: ...
+
+    @abstractmethod
+    def reschedule(self, external_id: str, start: datetime, end: datetime) -> None: ...
+
+    @abstractmethod
+    def cancel(self, external_id: str) -> None: ...
+
+
+class CustomErpConnector(ClinicConnector):
+    """Hybrid connector for an arbitrary ERP: the ERP is the availability + booking
+    authority (it returns bookable slots directly), we mirror appointments locally so the
+    AI features keep working. Doctor/service are passed by name; the ERP maps them itself."""
+
+    def __init__(self, tenant_id: int, config: dict, client: ErpApi):
+        self.tenant_id = tenant_id
+        self.config = config or {}
+        self.client = client
+
+    def capabilities(self) -> set[str]:
+        return {READ_AVAILABILITY, CREATE, RESCHEDULE, CANCEL, LIST}
+
+    def available_slots(self, doctor, on, duration_min, now):
+        # The ERP returns bookable starts directly; we just drop anything already past.
+        slots = self.client.get_availability(doctor.get("name"), None, on)
+        return [s for s in slots if s > now]
+
+    def create_appointment(self, *, wa_user, patient_name, phone, doctor, service,
+                           start, end, extra=None):
+        row = db.create_appointment(self.tenant_id, wa_user, patient_name, phone, doctor,
+                                    service, start, end, extra=extra)
+        if row.get("conflict"):
+            return row
+        try:
+            ext = self.client.create_appointment(
+                external_ref=str(row["id"]), doctor=doctor, service=service,
+                patient_name=patient_name, phone=phone or wa_user, start=start, end=end)
+            db.set_appointment_external_id(self.tenant_id, row["id"], ext)
+            row = {**row, "external_id": ext}
+        except Exception:  # noqa: BLE001 — keep the booking if the ERP write fails
+            log.exception("ERP create failed for appt %s (booking kept)", row["id"])
+        return row
+
+    def upcoming_appointments(self, wa_user, now):
+        return db.upcoming_appointments(self.tenant_id, wa_user, now)
+
+    def get_appointment(self, appointment_id):
+        return db.get_appointment(self.tenant_id, appointment_id)
+
+    def reschedule(self, appointment_id, start, end):
+        appt = db.get_appointment(self.tenant_id, appointment_id)
+        if not appt:
+            return {"not_found": True}
+        if appt.get("external_id"):
+            try:
+                self.client.reschedule(appt["external_id"], start, end)
+            except Exception:  # noqa: BLE001
+                log.exception("ERP reschedule failed for appt %s", appointment_id)
+        return db.reschedule(self.tenant_id, appointment_id, start, end)
+
+    def set_status(self, appointment_id, status):
+        appt = db.get_appointment(self.tenant_id, appointment_id)
+        if appt and status == "cancelled" and appt.get("external_id"):
+            try:
+                self.client.cancel(appt["external_id"])
+            except Exception:  # noqa: BLE001
+                log.exception("ERP cancel failed for appt %s", appointment_id)
+        db.set_appointment_status(self.tenant_id, appointment_id, status)
+
+
+class GenericErpClient(ErpApi):
+    """Live client for the canonical ERP contract. Auth is config-driven:
+    {"type":"bearer","token":…} | {"type":"header","name":…,"value":…} | {"type":"none"}.
+    NOT exercised by tests — verify against the ERP's actual shim."""
+
+    def __init__(self, *, base_url: str, auth: dict | None = None):
+        self.base = base_url.rstrip("/")
+        self.auth = auth or {}
+
+    def _headers(self) -> dict:
+        h = {"Accept": "application/json", "Content-Type": "application/json"}
+        atype = self.auth.get("type")
+        if atype == "bearer":
+            h["Authorization"] = f"Bearer {self.auth.get('token', '')}"
+        elif atype == "header":
+            h[self.auth.get("name", "X-API-Key")] = self.auth.get("value", "")
+        return h
+
+    def get_availability(self, doctor, service, on):
+        import httpx
+        params = {"doctor": doctor, "date": on.isoformat()}
+        if service:
+            params["service"] = service
+        r = httpx.get(f"{self.base}/availability", headers=self._headers(), params=params, timeout=15)
+        r.raise_for_status()
+        return [datetime.fromisoformat(s.replace("Z", "+00:00"))
+                for s in r.json().get("slots", [])]
+
+    def create_appointment(self, *, external_ref, doctor, service, patient_name, phone, start, end):
+        import httpx
+        r = httpx.post(f"{self.base}/appointments", headers=self._headers(), timeout=15, json={
+            "external_ref": external_ref, "doctor": doctor, "service": service,
+            "patient_name": patient_name, "phone": phone,
+            "start": start.isoformat(), "end": end.isoformat()})
+        r.raise_for_status()
+        return str(r.json()["id"])
+
+    def reschedule(self, external_id, start, end):
+        import httpx
+        r = httpx.patch(f"{self.base}/appointments/{external_id}", headers=self._headers(),
+                        timeout=15, json={"start": start.isoformat(), "end": end.isoformat()})
+        r.raise_for_status()
+
+    def cancel(self, external_id):
+        import httpx
+        r = httpx.delete(f"{self.base}/appointments/{external_id}", headers=self._headers(), timeout=15)
+        if r.status_code not in (200, 204, 404):
+            r.raise_for_status()
+
+
+def _build_erp_client(conf: dict) -> ErpApi:
+    if not conf.get("base_url"):
+        raise RuntimeError("Custom ERP connector not configured (base_url)")
+    return GenericErpClient(base_url=conf["base_url"], auth=conf.get("auth"))
+
+
 def get_connector(tenant: dict | None) -> ClinicConnector:
     """Resolve the connector for a tenant from clinic_data.connector.type. Falls back to
     NativeConnector (our DB) for unconfigured tenants or if a connector fails to initialise."""
@@ -471,6 +617,8 @@ def get_connector(tenant: dict | None) -> ClinicConnector:
             return GoogleCalendarConnector(tenant_id, conf, _build_google_client(conf))
         if ctype == "cliniko":
             return ClinikoConnector(tenant_id, conf, _build_cliniko_client(conf))
+        if ctype == "custom_erp":
+            return CustomErpConnector(tenant_id, conf, _build_erp_client(conf))
     except Exception:  # noqa: BLE001 — a misconfigured connector must not break bookings
         log.exception("connector '%s' init failed for tenant %s; using native", ctype, tenant_id)
     return NativeConnector(tenant_id)
