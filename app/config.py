@@ -51,11 +51,12 @@ MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 SELFHOSTED_MODEL = os.getenv("SELFHOSTED_MODEL", "qwen2.5:14b-instruct")
 
 # Voice notes: transcription fallback chain (tried in order, missing keys skipped).
-# ElevenLabs Scribe is primary; OpenRouter/OpenAI are fallbacks.
+# ElevenLabs Scribe is primary; Gemini is the fallback (works from cloud IPs, unlike
+# ElevenLabs' free tier — keep it until ElevenLabs is on a paid plan).
 TRANSCRIBE_PROVIDERS = [
     p.strip()
     for p in os.environ.get(
-        "TRANSCRIBE_PROVIDERS", "elevenlabs,openrouter,openai").split(",")
+        "TRANSCRIBE_PROVIDERS", "elevenlabs,gemini").split(",")
     if p.strip()
 ]
 TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "gemini-2.5-flash")        # Gemini
@@ -81,7 +82,7 @@ AI_PROVIDERS = [
     p.strip()
     for p in os.environ.get(
         "AI_PROVIDERS",
-        "claude,openrouter,mistral").split(",")
+        "claude,mistral").split(",")
     if p.strip()
 ]
 
