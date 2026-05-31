@@ -235,7 +235,36 @@ def init_db() -> None:
     with get_conn() as conn:
         conn.execute(DDL)
     seed_tenancy()
+    try:
+        _encrypt_existing_secrets()
+    except Exception:  # noqa: BLE001 — never block startup on the secrets sweep
+        log.exception("secrets-at-rest sweep failed")
     log.info("DB schema ready")
+
+
+def _encrypt_existing_secrets() -> None:
+    """One-time sweep: encrypt any plaintext wa_access_token / connector secrets left from
+    before secrets-at-rest. Idempotent — encrypt() skips already-encrypted values."""
+    from psycopg.types.json import Jsonb
+
+    from app import crypto
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id, wa_access_token, clinic_data FROM tenants").fetchall()
+        for r in rows:
+            sets, params = [], []
+            tok = r["wa_access_token"]
+            if tok and not tok.startswith(crypto.PREFIX):
+                sets.append("wa_access_token = %s")
+                params.append(crypto.encrypt(tok))
+            cd = r["clinic_data"]
+            if isinstance(cd, dict) and isinstance(cd.get("connector"), dict):
+                enc = crypto.encrypt_clinic_data(cd)
+                if enc != cd:
+                    sets.append("clinic_data = %s")
+                    params.append(Jsonb(enc))
+            if sets:
+                params.append(r["id"])
+                conn.execute(f"UPDATE tenants SET {', '.join(sets)} WHERE id = %s", tuple(params))
 
 
 def seed_tenancy() -> None:
@@ -604,10 +633,11 @@ def all_active_tenants() -> list[dict]:
     """Every active tenant's WhatsApp creds, timezone and clinic data — the sweep
     needs these to message patients on the right number per clinic."""
     with get_conn() as conn:
-        return conn.execute(
+        rows = conn.execute(
             "SELECT id, slug, wa_phone_number_id, wa_access_token, timezone, clinic_data "
             "FROM tenants WHERE status = 'active'"
         ).fetchall()
+    return [_decrypt_tenant(r) for r in rows]
 
 
 def patient_history_stats(tenant_id: int, wa_user: str,
@@ -1238,18 +1268,32 @@ _TENANT_SELECT = (
 )
 
 
+def _decrypt_tenant(row: dict | None) -> dict | None:
+    """Decrypt secrets on a tenant row loaded for runtime use, so the rest of the app sees
+    plaintext (WhatsApp token + connector credentials)."""
+    from app import crypto
+    if not row:
+        return row
+    if row.get("wa_access_token"):
+        row["wa_access_token"] = crypto.decrypt(row["wa_access_token"])
+    if row.get("clinic_data") is not None:
+        row["clinic_data"] = crypto.decrypt_clinic_data(row["clinic_data"])
+    return row
+
+
 def get_tenant_by_phone(phone_number_id: str | None) -> dict | None:
     if not phone_number_id:
         return None
     with get_conn() as conn:
-        return conn.execute(
+        return _decrypt_tenant(conn.execute(
             _TENANT_SELECT + "WHERE t.wa_phone_number_id = %s", (phone_number_id,)
-        ).fetchone()
+        ).fetchone())
 
 
 def get_default_tenant() -> dict | None:
     with get_conn() as conn:
-        return conn.execute(_TENANT_SELECT + "WHERE t.slug = 'default'").fetchone()
+        return _decrypt_tenant(
+            conn.execute(_TENANT_SELECT + "WHERE t.slug = 'default'").fetchone())
 
 
 def incr_usage(tenant_id: int, period: str, *, text: int = 0, voice: int = 0) -> None:
@@ -1339,13 +1383,17 @@ def set_tenant_status(tenant_id: int, status: str) -> None:
 def create_tenant(name: str, slug: str, wa_phone_number_id: str | None, plan_id: int | None,
                   timezone: str, wa_access_token: str | None, clinic_data: dict | None) -> int:
     from psycopg.types.json import Json
+
+    from app import crypto
+    enc_token = crypto.encrypt(wa_access_token) if wa_access_token else None
+    enc_cd = crypto.encrypt_clinic_data(clinic_data) if clinic_data is not None else None
     with get_conn() as conn:
         row = conn.execute(
             "INSERT INTO tenants (name, slug, wa_phone_number_id, wa_access_token, "
             "clinic_data, plan_id, status, timezone) "
             "VALUES (%s, %s, %s, %s, %s, %s, 'active', %s) RETURNING id",
-            (name, slug, wa_phone_number_id or None, wa_access_token or None,
-             Json(clinic_data) if clinic_data is not None else None, plan_id, timezone),
+            (name, slug, wa_phone_number_id or None, enc_token,
+             Json(enc_cd) if enc_cd is not None else None, plan_id, timezone),
         ).fetchone()
     return row["id"]
 
@@ -1357,18 +1405,23 @@ def update_tenant_config(tenant_id: int, *, name: str, wa_phone_number_id: str |
     # there's no implicit json->jsonb cast — so the parameter must be Jsonb, not Json,
     # or "COALESCE($5, clinic_data)" raises CannotCoerce (jsonb vs json).
     from psycopg.types.json import Jsonb
+
+    from app import crypto
+    enc_token = crypto.encrypt(wa_access_token) if wa_access_token else None
+    enc_cd = crypto.encrypt_clinic_data(clinic_data) if clinic_data is not None else None
     with get_conn() as conn:
         conn.execute(
             "UPDATE tenants SET name = %s, wa_phone_number_id = %s, wa_access_token = %s, "
             "timezone = %s, clinic_data = COALESCE(%s, clinic_data) WHERE id = %s",
-            (name, wa_phone_number_id or None, wa_access_token or None, timezone,
-             Jsonb(clinic_data) if clinic_data is not None else None, tenant_id),
+            (name, wa_phone_number_id or None, enc_token, timezone,
+             Jsonb(enc_cd) if enc_cd is not None else None, tenant_id),
         )
 
 
 def get_tenant(tenant_id: int) -> dict | None:
     with get_conn() as conn:
-        return conn.execute("SELECT * FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
+        return _decrypt_tenant(
+            conn.execute("SELECT * FROM tenants WHERE id = %s", (tenant_id,)).fetchone())
 
 
 def get_tenant_by_username(username: str) -> dict | None:

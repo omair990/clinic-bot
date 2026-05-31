@@ -55,8 +55,9 @@ availability/bookings (no double-booking), we keep a write-through mirror so ana
 - **Resilience** → mirror the LLM circuit-breaker: connector breaker open ⇒ degrade to
   request-to-book + `escalate_to_human`; never tell the patient "booked" without success.
 - **Double-booking race** → re-validate at write time / trust the backend's conflict response.
-- **Secrets/PHI** → connector credentials must be encrypted at rest (not in `clinic_data`
-  JSONB plaintext, which is also a pre-existing gap for `wa_access_token`); BAA/DPA apply.
+- **Secrets/PHI** → connector credentials and `wa_access_token` are **encrypted at rest**
+  (`app/crypto.py`, Fernet): encrypted on write, decrypted when a tenant row is loaded for
+  use, transparent to legacy plaintext. Set a stable `SECRETS_KEY` in prod. BAA/DPA still apply.
 - **Mapping** → per-tenant maps of their services↔ours and providers↔our doctors.
 
 ## Phasing

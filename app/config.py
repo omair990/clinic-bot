@@ -159,6 +159,10 @@ ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "").strip()
 PORT = int(os.getenv("PORT", "8000"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-please-rotate")
+# Encryption key for secrets at rest (WhatsApp token, connector credentials). A Fernet key;
+# if unset it's derived from SECRET_KEY. Set a stable dedicated value in production — changing
+# it makes existing encrypted secrets unrecoverable.
+SECRETS_KEY = os.environ.get("SECRETS_KEY", "").strip()
 
 # --- Database (Postgres) ---
 # Railway/Heroku style URLs use the `postgres://` scheme; psycopg wants `postgresql://`.
