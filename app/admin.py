@@ -42,6 +42,7 @@ from app.db import (
     risk_band_counts,
     set_appointment_status,
     set_followup_stage,
+    set_tenant_connector,
     set_tenant_credentials,
     set_tenant_plan,
     set_tenant_status,
@@ -54,6 +55,7 @@ from app.db import (
 from app.db import tenant_id_for_user
 from app.events import subscribe, unsubscribe
 from app import analysis as analysis_mod
+from app import connectors as connectors_mod
 from app import incidents
 from app import insights as insights_mod
 from app import no_show as no_show_mod
@@ -459,6 +461,151 @@ async def insights_page(request: Request, period: str = "day"):
     report = await asyncio.to_thread(insights_mod.report, scope, period, str(TZ))
     return templates.TemplateResponse(
         "insights.html", {"request": request, "report": report})
+
+
+def _build_connector_config(ctype: str, form, existing: dict):
+    """Assemble a connector config dict from the form. Secrets left blank keep their existing
+    value (we never echo secrets back to the form). Returns (config|None, error|None);
+    config None means 'native' (no external connector)."""
+    existing = existing or {}
+
+    def secret(field, key, src=None):
+        v = (form.get(field) or "").strip()
+        return v or (src or existing).get(key)
+
+    def jmap(field, label):
+        raw = (form.get(field) or "").strip()
+        if not raw:
+            return {}, None
+        try:
+            d = json.loads(raw)
+        except json.JSONDecodeError as e:
+            return None, f"{label}: invalid JSON ({e})"
+        return (d, None) if isinstance(d, dict) else (None, f"{label} must be a JSON object")
+
+    if ctype == "native":
+        return None, None
+    if ctype == "google_calendar":
+        cals, err = jmap("g_calendars", "Calendars (doctor → calendarId)")
+        if err:
+            return None, err
+        cfg = {"type": "google_calendar",
+               "timezone": (form.get("g_timezone") or "Asia/Riyadh").strip() or "Asia/Riyadh",
+               "calendars": cals}
+        rt = secret("g_refresh_token", "refresh_token")
+        if rt:
+            cfg["refresh_token"] = rt
+        if (form.get("g_default_calendar") or "").strip():
+            cfg["default_calendar"] = form["g_default_calendar"].strip()
+        if not cfg.get("refresh_token"):
+            return None, "Refresh token is required for Google Calendar."
+        return cfg, None
+    if ctype == "cliniko":
+        pr, err = jmap("c_practitioners", "Practitioners")
+        if err:
+            return None, err
+        at, err = jmap("c_appointment_types", "Appointment types")
+        if err:
+            return None, err
+        cfg = {"type": "cliniko", "business_id": (form.get("c_business_id") or "").strip(),
+               "user_agent": (form.get("c_user_agent") or "").strip() or "ClinicAIAssistant",
+               "practitioners": pr, "appointment_types": at}
+        ak = secret("c_api_key", "api_key")
+        if ak:
+            cfg["api_key"] = ak
+        if not cfg.get("api_key"):
+            return None, "API key is required for Cliniko."
+        if not cfg["business_id"]:
+            return None, "Business id is required for Cliniko."
+        return cfg, None
+    if ctype == "custom_erp":
+        base = (form.get("e_base_url") or "").strip()
+        if not base:
+            return None, "Base URL is required for Custom ERP."
+        atype = (form.get("e_auth_type") or "none").strip()
+        ex_auth = existing.get("auth") or {}
+        auth = {"type": atype}
+        if atype == "bearer":
+            tok = secret("e_token", "token", ex_auth)
+            if tok:
+                auth["token"] = tok
+        elif atype == "header":
+            auth["name"] = (form.get("e_header_name") or "").strip() or "X-API-Key"
+            val = secret("e_header_value", "value", ex_auth)
+            if val:
+                auth["value"] = val
+        return {"type": "custom_erp", "base_url": base, "auth": auth}, None
+    if ctype == "fhir":
+        base = (form.get("f_base_url") or "").strip()
+        if not base:
+            return None, "Base URL is required for FHIR."
+        sch, err = jmap("f_schedules", "Schedules")
+        if err:
+            return None, err
+        pr, err = jmap("f_practitioners", "Practitioners")
+        if err:
+            return None, err
+        atype = (form.get("f_auth_type") or "none").strip()
+        ex_auth = existing.get("auth") or {}
+        auth = {"type": atype}
+        if atype == "bearer":
+            tok = secret("f_token", "token", ex_auth)
+            if tok:
+                auth["token"] = tok
+        elif atype == "client_credentials":
+            auth.update({"token_url": (form.get("f_token_url") or "").strip(),
+                         "client_id": (form.get("f_client_id") or "").strip(),
+                         "scope": (form.get("f_scope") or "").strip()})
+            cs = secret("f_client_secret", "client_secret", ex_auth)
+            if cs:
+                auth["client_secret"] = cs
+        return {"type": "fhir", "base_url": base, "auth": auth,
+                "booking_status": (form.get("f_booking_status") or "booked").strip(),
+                "schedules": sch, "practitioners": pr}, None
+    return None, f"Unknown connector type: {ctype}"
+
+
+def _render_connector(request, t, ctype, conn, result=None, error=None, status_code=200):
+    return templates.TemplateResponse(
+        "connector_form.html",
+        {"request": request, "t": t, "ctype": ctype, "conn": conn or {},
+         "result": result, "error": error}, status_code=status_code)
+
+
+@router.get("/tenants/{tenant_id}/connector", response_class=HTMLResponse)
+async def connector_page(request: Request, tenant_id: int):
+    _require_super(request)
+    t = get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    conn = (t.get("clinic_data") or {}).get("connector") or {}
+    return _render_connector(request, t, conn.get("type", "native"), conn)
+
+
+@router.post("/tenants/{tenant_id}/connector")
+async def connector_save(request: Request, tenant_id: int):
+    _require_super(request)
+    t = get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    form = await request.form()
+    action = form.get("action", "save")
+    ctype = (form.get("connector_type") or "native").strip()
+    existing = (t.get("clinic_data") or {}).get("connector") or {}
+    cfg, err = _build_connector_config(ctype, form, existing)
+    if err:
+        return _render_connector(request, t, ctype, existing, error=err, status_code=400)
+
+    if action == "test":
+        synthetic = {"id": tenant_id, "clinic_data": {"connector": cfg} if cfg else {}}
+        try:
+            result = connectors_mod.probe(connectors_mod.get_connector(synthetic))
+        except Exception as e:  # noqa: BLE001
+            result = {"ok": False, "detail": str(e)[:300]}
+        return _render_connector(request, t, ctype, cfg or {}, result=result)
+
+    set_tenant_connector(tenant_id, cfg)
+    return RedirectResponse(f"/admin/tenants/{tenant_id}/connector", status_code=303)
 
 
 @router.get("/plans", response_class=HTMLResponse)

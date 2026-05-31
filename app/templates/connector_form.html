@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% set active = 'plans' %}
+{% block title %}Connector — {{ t.name }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <div class="text-xs text-slate-500"><a href="/admin/plans" class="hover:underline">← Plans &amp; Usage</a></div>
+  <h1 class="text-xl font-semibold text-slate-900 mt-1">Appointment backend — {{ t.name }}</h1>
+  <div class="text-xs text-slate-400">{{ t.slug }} · how this clinic's bookings are read &amp; written</div>
+</div>
+
+{% if error %}<div class="mb-4 px-3 py-2 rounded bg-red-100 text-red-700 text-sm ring-1 ring-inset ring-red-200">{{ error }}</div>{% endif %}
+{% if result %}
+<div class="mb-4 px-3 py-2 rounded text-sm ring-1 ring-inset
+     {% if result.ok %}bg-emerald-100 text-emerald-700 ring-emerald-200{% else %}bg-red-100 text-red-700 ring-red-200{% endif %}">
+  {% if result.ok %}✅ Connection OK{% else %}❌ Connection failed{% endif %} — {{ result.detail }}
+</div>
+{% endif %}
+
+<div class="bg-white rounded-lg shadow p-5 max-w-3xl">
+  <form method="post" action="/admin/tenants/{{ t.id }}/connector" class="space-y-4 text-sm">
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Connector type</label>
+      <select name="connector_type" id="ctype" onchange="showSection()" class="w-full border rounded px-2 py-1">
+        {% for v, lbl in [('native','Native (our database)'), ('google_calendar','Google Calendar'),
+                          ('cliniko','Cliniko'), ('custom_erp','Custom ERP'), ('fhir','FHIR / Hospital HIS')] %}
+        <option value="{{ v }}" {% if ctype==v %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="sec-native" class="conn-sec text-xs text-slate-500">
+      Bookings are stored in our own database. No external configuration needed.
+    </div>
+
+    <div id="sec-google_calendar" class="conn-sec space-y-3">
+      <div><label class="block text-xs text-slate-500 mb-1">Refresh token
+        <span class="text-slate-400">({% if conn.refresh_token %}set — leave blank to keep{% else %}not set{% endif %})</span></label>
+        <input type="password" name="g_refresh_token" class="w-full border rounded px-2 py-1"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs text-slate-500 mb-1">Timezone</label>
+          <input name="g_timezone" value="{{ conn.timezone or 'Asia/Riyadh' }}" class="w-full border rounded px-2 py-1"></div>
+        <div><label class="block text-xs text-slate-500 mb-1">Default calendar id (optional)</label>
+          <input name="g_default_calendar" value="{{ conn.default_calendar or '' }}" class="w-full border rounded px-2 py-1"></div>
+      </div>
+      <div><label class="block text-xs text-slate-500 mb-1">Calendars — JSON {doctor name: calendarId}</label>
+        <textarea name="g_calendars" rows="4" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ (conn.calendars or {}) | tojson }}</textarea></div>
+    </div>
+
+    <div id="sec-cliniko" class="conn-sec space-y-3">
+      <div><label class="block text-xs text-slate-500 mb-1">API key
+        <span class="text-slate-400">({% if conn.api_key %}set — leave blank to keep{% else %}not set{% endif %})</span></label>
+        <input type="password" name="c_api_key" class="w-full border rounded px-2 py-1"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs text-slate-500 mb-1">Business id</label>
+          <input name="c_business_id" value="{{ conn.business_id or '' }}" class="w-full border rounded px-2 py-1"></div>
+        <div><label class="block text-xs text-slate-500 mb-1">User-Agent (clinic + email)</label>
+          <input name="c_user_agent" value="{{ conn.user_agent or '' }}" class="w-full border rounded px-2 py-1"></div>
+      </div>
+      <div><label class="block text-xs text-slate-500 mb-1">Practitioners — JSON {doctor name: id}</label>
+        <textarea name="c_practitioners" rows="3" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ (conn.practitioners or {}) | tojson }}</textarea></div>
+      <div><label class="block text-xs text-slate-500 mb-1">Appointment types — JSON {service name: id}</label>
+        <textarea name="c_appointment_types" rows="3" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ (conn.appointment_types or {}) | tojson }}</textarea></div>
+    </div>
+
+    <div id="sec-custom_erp" class="conn-sec space-y-3">
+      <div><label class="block text-xs text-slate-500 mb-1">Base URL</label>
+        <input name="e_base_url" value="{{ conn.base_url or '' }}" class="w-full border rounded px-2 py-1" placeholder="https://erp.clinic.com/api"></div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="block text-xs text-slate-500 mb-1">Auth</label>
+          <select name="e_auth_type" class="w-full border rounded px-2 py-1">
+            {% set ea = conn.auth.type if conn.auth else 'none' %}
+            {% for v in ['none','bearer','header'] %}<option value="{{v}}" {% if ea==v %}selected{% endif %}>{{v}}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-xs text-slate-500 mb-1">Bearer token / header value
+          <span class="text-slate-400">({% if conn.auth and (conn.auth.token or conn.auth.value) %}set{% else %}—{% endif %})</span></label>
+          <input type="password" name="e_token" class="w-full border rounded px-2 py-1" placeholder="bearer token"></div>
+        <div><label class="block text-xs text-slate-500 mb-1">Header name (if header)</label>
+          <input name="e_header_name" value="{{ conn.auth.name if conn.auth else '' }}" class="w-full border rounded px-2 py-1" placeholder="X-API-Key"></div>
+      </div>
+      <input type="password" name="e_header_value" class="w-full border rounded px-2 py-1" placeholder="header value (if header auth) — leave blank to keep">
+    </div>
+
+    <div id="sec-fhir" class="conn-sec space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs text-slate-500 mb-1">Base URL</label>
+          <input name="f_base_url" value="{{ conn.base_url or '' }}" class="w-full border rounded px-2 py-1" placeholder="https://fhir.hospital.org/r4"></div>
+        <div><label class="block text-xs text-slate-500 mb-1">Booking mode</label>
+          <select name="f_booking_status" class="w-full border rounded px-2 py-1">
+            {% set bs = conn.booking_status or 'booked' %}
+            <option value="booked" {% if bs=='booked' %}selected{% endif %}>booked (direct)</option>
+            <option value="proposed" {% if bs=='proposed' %}selected{% endif %}>proposed (request-to-book)</option>
+          </select></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs text-slate-500 mb-1">Auth</label>
+          <select name="f_auth_type" class="w-full border rounded px-2 py-1">
+            {% set fa = conn.auth.type if conn.auth else 'none' %}
+            {% for v in ['none','bearer','client_credentials'] %}<option value="{{v}}" {% if fa==v %}selected{% endif %}>{{v}}</option>{% endfor %}
+          </select></div>
+        <div><label class="block text-xs text-slate-500 mb-1">Bearer token
+          <span class="text-slate-400">({% if conn.auth and conn.auth.token %}set{% else %}—{% endif %})</span></label>
+          <input type="password" name="f_token" class="w-full border rounded px-2 py-1"></div>
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="block text-xs text-slate-500 mb-1">Token URL (client_credentials)</label>
+          <input name="f_token_url" value="{{ conn.auth.token_url if conn.auth else '' }}" class="w-full border rounded px-2 py-1"></div>
+        <div><label class="block text-xs text-slate-500 mb-1">Client id</label>
+          <input name="f_client_id" value="{{ conn.auth.client_id if conn.auth else '' }}" class="w-full border rounded px-2 py-1"></div>
+        <div><label class="block text-xs text-slate-500 mb-1">Client secret <span class="text-slate-400">({% if conn.auth and conn.auth.client_secret %}set{% else %}—{% endif %})</span></label>
+          <input type="password" name="f_client_secret" class="w-full border rounded px-2 py-1"></div>
+      </div>
+      <input name="f_scope" value="{{ conn.auth.scope if conn.auth else '' }}" class="w-full border rounded px-2 py-1" placeholder="scope (client_credentials)">
+      <div><label class="block text-xs text-slate-500 mb-1">Schedules — JSON {doctor name: Schedule/id}</label>
+        <textarea name="f_schedules" rows="3" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ (conn.schedules or {}) | tojson }}</textarea></div>
+      <div><label class="block text-xs text-slate-500 mb-1">Practitioners — JSON {doctor name: Practitioner/id}</label>
+        <textarea name="f_practitioners" rows="3" class="w-full border rounded px-2 py-1 font-mono text-xs">{{ (conn.practitioners or {}) | tojson }}</textarea></div>
+    </div>
+
+    <div class="flex gap-2 pt-2 border-t">
+      <button name="action" value="test" class="px-4 py-2 rounded border">Test connection</button>
+      <button name="action" value="save" class="px-4 py-2 rounded bg-emerald-600 text-white">Save</button>
+      <a href="/admin/plans" class="px-4 py-2 rounded border">Cancel</a>
+    </div>
+    <div class="text-xs text-slate-400">Credentials are encrypted at rest and never shown back. A misconfigured connector safely falls back to Native. See docs/connectors.md.</div>
+  </form>
+</div>
+
+<script>
+  function showSection() {
+    var t = document.getElementById('ctype').value;
+    document.querySelectorAll('.conn-sec').forEach(function (el) {
+      el.style.display = (el.id === 'sec-' + t) ? '' : 'none';
+    });
+  }
+  showSection();
+</script>
+{% endblock %}

@@ -31,7 +31,8 @@
           <div class="text-xs text-slate-400">{{ t.slug }}
             · <a href="/admin/tenants/{{ t.id }}/edit" class="text-emerald-700 hover:underline">edit</a></div>
         </td>
-        <td class="px-4 py-3 text-xs">{{ t.connector_type | connector_label }}</td>
+        <td class="px-4 py-3 text-xs">{{ t.connector_type | connector_label }}
+          · <a href="/admin/tenants/{{ t.id }}/connector" class="text-emerald-700 hover:underline">configure</a></td>
         <td class="px-4 py-3">
           <form method="post" action="/admin/tenants/{{ t.id }}/plan" class="flex items-center gap-2">
             <select name="plan_id" class="border rounded px-2 py-1 text-sm">

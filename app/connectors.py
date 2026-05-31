@@ -227,6 +227,9 @@ class GoogleCalendarClient(CalendarClient):
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self._access_token()}", "Content-Type": "application/json"}
 
+    def ping(self):
+        self._access_token()   # a successful token refresh proves the credentials work
+
     def free_busy(self, calendar_id, time_min, time_max):
         import httpx
         r = httpx.post(f"{self.API}/freeBusy", headers=self._headers(), timeout=15, json={
@@ -400,6 +403,12 @@ class ClinikoClient(ClinikoApi):
         return {"Authorization": f"Basic {token}", "User-Agent": self.user_agent,
                 "Accept": "application/json", "Content-Type": "application/json"}
 
+    def ping(self):
+        import httpx
+        r = httpx.get(f"{self.base}/practitioners", headers=self._auth(), timeout=15,
+                      params={"per_page": 1})
+        r.raise_for_status()
+
     def list_busy(self, practitioner_id, time_min, time_max):
         import httpx
         r = httpx.get(f"{self.base}/appointments", headers=self._auth(), timeout=15, params={
@@ -567,6 +576,14 @@ class GenericErpClient(ErpApi):
         elif atype == "header":
             h[self.auth.get("name", "X-API-Key")] = self.auth.get("value", "")
         return h
+
+    def ping(self):
+        import httpx
+        from datetime import date as _d
+        r = httpx.get(f"{self.base}/availability", headers=self._headers(), timeout=15,
+                      params={"date": _d.today().isoformat()})
+        if r.status_code in (401, 403):
+            r.raise_for_status()   # auth problem; other codes just mean "reachable"
 
     def get_availability(self, doctor, service, on):
         import httpx
@@ -738,6 +755,11 @@ class FhirClient(FhirApi):
             h["Authorization"] = f"Bearer {tok}"
         return h
 
+    def ping(self):
+        import httpx
+        r = httpx.get(f"{self.base}/metadata", headers=self._headers(), timeout=15)
+        r.raise_for_status()   # FHIR CapabilityStatement — the standard reachability probe
+
     def free_slots(self, schedule_ref, time_min, time_max):
         import httpx
         r = httpx.get(f"{self.base}/Slot", headers=self._headers(), timeout=15, params={
@@ -799,6 +821,21 @@ def _build_fhir_client(conf: dict) -> FhirApi:
     if not conf.get("base_url"):
         raise RuntimeError("FHIR connector not configured (base_url)")
     return FhirClient(base_url=conf["base_url"], auth=conf.get("auth"))
+
+
+def probe(connector: ClinicConnector) -> dict:
+    """Test that a connector can actually reach its backend. Returns {ok, detail}. Native is
+    always ok; external connectors call their client's ping() (a cheap authenticated read)."""
+    if isinstance(connector, NativeConnector):
+        return {"ok": True, "detail": "Local database (no external system)"}
+    client = getattr(connector, "client", None)
+    ping = getattr(client, "ping", None)
+    try:
+        if callable(ping):
+            ping()
+        return {"ok": True, "detail": "Connected"}
+    except Exception as e:  # noqa: BLE001 — surface the failure to the admin
+        return {"ok": False, "detail": str(e)[:300]}
 
 
 def get_connector(tenant: dict | None) -> ClinicConnector:

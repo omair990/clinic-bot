@@ -1419,6 +1419,23 @@ def update_tenant_config(tenant_id: int, *, name: str, wa_phone_number_id: str |
         )
 
 
+def set_tenant_connector(tenant_id: int, connector: dict | None) -> None:
+    """Set (or clear, when None) a tenant's appointment-backend connector in clinic_data,
+    encrypting its credentials at rest. Leaves the rest of clinic_data untouched."""
+    from psycopg.types.json import Jsonb
+
+    from app import crypto
+    with get_conn() as conn:
+        row = conn.execute("SELECT clinic_data FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
+        cd = dict(row["clinic_data"]) if row and isinstance(row["clinic_data"], dict) else {}
+        if connector:
+            cd["connector"] = connector
+        else:
+            cd.pop("connector", None)
+        conn.execute("UPDATE tenants SET clinic_data = %s WHERE id = %s",
+                     (Jsonb(crypto.encrypt_clinic_data(cd)), tenant_id))
+
+
 def get_tenant(tenant_id: int) -> dict | None:
     with get_conn() as conn:
         return _decrypt_tenant(
