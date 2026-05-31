@@ -38,6 +38,86 @@ def _stub_llm(monkeypatch, payload: dict):
 
 # --- Phase 1: voice-note source tracking ---
 
+def test_recent_appointments_for_user_orders_newest_first():
+    tid, user = _tenant(), _user()
+    now = datetime.now(TZ)
+    db.create_appointment(tid, user, "P", "+1", "Dr. A", "Consult",
+                          now - timedelta(days=10), now - timedelta(days=10) + timedelta(minutes=30))
+    db.create_appointment(tid, user, "P", "+1", "Dr. B", "Cleaning",
+                          now - timedelta(days=2), now - timedelta(days=2) + timedelta(minutes=30))
+    rows = db.recent_appointments_for_user(tid, user)
+    assert [r["doctor"] for r in rows] == ["Dr. B", "Dr. A"]
+
+
+def test_insight_top_doctors_and_sentiment():
+    tid = _tenant()
+    u1, u2 = _user(), _user()
+    now = datetime.now(TZ)
+    db.create_appointment(tid, u1, "P", "+1", "Dr. Pop", "Consult",
+                          now + timedelta(days=1), now + timedelta(days=1, minutes=30))
+    db.create_appointment(tid, u2, "P", "+1", "Dr. Pop", "Consult",
+                          now + timedelta(days=1, hours=1), now + timedelta(days=1, hours=1, minutes=30))
+    db.upsert_conversation_analysis(tid, u1, {"sentiment": "negative", "lead_band": "warm",
+                                              "lead_score": 50}, 1)
+    since, _until, _ = insights.window("day", now)
+    m = insights.compute_metrics(tid, since, now + timedelta(minutes=1))
+    assert m["top_doctors"][0] == {"doctor": "Dr. Pop", "n": 2}
+    assert m["sentiment"]["negative"] == 1
+
+
+def test_review_request_capture_and_stats():
+    from app.tools import AgentContext, dispatch
+    tid, user = _tenant(), _user()
+    now = datetime.now(TZ)
+    appt = db.create_appointment(tid, user, "P", "+1", "Dr. R", "Consult",
+                                 now - timedelta(days=1), now - timedelta(days=1) + timedelta(minutes=30))
+    assert db.create_review_request(tid, appt["id"], user) is not None
+    assert db.create_review_request(tid, appt["id"], user) is None   # idempotent
+    pend = db.open_review_request(tid, user)
+    assert pend and pend["appointment_id"] == appt["id"]
+    ctx = AgentContext(wa_user=user, tenant_id=tid, clinic_data={}, review=pend)
+    out = dispatch("record_review", {"appointment_id": appt["id"], "rating": 5,
+                                     "comment": "great service"}, ctx)
+    assert out["recorded"] and out["rating"] == 5
+    assert db.open_review_request(tid, user) is None    # resolved
+    st = db.review_stats(tid)
+    assert st["responded"] == 1 and st["avg_rating"] == 5.0
+
+
+def test_record_review_rejects_out_of_range_rating():
+    from app.tools import AgentContext, dispatch
+    tid, user = _tenant(), _user()
+    now = datetime.now(TZ)
+    appt = db.create_appointment(tid, user, "P", "+1", "Dr. R", "Consult",
+                                 now - timedelta(days=1), now - timedelta(days=1) + timedelta(minutes=30))
+    db.create_review_request(tid, appt["id"], user)
+    ctx = AgentContext(wa_user=user, tenant_id=tid, clinic_data={},
+                       review=db.open_review_request(tid, user))
+    assert dispatch("record_review", {"appointment_id": appt["id"], "rating": 9}, ctx)["error"] == "bad_rating"
+
+
+def test_completion_opens_review_request(monkeypatch):
+    import app.notifications as notif
+    tid, user = _tenant(), _user()
+    appt = _make_appt(tid, user)
+    sent = []
+
+    async def fake_send(to, body, **k):
+        sent.append(body)
+    monkeypatch.setattr(notif, "send_text", fake_send)
+    c = _super_client()
+    c.post(f"/admin/appointments/{appt['id']}/status",
+           data={"status": "completed"}, follow_redirects=False)
+    assert any("rating from 1 to 5" in b for b in sent)      # review ask sent
+    assert db.open_review_request(tid, user) is not None      # request opened
+
+
+def test_reviews_page_renders():
+    c = _super_client()
+    r = c.get("/admin/reviews")
+    assert r.status_code == 200 and "Patient reviews" in r.text
+
+
 def test_conversation_thread_returns_most_recent_in_chronological_order():
     tid, user = _tenant(), _user()
     for i in range(5):

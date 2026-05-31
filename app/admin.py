@@ -33,7 +33,9 @@ from app.db import (
     list_events,
     list_no_show_followups,
     list_plans,
+    list_reviews,
     list_tenants,
+    review_stats,
     no_show_count_since,
     no_show_reason_breakdown,
     resolve_event,
@@ -426,6 +428,16 @@ def _render_plans(request: Request, *, error: str | None = None, status_code: in
          "tenants": list_tenants(period), "period": period, "error": error},
         status_code=status_code,
     )
+
+
+@router.get("/reviews", response_class=HTMLResponse)
+async def reviews_page(request: Request):
+    _require_auth(request)
+    scope = _scope(request)
+    return templates.TemplateResponse(
+        "reviews.html",
+        {"request": request, "rows": list_reviews(tenant_id=scope),
+         "stats": review_stats(scope)})
 
 
 @router.get("/insights", response_class=HTMLResponse)

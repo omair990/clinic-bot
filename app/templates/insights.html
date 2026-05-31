@@ -64,6 +64,16 @@
       {% endfor %}
     </div>
     {% else %}<div class="text-xs text-slate-400">Not enough data.</div>{% endif %}
+    <div class="text-xs font-medium text-slate-700 mt-4 mb-2">Most-requested doctors</div>
+    {% if m.top_doctors %}
+    <div class="space-y-1.5">
+      {% for r in m.top_doctors %}
+      <div class="flex items-center justify-between text-sm">
+        <span class="truncate">{{ r.doctor }}</span><span class="text-slate-600">{{ r.n }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="text-xs text-slate-400">No bookings yet.</div>{% endif %}
   </div>
 
   <!-- Leads + no-shows -->
@@ -85,6 +95,10 @@
     {% endif %}
     <div class="mt-3 text-xs text-slate-700">Missed opportunities (needed staff):
       <span class="font-semibold">{{ m.missed_opportunities }}</span></div>
+    {% if m.sentiment %}
+    <div class="mt-1 text-xs text-slate-700">Possible complaints (negative sentiment):
+      <span class="font-semibold {% if m.sentiment.negative %}text-rose-600{% endif %}">{{ m.sentiment.negative }}</span></div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

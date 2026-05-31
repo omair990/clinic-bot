@@ -77,6 +77,8 @@ class AgentContext:
     actions: list[str] = field(default_factory=list)
     # The patient's open no-show follow-up (missed appointment we're recovering), if any.
     no_show: dict | None = None
+    # A pending post-visit review request awaiting the patient's star rating, if any.
+    review: dict | None = None
 
     @property
     def doctors(self) -> list[dict]:
@@ -155,6 +157,15 @@ TOOL_SPECS: list[ToolSpec] = [
                  "reason": {"type": "string"},
                  "emergency": {"type": "boolean", "description": "True for medical emergencies."}},
               "required": ["reason"]}),
+    ToolSpec("record_review",
+             "ONLY when a REVIEW REQUEST is pending (see system prompt): record the patient's "
+             "1-5 star rating of their recent visit, plus any comment they gave.",
+             {"type": "object", "properties": {
+                 "appointment_id": {"type": "integer", "description": "The visit's appointment "
+                                    "id shown in the REVIEW REQUEST note."},
+                 "rating": {"type": "integer", "description": "1 to 5 (5 = excellent)."},
+                 "comment": {"type": "string", "description": "Optional free-text feedback."}},
+              "required": ["appointment_id", "rating"]}),
     ToolSpec("record_no_show_response",
              "ONLY when a NO-SHOW FOLLOW-UP is in progress (see system prompt): log how the "
              "patient who missed their appointment responded — their chosen outcome and/or the "
@@ -419,6 +430,28 @@ def _record_no_show_response(args: dict, ctx: AgentContext) -> dict:
     return {"recorded": ok, "appointment_id": int(appt_id), "outcome": outcome, "reason": reason}
 
 
+def _record_review(args: dict, ctx: AgentContext) -> dict:
+    appt_id = args.get("appointment_id")
+    try:
+        appt_id = int(appt_id)
+    except (TypeError, ValueError):
+        appt_id = (ctx.review or {}).get("appointment_id")
+    if not appt_id or not _owned(int(appt_id), ctx):
+        appt_id = (ctx.review or {}).get("appointment_id")
+    if not appt_id:
+        return {"error": "no_open_review"}
+    try:
+        rating = int(args.get("rating"))
+    except (TypeError, ValueError):
+        return {"error": "bad_rating", "hint": "Rating must be an integer 1-5."}
+    if not 1 <= rating <= 5:
+        return {"error": "bad_rating", "hint": "Rating must be 1-5."}
+    comment = (args.get("comment") or "").strip() or None
+    ok = db.record_review(ctx.tenant_id, int(appt_id), rating, comment)
+    ctx.actions.append(f"review #{appt_id}: {rating}★")
+    return {"recorded": ok, "appointment_id": int(appt_id), "rating": rating}
+
+
 _HANDLERS = {
     "list_services": _list_services,
     "list_doctors": _list_doctors,
@@ -430,6 +463,7 @@ _HANDLERS = {
     "cancel_appointment": _cancel_appointment,
     "escalate_to_human": _escalate_to_human,
     "record_no_show_response": _record_no_show_response,
+    "record_review": _record_review,
 }
 
 

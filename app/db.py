@@ -111,6 +111,22 @@ CREATE TABLE IF NOT EXISTS digest_log (
     PRIMARY KEY (tenant_id, kind)
 );
 
+-- Post-visit reputation management: one review request per completed appointment, with
+-- the 1-5 star rating the patient replies with.
+CREATE TABLE IF NOT EXISTS reviews (
+    id             BIGSERIAL PRIMARY KEY,
+    tenant_id      BIGINT,
+    appointment_id BIGINT UNIQUE,
+    wa_user        TEXT NOT NULL,
+    rating         INTEGER,    -- 1-5, null until the patient responds
+    comment        TEXT,
+    stage          TEXT NOT NULL DEFAULT 'requested',  -- requested | done
+    requested_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    responded_at   TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_tenant ON reviews(tenant_id, created_at DESC);
+
 -- --- Multi-tenant SaaS: plans, tenants, usage metering ---
 CREATE TABLE IF NOT EXISTS plans (
     id                   BIGSERIAL PRIMARY KEY,
@@ -413,6 +429,17 @@ def upcoming_appointments(tenant_id: int, wa_user: str, now: datetime,
             (tenant_id, wa_user, now, limit),
         ).fetchall()
     return rows
+
+
+def recent_appointments_for_user(tenant_id: int, wa_user: str, limit: int = 3) -> list[dict]:
+    """A returning patient's most recent appointments (any status), newest first — so the
+    AI can recall 'your last visit was with Dr. X' and offer to rebook."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT doctor, service, start_at, status FROM appointments "
+            "WHERE tenant_id = %s AND wa_user = %s ORDER BY start_at DESC LIMIT %s",
+            (tenant_id, wa_user, limit),
+        ).fetchall()
 
 
 def has_appointment(tenant_id: int, wa_user: str) -> bool:
@@ -1002,6 +1029,78 @@ def lead_band_counts(tenant_id: int | None = None) -> dict:
     return out
 
 
+# --- Reviews (post-visit reputation management) ---
+
+def create_review_request(tenant_id: int, appointment_id: int, wa_user: str) -> dict | None:
+    """Open a review request for a completed appointment. Returns the row, or None if one
+    already exists (so we don't re-ask)."""
+    with get_conn() as conn:
+        return conn.execute(
+            "INSERT INTO reviews (tenant_id, appointment_id, wa_user) VALUES (%s, %s, %s) "
+            "ON CONFLICT (appointment_id) DO NOTHING RETURNING *",
+            (tenant_id, appointment_id, wa_user),
+        ).fetchone()
+
+
+def open_review_request(tenant_id: int, wa_user: str) -> dict | None:
+    """The patient's most recent un-answered review request, with the visit details — so
+    the agent can interpret a 1-5 reply as that visit's rating."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT r.id, r.appointment_id, a.doctor, a.service FROM reviews r "
+            "JOIN appointments a ON a.id = r.appointment_id "
+            "WHERE r.tenant_id = %s AND r.wa_user = %s AND r.stage = 'requested' "
+            "ORDER BY r.created_at DESC LIMIT 1",
+            (tenant_id, wa_user),
+        ).fetchone()
+
+
+def record_review(tenant_id: int, appointment_id: int, rating: int,
+                  comment: str | None = None) -> bool:
+    """Store a 1-5 rating (+ optional comment) and close the request. Returns True if a
+    pending request matched."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE reviews SET rating = %s, comment = COALESCE(%s, comment), "
+            "stage = 'done', responded_at = now() "
+            "WHERE tenant_id = %s AND appointment_id = %s AND stage = 'requested'",
+            (rating, comment, tenant_id, appointment_id),
+        )
+        return cur.rowcount > 0
+
+
+def list_reviews(tenant_id: int | None = None, limit: int = 200) -> list[dict]:
+    sql = ("SELECT r.id, r.wa_user, r.rating, r.comment, r.stage, r.responded_at, "
+           "r.created_at, a.doctor, a.service, a.patient_name "
+           "FROM reviews r JOIN appointments a ON a.id = r.appointment_id")
+    params: list = []
+    if tenant_id is not None:
+        sql += " WHERE r.tenant_id = %s"
+        params.append(tenant_id)
+    sql += " ORDER BY r.created_at DESC LIMIT %s"
+    params.append(limit)
+    with get_conn() as conn:
+        return conn.execute(sql, tuple(params)).fetchall()
+
+
+def review_stats(tenant_id: int | None = None) -> dict:
+    where = ""
+    params: tuple = ()
+    if tenant_id is not None:
+        where = "WHERE tenant_id = %s"
+        params = (tenant_id,)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FILTER (WHERE stage = 'done') AS responded, "
+            "COUNT(*) AS requested, "
+            "AVG(rating) FILTER (WHERE rating IS NOT NULL) AS avg_rating "
+            f"FROM reviews {where}", params,
+        ).fetchone()
+    avg = float(row["avg_rating"]) if row["avg_rating"] is not None else None
+    return {"responded": row["responded"], "requested": row["requested"],
+            "avg_rating": round(avg, 1) if avg is not None else None}
+
+
 # --- Business insights (deterministic aggregates over a [since, until) window) ---
 
 def insight_message_stats(tenant_id: int | None, since: datetime, until: datetime) -> dict:
@@ -1050,6 +1149,35 @@ def insight_conversion(tenant_id: int | None, since: datetime, until: datetime) 
         ).fetchone()["n"]
     rate = round(booked / messaged * 100) if messaged else 0
     return {"users_messaged": messaged, "users_booked": booked, "conversion_pct": rate}
+
+
+def insight_top_doctors(tenant_id: int | None, since: datetime, until: datetime) -> list[dict]:
+    """Most-requested doctors by bookings made in the window."""
+    w, p = _scope_window(tenant_id, since, until, col="created_at")
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT doctor, COUNT(*) AS n FROM appointments {w} "
+            "GROUP BY doctor ORDER BY n DESC LIMIT 5", p,
+        ).fetchall()
+
+
+def sentiment_counts(tenant_id: int | None = None) -> dict:
+    """Conversation sentiment mix — negative is the clinic's 'complaints / at-risk' signal."""
+    where = ""
+    params: tuple = ()
+    if tenant_id is not None:
+        where = "WHERE tenant_id = %s"
+        params = (tenant_id,)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT sentiment, COUNT(*) AS n FROM conversation_analysis {where} "
+            "GROUP BY sentiment", params,
+        ).fetchall()
+    out = {"positive": 0, "neutral": 0, "negative": 0}
+    for r in rows:
+        if r["sentiment"] in out:
+            out[r["sentiment"]] = r["n"]
+    return out
 
 
 def insight_handover_users(tenant_id: int | None, since: datetime, until: datetime) -> int:

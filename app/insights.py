@@ -57,6 +57,10 @@ def compute_metrics(tenant_id: int | None, since: datetime, until: datetime,
                             for r in db.no_show_reason_breakdown(since, tenant_id)],
         "lead_mix": db.lead_band_counts(tenant_id),
         "missed_opportunities": db.insight_handover_users(tenant_id, since, until),
+        "top_doctors": [{"doctor": r["doctor"], "n": r["n"]}
+                        for r in db.insight_top_doctors(tenant_id, since, until)],
+        "sentiment": db.sentiment_counts(tenant_id),
+        "reviews": db.review_stats(tenant_id),
     }
 
 
@@ -64,16 +68,20 @@ def _metrics_brief(m: dict, label: str) -> str:
     """Compact, model-friendly rendering of the numbers for the narrative prompt."""
     inq = ", ".join(f"{r['intent']}={r['n']}" for r in m["top_inquiries"]) or "none"
     peaks = ", ".join(f"{r['hour']:02d}:00({r['n']})" for r in m["peak_hours"]) or "n/a"
+    docs = ", ".join(f"{r['doctor']}={r['n']}" for r in m.get("top_doctors", [])) or "n/a"
     lm = m["lead_mix"]
+    neg = m.get("sentiment", {}).get("negative", 0)
     return (
         f"Period: {label}\n"
         f"Messages: {m['messages']} ({m['inbound']} inbound, {m['voice_share_pct']}% voice)\n"
         f"Unique patients: {m['users']}\n"
         f"Top inquiry intents: {inq}\n"
+        f"Most-requested doctors: {docs}\n"
         f"Bookings: {m['conversion']['users_booked']} from {m['conversion']['users_messaged']} "
         f"patients ({m['conversion']['conversion_pct']}% conversion)\n"
         f"No-shows: {m['no_shows']}\n"
         f"Leads — hot {lm['hot']}, warm {lm['warm']}, cold {lm['cold']}\n"
+        f"Negative-sentiment conversations (possible complaints): {neg}\n"
         f"Conversations needing staff (missed opportunities): {m['missed_opportunities']}\n"
         f"Peak contact hours: {peaks}"
     )
@@ -151,6 +159,9 @@ def digest_text(rep: dict, clinic_name: str) -> str:
         lines.append(f"• Peak hour: {m['peak_hours'][0]['hour']:02d}:00")
     if m["missed_opportunities"]:
         lines.append(f"• Needs staff follow-up: {m['missed_opportunities']}")
+    rv = m.get("reviews") or {}
+    if rv.get("avg_rating") is not None:
+        lines.append(f"• Avg review: {rv['avg_rating']}★ ({rv['responded']} reviews)")
     return "\n".join(lines)
 
 

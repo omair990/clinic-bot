@@ -38,7 +38,8 @@ def appointment_status_message(status: str, service: str | None, doctor: str | N
                 "cancelled. Reply here anytime to rebook — we're happy to help.")
     if status == "completed":
         return (f"Thank you for visiting {clinic_name}! We hope {subject} went well. "
-                "Reply here if you'd like a follow-up or anything else. 😊")
+                "How was your experience? Please reply with a rating from 1 to 5 ⭐ "
+                "(5 = excellent) — your feedback helps us improve. 😊")
     return None
 
 
@@ -57,5 +58,10 @@ async def notify_appointment_status(appt: dict, status: str, tenant: dict) -> bo
                             "appointment", False)
     publish("message", {"wa_user": appt["wa_user"], "direction": "out", "text": msg,
                         "intent": "appointment", "tenant_id": tenant["id"]})
+    # A completed visit also opens a review request — the message above asks for the rating,
+    # and the patient's 1-5 reply is captured by the agent (record_review tool).
+    if status == "completed":
+        await asyncio.to_thread(db.create_review_request, tenant["id"], appt["id"],
+                                appt["wa_user"])
     log.info("status-change notice (%s) sent to %s", status, appt["wa_user"])
     return True

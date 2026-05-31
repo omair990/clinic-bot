@@ -12,7 +12,8 @@ from app.config import CLINIC_DATA, TIMEZONE, TZ
 
 def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = None,
                         patient_name: str | None = None, wa_user: str | None = None,
-                        no_show: dict | None = None) -> str:
+                        no_show: dict | None = None, history: list | None = None,
+                        review: dict | None = None) -> str:
     now = now or datetime.now(TZ)
     data = clinic_data or CLINIC_DATA
     clinic = data.get("clinic", {})
@@ -52,6 +53,34 @@ def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = 
     patient_block = (
         f"\nPATIENT ON FILE: this patient's {' and '.join(known)}. "
         "Reuse this — do NOT ask for it again.\n" if known else "")
+
+    # Returning-patient memory: recall recent visits so the bot can greet them back and
+    # offer to rebook the same doctor/service instead of starting from scratch.
+    history_block = ""
+    if history:
+        lines = []
+        for h in history[:3]:
+            when = h["start_at"].astimezone(TZ).strftime("%d %b %Y") if h.get("start_at") else "?"
+            lines.append(f"  - {h.get('service')} with {h.get('doctor')} on {when} ({h.get('status')})")
+        history_block = (
+            "\n\nRETURNING PATIENT — past appointments (most recent first):\n"
+            + "\n".join(lines)
+            + "\nGreet them as a returning patient. If they ask to see a doctor 'again' or to "
+            "rebook, use the matching past appointment's doctor/service and offer to check "
+            "availability — don't re-ask details already shown here.")
+
+    # Pending review: the patient was asked to rate a recent visit; interpret a 1-5 reply.
+    review_block = ""
+    if review:
+        review_block = (
+            f"\n\nREVIEW REQUEST PENDING: this patient was asked to rate their recent visit "
+            f"(appointment #{review['appointment_id']}, {review.get('service')} with "
+            f"{review.get('doctor')}) from 1 to 5 stars. If their message gives a rating "
+            "(a number 1-5, or words like 'great'/'excellent'≈5, 'bad'/'poor'≈1-2), call "
+            f"record_review with appointment_id {review['appointment_id']}, the rating, and "
+            "any comment. Thank them warmly. For a low rating (1-2), also apologise and call "
+            "escalate_to_human so staff can follow up. Don't ask for a rating if they're "
+            "clearly here for something else.")
 
     # When the patient missed a recent appointment, the bot has already reached out;
     # this turn is their reply. Steer it through the recovery flow.
@@ -151,5 +180,5 @@ CONVERSATION RULES:
 10. STAY IN SCOPE. You only handle three things: (a) appointment booking/reschedule/cancel,
    (b) service pricing, (c) general clinic info (hours, location, insurance, services).
    For anything else (medical advice, chit-chat, unrelated topics), politely decline in one
-   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.{booking_fields_block}{no_show_block}
+   sentence and offer those three. Use `escalate_to_human` for emergencies or complaints.{booking_fields_block}{no_show_block}{history_block}{review_block}
 """
