@@ -1058,7 +1058,9 @@ def list_conversations(limit: int = 100, tenant_id: int | None = None) -> list[d
                         WHERE c4.wa_user = c.wa_user {sub4} AND c4.direction = 'out'
                           AND c4.intent IS NOT NULL ORDER BY id DESC LIMIT 1) AS last_intent,
                       (SELECT lead_band FROM conversation_analysis ca
-                        WHERE ca.wa_user = c.wa_user {sub5} LIMIT 1) AS lead_band
+                        WHERE ca.wa_user = c.wa_user {sub5} LIMIT 1) AS lead_band,
+                      (SELECT name FROM patients pt
+                        WHERE pt.wa_user = c.wa_user LIMIT 1) AS name
                FROM conversations c {where}
                GROUP BY c.wa_user
                ORDER BY last_at DESC
