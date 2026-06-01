@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, Grid, Chip, Button, Typography, Box, Stack } from "@mui/material";
@@ -5,7 +6,7 @@ import { GridColDef } from "@mui/x-data-grid";
 import { BarChart } from "@mui/x-charts/BarChart";
 import EventBusyIcon from "@mui/icons-material/EventBusyOutlined";
 import { apiPost, ApiError } from "../api";
-import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, KpiCard, useToast } from "../lib";
+import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, KpiCard, useToast, DetailDialog } from "../lib";
 
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
 
@@ -14,6 +15,7 @@ export default function NoShows() {
   const [clinic] = useClinic();
   const qc = useQueryClient();
   const toast = useToast();
+  const [sel, setSel] = useState<any | null>(null);
   const q = useApiQuery<any>(["no-shows", clinic], `/no-shows?clinic=${clinic}`);
   const act = useMutation({
     mutationFn: (v: { id: number; action: string }) => apiPost(`/no-shows/${v.id}/action`, { action: v.action }),
@@ -74,8 +76,28 @@ export default function NoShows() {
           </CardContent></Card>
         </Grid>
       </Grid>
-      <DataTable rows={rows} columns={cols} loading={act.isPending}
-        onRowClick={(r) => nav(`/patients/${r.wa_user}`)} />
+      <DataTable rows={rows} columns={cols} loading={act.isPending} onRowClick={setSel} />
+
+      <DetailDialog open={!!sel} onClose={() => setSel(null)} title="No-show follow-up"
+        subtitle={sel ? fmtDate(sel.created_at) : ""}
+        fields={sel ? [
+          { label: "Patient", value: `${sel.patient_name || "—"} · +${sel.wa_user}` },
+          { label: "Missed", value: `${sel.service || "—"}${sel.doctor ? " · " + sel.doctor : ""} · ${fmtDate(sel.start_at)}` },
+          { label: "Risk", value: sel.risk_band ? <Chip size="small" variant="outlined" color={riskColor[sel.risk_band] || "default"} label={sel.risk_band} /> : "—" },
+          { label: "Stage", value: <Chip size="small" variant="outlined" label={(sel.stage || "").replace("_", " ")} /> },
+          { label: "Outcome", value: sel.outcome || "—" },
+          { label: "Reason", value: sel.reason ? (reason_labels[sel.reason] || sel.reason) : "—" },
+        ] : []}
+        actions={sel && <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+          <Button onClick={() => nav(`/patients/${sel.wa_user}`)}>View patient</Button>
+          <Box sx={{ flex: 1 }} />
+          {sel.stage === "detected" && <Button variant="contained" onClick={() => { act.mutate({ id: sel.id, action: "send" }); setSel(null); }}>Send</Button>}
+          {["notified", "followed_up"].includes(sel.stage) && <Button onClick={() => { act.mutate({ id: sel.id, action: "resend" }); setSel(null); }}>Resend</Button>}
+          {!["resolved", "inactive"].includes(sel.stage) && <>
+            <Button color="inherit" onClick={() => { act.mutate({ id: sel.id, action: "resolve" }); setSel(null); }}>Resolve</Button>
+            <Button color="error" onClick={() => { act.mutate({ id: sel.id, action: "inactive" }); setSel(null); }}>Inactive</Button>
+          </>}
+        </Stack>} />
     </>
   );
 }

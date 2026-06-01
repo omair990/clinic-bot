@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Chip, Button, Typography, ToggleButton, ToggleButtonGroup, Stack, Box } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
 import { useSearchParams } from "react-router-dom";
 import { apiPost, ApiError } from "../api";
-import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, useToast } from "../lib";
+import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, useToast, DetailDialog } from "../lib";
 
 const levelColor: Record<string, any> = { error: "error", warning: "warning", info: "default" };
 
@@ -13,6 +14,7 @@ export default function Issues() {
   const show = params.get("show") || "open";
   const qc = useQueryClient();
   const toast = useToast();
+  const [sel, setSel] = useState<any | null>(null);
   const q = useApiQuery<any>(["logs", clinic, show], `/logs?clinic=${clinic}&show=${show}`);
   const resolve = useMutation({
     mutationFn: (id: number) => apiPost(`/logs/${id}/resolve`),
@@ -53,7 +55,25 @@ export default function Issues() {
             <ToggleButton value="all">All</ToggleButton>
           </ToggleButtonGroup>
         </Stack>} />
-      <DataTable rows={events} columns={cols} loading={resolve.isPending} />
+      <DataTable rows={events} columns={cols} loading={resolve.isPending} onRowClick={setSel} />
+
+      <DetailDialog open={!!sel} onClose={() => setSel(null)}
+        title={<Stack direction="row" spacing={1} alignItems="center">
+          <Chip size="small" color={levelColor[sel?.level] || "default"} label={sel?.level} variant="outlined" /> Issue
+        </Stack>}
+        subtitle={sel ? fmtDate(sel.created_at) : ""}
+        fields={sel ? [
+          ...(showClinic ? [{ label: "Clinic", value: tenant_names[sel.tenant_id] || "—" }] : []),
+          { label: "Category", value: sel.category },
+          { label: "Patient", value: sel.wa_user ? `+${sel.wa_user}` : "—" },
+          { label: "Status", value: sel.resolved ? <Chip size="small" color="success" label="resolved" /> : <Chip size="small" color="warning" label="open" /> },
+          { label: "Message", value: sel.message, full: true },
+          { label: "Detail", value: sel.detail || "—", full: true },
+        ] : []}
+        actions={sel && !sel.resolved
+          ? <><Button onClick={() => setSel(null)}>Close</Button>
+              <Button variant="contained" onClick={() => { resolve.mutate(sel.id); setSel(null); }}>Resolve</Button></>
+          : <Button onClick={() => setSel(null)}>Close</Button>} />
     </>
   );
 }

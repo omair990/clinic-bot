@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Chip, Button, Stack, ToggleButton, ToggleButtonGroup, Box } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { apiPost, ApiError } from "../api";
-import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, useToast } from "../lib";
+import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, useToast, DetailDialog } from "../lib";
 
 const statusColor: Record<string, any> = { confirmed: "success", completed: "info", cancelled: "default", no_show: "warning" };
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
@@ -15,6 +16,7 @@ export default function Appointments() {
   const status = params.get("status") || "";
   const qc = useQueryClient();
   const toast = useToast();
+  const [sel, setSel] = useState<any | null>(null);
   const path = `/appointments?clinic=${clinic}${status ? `&status=${status}` : ""}`;
   const q = useApiQuery<any>(["appointments", clinic, status], path);
   const act = useMutation({
@@ -59,8 +61,28 @@ export default function Appointments() {
           </ToggleButtonGroup>
           <ClinicFilter meta={q.data} />
         </Stack>} />
-      <DataTable rows={rows} columns={cols} loading={act.isPending}
-        onRowClick={(r) => nav(`/patients/${r.wa_user}`)} />
+      <DataTable rows={rows} columns={cols} loading={act.isPending} onRowClick={setSel} />
+
+      <DetailDialog open={!!sel} onClose={() => setSel(null)} title="Appointment"
+        subtitle={sel ? `#${sel.id}` : ""}
+        fields={sel ? [
+          { label: "Patient", value: `${sel.patient_name || "—"} · +${sel.wa_user}` },
+          { label: "Service", value: sel.service || "—" },
+          { label: "Doctor", value: sel.doctor || "—" },
+          { label: "When", value: fmtDate(sel.start_at) },
+          { label: "Status", value: <Chip size="small" color={statusColor[sel.status] || "default"} label={sel.status} /> },
+          { label: "Risk", value: sel.risk_band ? <Chip size="small" variant="outlined" color={riskColor[sel.risk_band] || "default"} label={`${sel.risk_band}${sel.risk_score != null ? " " + sel.risk_score : ""}`} /> : "—" },
+          ...(sel.extra && Object.keys(sel.extra).length
+            ? [{ label: "Details", value: Object.entries(sel.extra).map(([k, v]) => `${k}: ${v}`).join("\n"), full: true }] : []),
+          ...(sel.notes ? [{ label: "Notes", value: sel.notes, full: true }] : []),
+        ] : []}
+        actions={sel && <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+          <Button onClick={() => nav(`/patients/${sel.wa_user}`)}>View patient</Button>
+          <Box sx={{ flex: 1 }} />
+          {sel.status !== "completed" && <Button onClick={() => { act.mutate({ id: sel.id, status: "completed" }); setSel(null); }}>Complete</Button>}
+          {sel.status !== "no_show" && <Button color="warning" onClick={() => { act.mutate({ id: sel.id, status: "no_show" }); setSel(null); }}>No-show</Button>}
+          {sel.status !== "cancelled" && <Button color="error" onClick={() => { act.mutate({ id: sel.id, status: "cancelled" }); setSel(null); }}>Cancel</Button>}
+        </Stack>} />
     </>
   );
 }
