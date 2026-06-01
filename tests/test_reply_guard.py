@@ -131,3 +131,46 @@ def test_verify_corrects_invented_availability_with_real_slots():
     assert c.guard_tripped is True and c.needs_human is True
     assert "5:00 PM" in c.reply and "5:30 PM" in c.reply        # real slots offered instead
     assert "8:00" not in c.reply
+
+
+# --- language guard -----------------------------------------------------------
+def test_detect_language():
+    assert reply_guard.detect_language("Book me an appointment") == "en"
+    assert reply_guard.detect_language("احجزلي موعد من فضلك") == "ar"
+    assert reply_guard.detect_language("12345 :)") is None          # no letters → undecidable
+    # Mixed: an Arabic sentence quoting an English name is still Arabic-dominant.
+    assert reply_guard.detect_language("موعدك مع الدكتور خالد اليوم") == "ar"
+
+
+def test_language_mismatch_flags_wrong_language():
+    # Patient wrote Arabic, reply is pure English → mismatch.
+    assert reply_guard.language_mismatch("احجزلي موعد", "Your appointment is booked.") is True
+    # Patient wrote English, reply is Arabic → mismatch.
+    assert reply_guard.language_mismatch("book me a slot", "تم الحجز مع الدكتور خالد") is True
+
+
+def test_language_mismatch_allows_matching_and_mixed():
+    # Same language → fine.
+    assert reply_guard.language_mismatch("book me a slot", "You're booked for 5 PM.") is False
+    assert reply_guard.language_mismatch("احجزلي موعد", "تم الحجز لك الساعة ٥ مساءً") is False
+    # Arabic reply quoting English doctor/service names is NOT flagged.
+    assert reply_guard.language_mismatch(
+        "احجزلي موعد", "تم الحجز مع Dr. Khalid Al-Rashid، Dental Checkup الأحد 12:00 PM") is False
+    # English reply quoting an Arabic name is NOT flagged.
+    assert reply_guard.language_mismatch(
+        "book me", "Booked with الدكتور Khalid for a Dental Checkup at 5 PM.") is False
+    # Patient language undecidable (digits only) → never policed.
+    assert reply_guard.language_mismatch("12345", "whatever the reply is") is False
+
+
+def test_localize_picks_arabic_only_for_arabic_patient():
+    assert reply_guard.localize("book me", "EN", "AR") == "EN"
+    assert reply_guard.localize("احجزلي موعد", "EN", "AR") == "AR"
+    assert reply_guard.localize("", "EN", "AR") == "EN"            # unknown → English default
+
+
+def test_verify_safe_reply_is_localized_for_arabic(monkeypatch):
+    monkeypatch.setattr(reply_guard.db, "has_confirmed_upcoming", lambda t, u: False)
+    c = _ctx("تم الحجز لك الساعة ٥ مساءً")     # false Arabic booking claim
+    reply_guard.verify(c, user_text="احجزلي موعد")
+    assert c.reply == reply_guard.SAFE_REPLY_AR and c.guard_tripped is True

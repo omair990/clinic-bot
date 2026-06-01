@@ -40,6 +40,10 @@ SAFE_REPLY = (
     "I'm sorry — I couldn't confirm that booking in our system just yet. I've flagged this for "
     "our staff and they'll confirm your appointment with you shortly."
 )
+SAFE_REPLY_AR = (
+    "عذرًا، لم أتمكن من تأكيد هذا الحجز في نظامنا حتى الآن. لقد أبلغت فريقنا وسيؤكدون موعدك "
+    "معك قريبًا."
+)
 
 
 def claims_booking(text: str) -> bool:
@@ -81,6 +85,10 @@ _AM_WORDS = ("am", "a.m", "a.m.", "صباح")
 SAFE_AVAIL_DEFER = (
     "Let me re-check the available times so I give you accurate slots — our team will "
     "confirm the exact times with you shortly."
+)
+SAFE_AVAIL_DEFER_AR = (
+    "دعني أتحقق من الأوقات المتاحة مرة أخرى لأعطيك مواعيد دقيقة — سيؤكد فريقنا الأوقات "
+    "معك قريبًا."
 )
 
 
@@ -144,13 +152,66 @@ def should_block_availability(ctx, user_text: str = "") -> bool:
     return bool(unverified_offer_times(ctx, user_text))
 
 
-def _availability_reply(ctx) -> str:
+def _availability_reply(ctx, user_text: str = "") -> str:
     real = sorted(getattr(ctx, "offered_times", set()) or set())
     if real:
         shown = ", ".join(_fmt_12h(t) for t in real[:12])
-        return ("To make sure I give you the right times, the actually available slots are: "
-                f"{shown}. Which one works for you?")
-    return SAFE_AVAIL_DEFER
+        return localize(
+            user_text,
+            "To make sure I give you the right times, the actually available slots are: "
+            f"{shown}. Which one works for you?",
+            f"للتأكد من إعطائك الأوقات الصحيحة، المواعيد المتاحة فعليًا هي: {shown}. أيها يناسبك؟",
+        )
+    return localize(user_text, SAFE_AVAIL_DEFER, SAFE_AVAIL_DEFER_AR)
+
+
+# --------------------------------------------------------------------------- language
+# The reply MUST be in the patient's language: Arabic in → Arabic out, English in → English
+# out. We compare scripts, not the full language, because a correct Arabic reply still carries
+# English tokens (doctor names, "mada", "SAR", digits) and an English reply may quote an Arabic
+# name — so the test is deliberately asymmetric and lenient to avoid false positives.
+_ARABIC_CHAR_RE = re.compile(
+    "[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]")
+_LATIN_CHAR_RE = re.compile(r"[A-Za-z]")
+
+
+def _letter_counts(text: str) -> tuple[int, int]:
+    t = text or ""
+    return len(_ARABIC_CHAR_RE.findall(t)), len(_LATIN_CHAR_RE.findall(t))
+
+
+def detect_language(text: str) -> str | None:
+    """'ar', 'en', or None when there aren't enough letters to tell (digits/emoji only)."""
+    ar, la = _letter_counts(text)
+    if not ar and not la:
+        return None
+    if ar and not la:
+        return "ar"
+    if la and not ar:
+        return "en"
+    return "ar" if ar >= la else "en"   # mixed script → dominant one
+
+
+def localize(user_text: str, en: str, ar: str) -> str:
+    """Localise a canned reply to the patient's language (English unless clearly Arabic)."""
+    return ar if detect_language(user_text) == "ar" else en
+
+
+def language_mismatch(user_text: str, reply: str) -> bool:
+    """True when the reply clearly answers in the wrong language for the patient.
+
+    Asymmetric on purpose: an Arabic patient getting a reply with NO Arabic at all is a
+    mismatch; an English patient getting a reply DOMINATED by Arabic script is a mismatch.
+    A correct Arabic reply that merely quotes English names/codes is never flagged."""
+    ar_r, la_r = _letter_counts(reply)
+    if not ar_r and not la_r:
+        return False                       # reply has no letters to judge
+    want = detect_language(user_text)
+    if want == "ar":
+        return ar_r == 0                   # asked in Arabic, answered with no Arabic
+    if want == "en":
+        return ar_r > 0 and ar_r >= la_r   # asked in English, answered mostly in Arabic
+    return False                           # patient language unknown → don't police
 
 
 def verify(ctx, user_text: str = "") -> None:
@@ -159,7 +220,7 @@ def verify(ctx, user_text: str = "") -> None:
     if should_block(ctx):
         log.error("BLOCKED unbacked booking confirmation (tenant %s, user %s): %r",
                   ctx.tenant_id, ctx.wa_user, (ctx.reply or "")[:200])
-        ctx.reply = SAFE_REPLY
+        ctx.reply = localize(user_text, SAFE_REPLY, SAFE_REPLY_AR)
         ctx.needs_human = True
         ctx.guard_tripped = True
         return
@@ -168,6 +229,6 @@ def verify(ctx, user_text: str = "") -> None:
         log.error("BLOCKED invented availability (tenant %s, user %s): offered %s not in %s | %r",
                   ctx.tenant_id, ctx.wa_user, bad, sorted(getattr(ctx, "offered_times", set())),
                   (ctx.reply or "")[:200])
-        ctx.reply = _availability_reply(ctx)
+        ctx.reply = _availability_reply(ctx, user_text)
         ctx.needs_human = True
         ctx.guard_tripped = True

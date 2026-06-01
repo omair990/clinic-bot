@@ -18,6 +18,45 @@ log = logging.getLogger(__name__)
 _FALLBACK_REPLY = (
     "Sorry, I'm having trouble with that right now. Let me get a staff member to help you."
 )
+_FALLBACK_REPLY_AR = (
+    "عذرًا، أواجه مشكلة في ذلك الآن. سأطلب من أحد الموظفين مساعدتك."
+)
+_LANG_NAME = {"ar": "Arabic", "en": "English"}
+
+
+def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: str) -> str:
+    """Strong language guard: the reply MUST be in the patient's language. The system prompt
+    already asks for this, but models occasionally drift — so when the reply clearly answers
+    in the wrong language we ask the model, once, to rewrite the SAME answer in the right one.
+    We only accept the rewrite if it actually fixes the language; otherwise keep the original."""
+    if not reply_guard.language_mismatch(user_text, reply):
+        return reply
+    want = reply_guard.detect_language(user_text)
+    target = _LANG_NAME.get(want)
+    if not target:
+        return reply
+    log.warning("Reply language mismatch (patient=%s) — regenerating in %s", want, target)
+    nudge = (
+        f"Your previous reply was in the wrong language. The patient wrote in {target}, so you "
+        f"MUST answer in {target}. Rewrite your previous answer entirely in {target}, keeping "
+        "the same meaning. Keep doctor names, service names and codes exactly as they are. "
+        "Output only the message for the patient — nothing else.")
+    retry = messages + [
+        Msg(role="assistant", content=reply),
+        Msg(role="user", content=nudge),
+    ]
+    try:
+        # Keep TOOL_SPECS so the message history (which may carry this turn's tool_use blocks)
+        # stays valid; the nudge tells the model to just rewrite, not call tools again.
+        result = generate(system, retry, TOOL_SPECS)
+    except Exception:  # noqa: BLE001 — a retry failure must never drop the original turn
+        log.warning("Language regeneration failed; keeping original reply")
+        return reply
+    new = (result.text or "").strip()
+    if new and not reply_guard.language_mismatch(user_text, new):
+        return new
+    log.warning("Language regeneration did not resolve the mismatch; keeping original reply")
+    return reply
 
 
 def _history_to_messages(history: list[dict]) -> list[Msg]:
@@ -61,8 +100,11 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
         result = generate(system, messages, TOOL_SPECS)
 
         if not result.tool_calls:
-            ctx.reply = (result.text or "").strip() or _FALLBACK_REPLY
+            ctx.reply = ((result.text or "").strip()
+                         or reply_guard.localize(user_text, _FALLBACK_REPLY, _FALLBACK_REPLY_AR))
             reply_guard.verify(ctx, user_text)   # never state a booking/time we can't back
+            if not ctx.guard_tripped:            # don't re-touch a localized safe message
+                ctx.reply = _enforce_language(system, messages, user_text, ctx.reply)
             return ctx
 
         messages.append(Msg(role="assistant", content=result.text or "",
@@ -76,7 +118,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
     log.warning("Agent hit step limit for %s", wa_user)
     ctx.needs_human = True
     if not ctx.reply:
-        ctx.reply = _FALLBACK_REPLY
+        ctx.reply = reply_guard.localize(user_text, _FALLBACK_REPLY, _FALLBACK_REPLY_AR)
     reply_guard.verify(ctx, user_text)
     return ctx
 
