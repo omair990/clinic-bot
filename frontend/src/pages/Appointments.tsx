@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Box, Card, Stack, Typography, Chip, Button, ToggleButton, ToggleButtonGroup, Avatar,
-  Grid, IconButton, Tooltip, TextField, InputAdornment, alpha,
+  Grid, IconButton, Tooltip, TextField, InputAdornment, alpha, Dialog, DialogContent, DialogActions,
 } from "@mui/material";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import SearchIcon from "@mui/icons-material/SearchOutlined";
@@ -13,42 +13,30 @@ import WarningIcon from "@mui/icons-material/WarningAmberOutlined";
 import DoneIcon from "@mui/icons-material/DoneRounded";
 import CloseIcon from "@mui/icons-material/CloseRounded";
 import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
+import PersonIcon from "@mui/icons-material/PersonOutline";
+import ScheduleIcon from "@mui/icons-material/ScheduleOutlined";
+import NotesIcon from "@mui/icons-material/NotesOutlined";
 import { apiPost, ApiError } from "../api";
 import {
-  useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError,
-  KpiCard, EmptyState, useToast, DetailDialog,
+  useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, fmtTime, dayLabel, displayName,
+  initials, TableSkeleton, QueryError, KpiCard, EmptyState, useToast, ConfirmDialog,
 } from "../lib";
 
 const statusColor: Record<string, any> = { confirmed: "success", completed: "info", cancelled: "default", no_show: "warning" };
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
 
 function avatarHue(s: string) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
-function initials(name: string | null, wa: string) { return name ? name.slice(0, 2).toUpperCase() : wa.slice(-2); }
-function clock(iso?: string | null) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-function dayLabel(iso?: string | null) {
-  if (!iso) return "Undated";
-  const d = new Date(iso), now = new Date();
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = (day(d) - day(now)) / 86400000;
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  if (diff === -1) return "Yesterday";
-  return d.toLocaleDateString(undefined, {
-    weekday: "long", day: "2-digit", month: "short",
-    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-  });
-}
 
-function ActionBtns({ row, busy, onAct, stop }: {
-  row: any; busy: boolean; onAct: (id: number, status: string) => void; stop?: boolean;
-}) {
-  const wrap = (e: React.MouseEvent) => { if (stop) e.stopPropagation(); };
+// Per-action confirmation copy — these reach the patient on WhatsApp, so we double-check.
+const ACTION_META: Record<string, { label: string; color: any; verb: string; notifies: boolean }> = {
+  completed: { label: "Mark completed", color: "success", verb: "completed", notifies: true },
+  no_show: { label: "Mark no-show", color: "warning", verb: "a no-show", notifies: false },
+  cancelled: { label: "Cancel appointment", color: "error", verb: "cancelled", notifies: true },
+};
+
+function ActionBtns({ row, busy, onAct }: { row: any; busy: boolean; onAct: (id: number, status: string) => void }) {
   return (
-    <Stack direction="row" spacing={0.5} onClick={wrap}>
+    <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
       {row.status !== "completed" && (
         <Tooltip title="Mark completed"><span><IconButton size="small" color="success" disabled={busy}
           onClick={() => onAct(row.id, "completed")}><DoneIcon fontSize="small" /></IconButton></span></Tooltip>)}
@@ -77,15 +65,15 @@ function ApptRow({ row, showClinic, clinicName, busy, onAct, onOpen }: {
         bgcolor: (t) => (t.palette as any)[sc]?.main || t.palette.primary.main, opacity: 0.85 },
     }}>
       <Box sx={{ width: 76, flexShrink: 0, textAlign: "center" }}>
-        <Typography fontWeight={800} sx={{ lineHeight: 1.1 }}>{clock(row.start_at)}</Typography>
+        <Typography fontWeight={800} sx={{ lineHeight: 1.1 }}>{fmtTime(row.start_at)}</Typography>
       </Box>
       <Avatar sx={{ width: 42, height: 42, fontWeight: 700, fontSize: 14, flexShrink: 0,
         background: `linear-gradient(135deg, hsl(${hue} 70% 55%), hsl(${(hue + 40) % 360} 70% 45%))`, color: "#fff" }}>
-        {initials(row.patient_name, row.wa_user || "")}
+        {initials(row.patient_name, row.wa_user)}
       </Avatar>
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Typography fontWeight={700} noWrap>
-          {row.patient_name || `+${row.wa_user}`}
+          {displayName(row.patient_name, row.wa_user)}
           {showClinic && clinicName && <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>· {clinicName}</Typography>}
         </Typography>
         <Stack direction="row" alignItems="center" spacing={0.6} sx={{ color: "text.secondary", minWidth: 0 }}>
@@ -99,9 +87,72 @@ function ApptRow({ row, showClinic, clinicName, busy, onAct, onOpen }: {
             label={`${row.risk_band}${row.risk_score != null ? " " + row.risk_score : ""}`}
             sx={{ height: 22, display: { xs: "none", md: "flex" } }} />)}
         <Chip size="small" color={sc} label={row.status.replace("_", " ")} sx={{ height: 22 }} />
-        <Box sx={{ display: { xs: "none", sm: "block" } }}><ActionBtns row={row} busy={busy} onAct={onAct} stop /></Box>
+        <Box sx={{ display: { xs: "none", sm: "block" } }}><ActionBtns row={row} busy={busy} onAct={onAct} /></Box>
       </Stack>
     </Box>
+  );
+}
+
+// Premium appointment detail with a gradient identity header and icon'd fields.
+function ApptDetail({ appt, showClinic, clinicName, onClose, onAct, onView }: {
+  appt: any; showClinic: boolean; clinicName?: string; onClose: () => void;
+  onAct: (id: number, status: string) => void; onView: () => void;
+}) {
+  const hue = avatarHue(appt.wa_user || "");
+  const sc = statusColor[appt.status] || "primary";
+  const Row = ({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) => (
+    <Stack direction="row" spacing={1.5} alignItems="flex-start">
+      <Box sx={{ color: "text.secondary", mt: 0.25 }}>{icon}</Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" color="text.secondary" fontWeight={700}>{label}</Typography>
+        <Box sx={{ fontSize: 14 }}>{children}</Box>
+      </Box>
+    </Stack>
+  );
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm"
+      PaperProps={{ sx: { borderRadius: 3, overflow: "hidden" } }}>
+      <Box sx={{ position: "relative", p: 2.5, color: "#fff",
+        background: "linear-gradient(120deg,#0f766e 0%,#14b8a6 45%,#6366f1 100%)" }}>
+        <IconButton onClick={onClose} sx={{ position: "absolute", top: 8, right: 8, color: alpha("#fff", 0.9) }}><CloseIcon /></IconButton>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Avatar sx={{ width: 56, height: 56, fontWeight: 800, bgcolor: alpha("#fff", 0.2), color: "#fff",
+            border: `2px solid ${alpha("#fff", 0.5)}` }}>{initials(appt.patient_name, appt.wa_user)}</Avatar>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="h6" sx={{ color: "#fff" }} noWrap>{displayName(appt.patient_name, appt.wa_user)}</Typography>
+            <Typography variant="body2" sx={{ color: alpha("#fff", 0.85) }} noWrap>
+              +{appt.wa_user}{showClinic && clinicName ? ` · ${clinicName}` : ""}
+            </Typography>
+          </Box>
+          <Box sx={{ flex: 1 }} />
+          <Chip label={appt.status.replace("_", " ")} sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700 }} />
+        </Stack>
+      </Box>
+      <DialogContent dividers>
+        <Stack spacing={2}>
+          <Row icon={<ScheduleIcon fontSize="small" />} label="When"><b>{fmtDate(appt.start_at)}</b></Row>
+          <Row icon={<MedicalServicesIcon fontSize="small" />} label="Service">{appt.service || "—"}</Row>
+          <Row icon={<PersonIcon fontSize="small" />} label="Doctor">{appt.doctor || "—"}</Row>
+          {appt.risk_band && (
+            <Row icon={<WarningIcon fontSize="small" />} label="No-show risk">
+              <Chip size="small" variant="outlined" color={riskColor[appt.risk_band] || "default"}
+                label={`${appt.risk_band}${appt.risk_score != null ? " · " + appt.risk_score : ""}`} />
+            </Row>)}
+          {appt.extra && Object.keys(appt.extra).length > 0 && (
+            <Row icon={<NotesIcon fontSize="small" />} label="Details">
+              <Box sx={{ whiteSpace: "pre-wrap" }}>{Object.entries(appt.extra).map(([k, v]) => `${k}: ${v}`).join("\n")}</Box>
+            </Row>)}
+          {appt.notes && <Row icon={<NotesIcon fontSize="small" />} label="Notes"><Box sx={{ whiteSpace: "pre-wrap" }}>{appt.notes}</Box></Row>}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, py: 2 }}>
+        <Button onClick={onView}>View patient</Button>
+        <Box sx={{ flex: 1 }} />
+        {appt.status !== "completed" && <Button color="success" onClick={() => onAct(appt.id, "completed")}>Complete</Button>}
+        {appt.status !== "no_show" && <Button color="warning" onClick={() => onAct(appt.id, "no_show")}>No-show</Button>}
+        {appt.status !== "cancelled" && <Button color="error" onClick={() => onAct(appt.id, "cancelled")}>Cancel</Button>}
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -113,6 +164,7 @@ export default function Appointments() {
   const qc = useQueryClient();
   const toast = useToast();
   const [sel, setSel] = useState<any | null>(null);
+  const [confirm, setConfirm] = useState<{ id: number; status: string; name: string } | null>(null);
   const [search, setSearch] = useState("");
   const path = `/appointments?clinic=${clinic}${status ? `&status=${status}` : ""}`;
   const q = useApiQuery<any>(["appointments", clinic, status], path);
@@ -122,9 +174,15 @@ export default function Appointments() {
     onError: (e) => toast.err(e instanceof ApiError ? e.message : "Update failed"),
   });
   const setStatus = (s: string) => { const n = new URLSearchParams(params); if (s) n.set("status", s); else n.delete("status"); setParams(n); };
-  const onAct = (id: number, s: string) => act.mutate({ id, status: s });
 
   const rows: any[] = q.data?.rows ?? [];
+  const byId = (id: number) => rows.find((r) => r.id === id);
+  // Every status change is patient-visible, so route it through a confirm step.
+  const requestAct = (id: number, s: string) => {
+    setConfirm({ id, status: s, name: displayName(byId(id)?.patient_name, byId(id)?.wa_user) });
+  };
+  const doConfirm = () => { if (confirm) act.mutate({ id: confirm.id, status: confirm.status }); setConfirm(null); setSel(null); };
+
   // Agenda order: upcoming soonest-first, then past most-recent-first.
   const ordered = useMemo(() => {
     const sot = new Date().setHours(0, 0, 0, 0);
@@ -149,6 +207,7 @@ export default function Appointments() {
   const completed = rows.filter((r) => r.status === "completed").length;
   const noShows = rows.filter((r) => r.status === "no_show").length;
   const atRisk = rows.filter((r) => r.risk_band === "high" && r.status === "confirmed" && new Date(r.start_at).getTime() >= now).length;
+  const cm = confirm ? ACTION_META[confirm.status] : null;
 
   return (
     <>
@@ -197,7 +256,7 @@ export default function Appointments() {
                     </Box>
                   )}
                   <ApptRow row={r} showClinic={showClinic} clinicName={tenant_names[r.tenant_id]}
-                    busy={act.isPending} onAct={onAct} onOpen={() => setSel(r)} />
+                    busy={act.isPending} onAct={requestAct} onOpen={() => setSel(r)} />
                 </Box>
               );
             })}
@@ -205,26 +264,16 @@ export default function Appointments() {
         )}
       </Card>
 
-      <DetailDialog open={!!sel} onClose={() => setSel(null)} title="Appointment"
-        subtitle={sel ? `#${sel.id}` : ""}
-        fields={sel ? [
-          { label: "Patient", value: `${sel.patient_name || "—"} · +${sel.wa_user}` },
-          { label: "Service", value: sel.service || "—" },
-          { label: "Doctor", value: sel.doctor || "—" },
-          { label: "When", value: fmtDate(sel.start_at) },
-          { label: "Status", value: <Chip size="small" color={statusColor[sel.status] || "default"} label={sel.status} /> },
-          { label: "Risk", value: sel.risk_band ? <Chip size="small" variant="outlined" color={riskColor[sel.risk_band] || "default"} label={`${sel.risk_band}${sel.risk_score != null ? " " + sel.risk_score : ""}`} /> : "—" },
-          ...(sel.extra && Object.keys(sel.extra).length
-            ? [{ label: "Details", value: Object.entries(sel.extra).map(([k, v]) => `${k}: ${v}`).join("\n"), full: true }] : []),
-          ...(sel.notes ? [{ label: "Notes", value: sel.notes, full: true }] : []),
-        ] : []}
-        actions={sel && <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", width: "100%" }} alignItems="center">
-          <Button onClick={() => nav(`/patients/${sel.wa_user}`)}>View patient</Button>
-          <Box sx={{ flex: 1 }} />
-          {sel.status !== "completed" && <Button onClick={() => { act.mutate({ id: sel.id, status: "completed" }); setSel(null); }}>Complete</Button>}
-          {sel.status !== "no_show" && <Button color="warning" onClick={() => { act.mutate({ id: sel.id, status: "no_show" }); setSel(null); }}>No-show</Button>}
-          {sel.status !== "cancelled" && <Button color="error" onClick={() => { act.mutate({ id: sel.id, status: "cancelled" }); setSel(null); }}>Cancel</Button>}
-        </Stack>} />
+      {sel && <ApptDetail appt={sel} showClinic={showClinic} clinicName={tenant_names[sel.tenant_id]}
+        onClose={() => setSel(null)} onAct={requestAct} onView={() => nav(`/patients/${sel.wa_user}`)} />}
+
+      <ConfirmDialog open={!!confirm}
+        title="Confirm appointment update"
+        confirmLabel={cm?.label} confirmColor={cm?.color}
+        message={confirm ? (
+          <>Mark <b>{confirm.name}</b>'s appointment as <b>{cm?.verb}</b>?{cm?.notifies ? " The patient will be notified on WhatsApp." : ""}</>
+        ) : ""}
+        onConfirm={doConfirm} onClose={() => setConfirm(null)} />
     </>
   );
 }

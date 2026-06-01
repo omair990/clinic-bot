@@ -10,7 +10,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import { apiPost } from "../api";
-import { useApiQuery, Loading, QueryError, fmtDate, EmptyState, useToast } from "../lib";
+import { useApiQuery, Loading, QueryError, fmtDate, fmtTime, dayLabel, displayName, initials as initialsOf, EmptyState, useToast } from "../lib";
 import { useLive } from "../realtime";
 
 const statusColor: Record<string, any> = { confirmed: "success", completed: "info", cancelled: "default", no_show: "warning" };
@@ -20,21 +20,6 @@ const GROUP_GAP_MS = 5 * 60 * 1000;
 
 const popIn = keyframes`from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; }`;
 const wave = keyframes`0%,60%,100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-5px); opacity: 1; }`;
-
-function dayLabel(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso); const now = new Date();
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = (day(now) - day(d)) / 86400000;
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return d.toLocaleDateString(undefined, { weekday: "long", day: "2-digit", month: "short" });
-}
-function clock(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
 
 // Render WhatsApp / markdown inline formatting the same way the patient sees it on WhatsApp:
 // **bold** or *bold*, _italic_, ~strike~, `mono`. Output is React nodes (never raw HTML),
@@ -108,7 +93,7 @@ function Bubble({ m, isFirst, isLast }: { m: Msg; isFirst: boolean; isLast: bool
           <Stack direction="row" spacing={0.5} alignItems="center"
             sx={{ justifyContent: inb ? "flex-start" : "flex-end", px: 0.5, mt: 0.4 }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
-              {clock(m.created_at)}{m.source && m.source !== "text" ? ` · ${m.source}` : ""}
+              {fmtTime(m.created_at)}{m.source && m.source !== "text" ? ` · ${m.source}` : ""}
             </Typography>
             {!inb && <DoneAllIcon sx={{ fontSize: 13, color: "#0A84FF" }} />}
           </Stack>
@@ -157,7 +142,7 @@ export default function PatientDetail() {
   if (q.error) return <QueryError error={q.error} />;
   const p = q.data;
   const a = p.analysis;
-  const initials = (p.name || "P").slice(0, 2).toUpperCase();
+  const initials = initialsOf(p.name, p.wa_user);
   const laid = layout(messages);
 
   return (
@@ -175,7 +160,7 @@ export default function PatientDetail() {
           <Avatar sx={{ width: 64, height: 64, fontSize: 22, fontWeight: 800, bgcolor: alpha("#fff", 0.2), color: "#fff",
             border: `2px solid ${alpha("#fff", 0.5)}` }}>{initials}</Avatar>
           <Box sx={{ flex: 1, minWidth: 200 }}>
-            <Typography variant="h5" sx={{ color: "#fff" }}>{p.name || "Unknown patient"}</Typography>
+            <Typography variant="h5" sx={{ color: "#fff" }}>{displayName(p.name, p.wa_user)}</Typography>
             <Stack direction="row" spacing={1} alignItems="center">
               <Typography sx={{ color: alpha("#fff", 0.85) }}>+{p.wa_user}{p.clinic ? ` · ${p.clinic}` : ""}</Typography>
               {isTyping && (
@@ -225,7 +210,7 @@ export default function PatientDetail() {
                             {dayLabel(m.created_at)}
                           </Typography>
                           <Typography component="span" variant="caption" sx={{ color: "text.disabled", ml: 0.8, fontFamily: APPLE_FONT }}>
-                            {clock(m.created_at)}
+                            {fmtTime(m.created_at)}
                           </Typography>
                         </Box>
                       )}

@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { apiGet, apiPost } from "./api";
+import { setDisplayTz } from "./tz";
 
 export interface Principal {
   role: "super" | "clinic";
   tenant_id: number | null;
   tenant_name: string | null;
+  timezone?: string | null;
 }
 
 interface AuthState {
@@ -23,17 +25,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     apiGet<Principal>("/me")
-      .then(setMe)
+      .then((p) => { setDisplayTz(p.timezone); setMe(p); })
       .catch(() => setMe(null))
       .finally(() => setLoading(false));
   }, []);
 
   const login = async (username: string, password: string) => {
     const p = await apiPost<Principal>("/login", { username, password });
+    setDisplayTz(p.timezone);
     setMe(p);
   };
   const logout = async () => {
     await apiPost("/logout");
+    setDisplayTz(undefined);
     setMe(null);
   };
 

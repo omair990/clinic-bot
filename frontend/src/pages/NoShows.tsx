@@ -6,7 +6,7 @@ import { GridColDef } from "@mui/x-data-grid";
 import { BarChart } from "@mui/x-charts/BarChart";
 import EventBusyIcon from "@mui/icons-material/EventBusyOutlined";
 import { apiPost, ApiError } from "../api";
-import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, KpiCard, useToast, DetailDialog } from "../lib";
+import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, displayName, TableSkeleton, QueryError, DataTable, KpiCard, useToast, DetailDialog } from "../lib";
 
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
 
@@ -29,9 +29,15 @@ export default function NoShows() {
 
   const cols: GridColDef[] = [
     ...(showClinic ? [{ field: "clinic", headerName: "Clinic", width: 140, valueGetter: (_v: any, r: any) => tenant_names[r.tenant_id] || "—" }] : []),
-    { field: "patient_name", headerName: "Patient", width: 150, valueGetter: (v: any) => v || "—" },
+    { field: "patient_name", headerName: "Patient", width: 180,
+      valueGetter: (_v: any, r: any) => displayName(r.patient_name, r.wa_user),
+      renderCell: (p) => (
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="body2" fontWeight={600} noWrap>{p.value}</Typography>
+          {p.row.patient_name && <Typography variant="caption" color="text.secondary" noWrap>+{p.row.wa_user}</Typography>}
+        </Box>) },
     { field: "service", headerName: "Missed", flex: 1, minWidth: 180,
-      valueGetter: (v: any, r: any) => `${v || "—"} · ${r.doctor || ""}` },
+      valueGetter: (v: any, r: any) => `${v || "—"}${r.doctor ? " · " + r.doctor : ""}` },
     { field: "start_at", headerName: "When", width: 150, valueFormatter: (v: any) => fmtDate(v) },
     { field: "risk_band", headerName: "Risk", width: 100, renderCell: (p) => p.value ? <Chip size="small" color={riskColor[p.value] || "default"} label={p.value} variant="outlined" /> : null },
     { field: "stage", headerName: "Stage", width: 120, renderCell: (p) => <Chip size="small" variant="outlined" label={(p.value || "").replace("_", " ")} /> },
@@ -81,7 +87,7 @@ export default function NoShows() {
       <DetailDialog open={!!sel} onClose={() => setSel(null)} title="No-show follow-up"
         subtitle={sel ? fmtDate(sel.created_at) : ""}
         fields={sel ? [
-          { label: "Patient", value: `${sel.patient_name || "—"} · +${sel.wa_user}` },
+          { label: "Patient", value: `${displayName(sel.patient_name, sel.wa_user)} · +${sel.wa_user}` },
           { label: "Missed", value: `${sel.service || "—"}${sel.doctor ? " · " + sel.doctor : ""} · ${fmtDate(sel.start_at)}` },
           { label: "Risk", value: sel.risk_band ? <Chip size="small" variant="outlined" color={riskColor[sel.risk_band] || "default"} label={sel.risk_band} /> : "—" },
           { label: "Stage", value: <Chip size="small" variant="outlined" label={(sel.stage || "").replace("_", " ")} /> },
