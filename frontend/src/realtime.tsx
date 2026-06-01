@@ -78,7 +78,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     if (flushTimer.current != null) return;
     flushTimer.current = window.setTimeout(() => {
       flushTimer.current = null;
-      ["dashboard", "overview", "trends", "conversations"].forEach((k) =>
+      ["dashboard", "overview", "trends", "conversations", "patient"].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }));
     }, 1200);
   }, [qc]);
