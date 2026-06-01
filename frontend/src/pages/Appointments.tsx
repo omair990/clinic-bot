@@ -23,14 +23,16 @@ import {
 } from "../lib";
 
 const statusColor: Record<string, any> = { confirmed: "success", completed: "info", cancelled: "default", no_show: "warning" };
+const statusLabel: Record<string, string> = { confirmed: "Confirmed", completed: "Completed", cancelled: "Cancelled", no_show: "Missed" };
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
+const stShow = (s: string) => statusLabel[s] || s.replace("_", " ");
 
 function avatarHue(s: string) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 
 // Per-action confirmation copy — these reach the patient on WhatsApp, so we double-check.
 const ACTION_META: Record<string, { label: string; color: any; verb: string; notifies: boolean }> = {
   completed: { label: "Mark completed", color: "success", verb: "completed", notifies: true },
-  no_show: { label: "Mark no-show", color: "warning", verb: "a no-show", notifies: false },
+  no_show: { label: "Mark missed", color: "warning", verb: "missed", notifies: false },
   cancelled: { label: "Cancel appointment", color: "error", verb: "cancelled", notifies: true },
 };
 
@@ -41,7 +43,7 @@ function ActionBtns({ row, busy, onAct }: { row: any; busy: boolean; onAct: (id:
         <Tooltip title="Mark completed"><span><IconButton size="small" color="success" disabled={busy}
           onClick={() => onAct(row.id, "completed")}><DoneIcon fontSize="small" /></IconButton></span></Tooltip>)}
       {row.status !== "no_show" && (
-        <Tooltip title="Mark no-show"><span><IconButton size="small" color="warning" disabled={busy}
+        <Tooltip title="Mark missed"><span><IconButton size="small" color="warning" disabled={busy}
           onClick={() => onAct(row.id, "no_show")}><EventBusyIcon fontSize="small" /></IconButton></span></Tooltip>)}
       {row.status !== "cancelled" && (
         <Tooltip title="Cancel"><span><IconButton size="small" color="error" disabled={busy}
@@ -86,7 +88,7 @@ function ApptRow({ row, showClinic, clinicName, busy, onAct, onOpen }: {
           <Chip size="small" variant="outlined" color={riskColor[row.risk_band] || "default"}
             label={`${row.risk_band}${row.risk_score != null ? " " + row.risk_score : ""}`}
             sx={{ height: 22, display: { xs: "none", md: "flex" } }} />)}
-        <Chip size="small" color={sc} label={row.status.replace("_", " ")} sx={{ height: 22 }} />
+        <Chip size="small" color={sc} label={stShow(row.status)} sx={{ height: 22 }} />
         <Box sx={{ display: { xs: "none", sm: "block" } }}><ActionBtns row={row} busy={busy} onAct={onAct} /></Box>
       </Stack>
     </Box>
@@ -125,7 +127,7 @@ function ApptDetail({ appt, showClinic, clinicName, onClose, onAct, onView }: {
             </Typography>
           </Box>
           <Box sx={{ flex: 1 }} />
-          <Chip label={appt.status.replace("_", " ")} sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700 }} />
+          <Chip label={stShow(appt.status)} sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700 }} />
         </Stack>
       </Box>
       <DialogContent dividers>
@@ -134,7 +136,7 @@ function ApptDetail({ appt, showClinic, clinicName, onClose, onAct, onView }: {
           <Row icon={<MedicalServicesIcon fontSize="small" />} label="Service">{appt.service || "—"}</Row>
           <Row icon={<PersonIcon fontSize="small" />} label="Doctor">{appt.doctor || "—"}</Row>
           {appt.risk_band && (
-            <Row icon={<WarningIcon fontSize="small" />} label="No-show risk">
+            <Row icon={<WarningIcon fontSize="small" />} label="Missed-visit risk">
               <Chip size="small" variant="outlined" color={riskColor[appt.risk_band] || "default"}
                 label={`${appt.risk_band}${appt.risk_score != null ? " · " + appt.risk_score : ""}`} />
             </Row>)}
@@ -149,7 +151,7 @@ function ApptDetail({ appt, showClinic, clinicName, onClose, onAct, onView }: {
         <Button onClick={onView}>View patient</Button>
         <Box sx={{ flex: 1 }} />
         {appt.status !== "completed" && <Button color="success" onClick={() => onAct(appt.id, "completed")}>Complete</Button>}
-        {appt.status !== "no_show" && <Button color="warning" onClick={() => onAct(appt.id, "no_show")}>No-show</Button>}
+        {appt.status !== "no_show" && <Button color="warning" onClick={() => onAct(appt.id, "no_show")}>Missed</Button>}
         {appt.status !== "cancelled" && <Button color="error" onClick={() => onAct(appt.id, "cancelled")}>Cancel</Button>}
       </DialogActions>
     </Dialog>
@@ -225,7 +227,7 @@ export default function Appointments() {
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={6} md={3}><KpiCard label="Upcoming" value={upcoming} icon={<EventAvailableIcon fontSize="small" />} color="success" /></Grid>
         <Grid item xs={6} md={3}><KpiCard label="Completed" value={completed} icon={<CheckCircleIcon fontSize="small" />} color="info" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="No-shows" value={noShows} icon={<EventBusyIcon fontSize="small" />} color="warning" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label="Missed" value={noShows} icon={<EventBusyIcon fontSize="small" />} color="warning" /></Grid>
         <Grid item xs={6} md={3}><KpiCard label="At risk" value={atRisk} icon={<WarningIcon fontSize="small" />} color="error" /></Grid>
       </Grid>
 

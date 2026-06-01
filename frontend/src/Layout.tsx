@@ -29,7 +29,7 @@ const MINI = 76;
 
 const LABELS: Record<string, string> = {
   "": "Overview", conversations: "Patient Chats", patients: "Patient Chats",
-  appointments: "Appointments", "no-shows": "No-shows", insights: "Insights",
+  appointments: "Appointments", "no-shows": "Missed Visits", insights: "Insights",
   reviews: "Reviews", usage: "Usage", plans: "Plans & Usage", issues: "Issues",
   settings: "Settings", tenants: "Clinic",
 };
@@ -48,7 +48,7 @@ export default function Layout() {
     { label: isSuper ? "Overview" : "Dashboard", to: "/", icon: <DashboardIcon /> },
     { label: "Patient Chats", to: "/conversations", icon: <ChatIcon /> },
     { label: "Appointments", to: "/appointments", icon: <EventIcon /> },
-    { label: "No-shows", to: "/no-shows", icon: <EventBusyIcon /> },
+    { label: "Missed Visits", to: "/no-shows", icon: <EventBusyIcon /> },
     { label: "Insights", to: "/insights", icon: <InsightsIcon /> },
     { label: "Reviews", to: "/reviews", icon: <StarIcon /> },
     ...(!isSuper ? [{ label: "Usage", to: "/usage", icon: <SpeedIcon /> }] : []),

@@ -181,7 +181,7 @@ export default function PatientDetail() {
             <Stat label="Messages" value={p.message_count} />
             <Stat label="Appointments" value={p.appointments?.length ?? 0} />
             <Stat label="Reviews" value={p.reviews?.length ?? 0} />
-            <Stat label="No-shows" value={p.no_shows?.length ?? 0} />
+            <Stat label="Missed" value={p.no_shows?.length ?? 0} />
           </Stack>
         </Stack>
       </Box>
@@ -193,7 +193,7 @@ export default function PatientDetail() {
           <Tab label="Conversation" />
           <Tab label={`Appointments (${p.appointments?.length ?? 0})`} />
           <Tab label={`Reviews (${p.reviews?.length ?? 0})`} />
-          <Tab label={`No-shows (${p.no_shows?.length ?? 0})`} />
+          <Tab label={`Missed visits (${p.no_shows?.length ?? 0})`} />
         </Tabs>
         <CardContent>
           {tab === 0 && (
@@ -259,7 +259,7 @@ export default function PatientDetail() {
               x.rating ? <Rating value={x.rating} readOnly size="small" /> : "—",
               `${x.service || "—"}${x.doctor ? " · " + x.doctor : ""}`, x.comment || "", fmtDate(x.responded_at || x.created_at)])} />)}
 
-          {tab === 3 && (<MiniTable cols={["Missed", "Stage", "Outcome", "Reason", "When"]} empty="No no-shows."
+          {tab === 3 && (<MiniTable cols={["Service", "Stage", "Outcome", "Reason", "When"]} empty="No missed visits."
             rows={(p.no_shows || []).map((x: any) => [`${x.service || "—"}${x.doctor ? " · " + x.doctor : ""}`,
               <Chip size="small" variant="outlined" label={(x.stage || "").replace("_", " ")} />, x.outcome || "—", x.reason || "—", fmtDate(x.created_at)])} />)}
         </CardContent>
