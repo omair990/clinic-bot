@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -148,6 +148,29 @@ export function EmptyState({ text }: { text: string }) {
   );
 }
 
+// --- animated counter ----------------------------------------------------------
+// Eases a number toward its latest value so live KPI updates feel alive rather than jump.
+export function AnimatedNumber({ value }: { value: number }) {
+  const [display, setDisplay] = useState(value);
+  const prev = useRef(value);
+  useEffect(() => {
+    const from = prev.current, to = value;
+    prev.current = value;
+    if (from === to) { setDisplay(to); return; }
+    const dur = 650, start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(Math.round(from + (to - from) * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{display.toLocaleString()}</>;
+}
+
 // --- KPI card + sparkline ------------------------------------------------------
 export function KpiCard({ label, value, icon, color = "primary", spark }: {
   label: string; value: React.ReactNode; icon?: React.ReactNode;
@@ -157,8 +180,16 @@ export function KpiCard({ label, value, icon, color = "primary", spark }: {
   const t = useTheme();
   const c = (t.palette as any)[color].main as string;
   return (
-    <Card sx={{ height: "100%" }}>
-      <CardContent>
+    <Card sx={{
+      height: "100%", position: "relative", overflow: "hidden",
+      transition: "transform .18s ease, box-shadow .18s ease",
+      "&:hover": { transform: "translateY(-2px)", boxShadow: (th) => th.shadows[6] },
+      "&::before": {
+        content: '""', position: "absolute", inset: 0, pointerEvents: "none",
+        background: `radial-gradient(120% 100% at 100% 0%, ${alpha(c, 0.14)}, transparent 60%)`,
+      },
+    }}>
+      <CardContent sx={{ position: "relative" }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>{label}</Typography>
           {icon && (
@@ -166,7 +197,9 @@ export function KpiCard({ label, value, icon, color = "primary", spark }: {
               color: c, bgcolor: alpha(c, 0.14) }}>{icon}</Box>
           )}
         </Stack>
-        <Typography variant="h4" sx={{ mt: 0.5 }}>{value}</Typography>
+        <Typography variant="h4" sx={{ mt: 0.5 }}>
+          {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+        </Typography>
         {spark && spark.length > 1 && (
           <Box sx={{ mt: 0.5, height: 32 }}>
             <SparkLineChart data={spark} height={32} curve="natural" area

@@ -527,6 +527,14 @@ def _record_review(args: dict, ctx: AgentContext) -> dict:
     comment = (args.get("comment") or "").strip() or None
     ok = db.record_review(ctx.tenant_id, int(appt_id), rating, comment)
     ctx.actions.append(f"review #{appt_id}: {rating}★")
+    if ok:
+        try:
+            from app.events import notify
+            notify(f"New review · {rating}★", comment or "No comment left.",
+                   level="success" if rating >= 4 else "warning", category="review",
+                   tenant_id=ctx.tenant_id, wa_user=ctx.wa_user, link="/reviews")
+        except Exception:  # noqa: BLE001 — notifying must not fail the tool
+            log.warning("review notification failed")
     return {"recorded": ok, "appointment_id": int(appt_id), "rating": rating}
 
 
