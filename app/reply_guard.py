@@ -231,6 +231,25 @@ _ROMAN_HINDI_WORDS = (
     "namaste", "namaskar", "dhanyavaad", "dhanyawad", "kripya", "kripaya", "shubh", "samay",
 )
 _ROMAN_HINDI_RE = re.compile(r"\b(?:" + "|".join(_ROMAN_HINDI_WORDS) + r")\b", re.IGNORECASE)
+# Tagalog (Filipino) is Latin-script and short messages confuse the statistical classifier
+# (e.g. "Gusto ko po…" → Italian). A high-precision word override fixes that. STRONG words are
+# Tagalog-specific (one is enough); COMMON particles need two to fire. Ambiguous tokens are
+# deliberately omitted: "sa" (French "his/her"), "gusto" (Spanish/Italian), "lang" (German).
+_TAGALOG_STRONG_WORDS = (
+    "magkano", "magkanu", "pwede", "puwede", "salamat", "kailangan", "ngipin", "opo", "mga",
+    "kayo", "namin", "ninyo", "naman", "meron", "bukas", "magpapa", "magpa",
+)
+_TAGALOG_COMMON_WORDS = (
+    "po", "ang", "ng", "ko", "ako", "niyo", "yung", "saan", "dito", "doon", "kasi", "ito",
+)
+_TAGALOG_STRONG_RE = re.compile(r"\b(?:" + "|".join(_TAGALOG_STRONG_WORDS) + r")\b", re.IGNORECASE)
+_TAGALOG_COMMON_RE = re.compile(r"\b(?:" + "|".join(_TAGALOG_COMMON_WORDS) + r")\b", re.IGNORECASE)
+
+
+def _is_tagalog(text: str) -> bool:
+    """High-precision Tagalog check: one distinctive word, or two common particles."""
+    t = text or ""
+    return bool(_TAGALOG_STRONG_RE.search(t)) or len(_TAGALOG_COMMON_RE.findall(t)) >= 2
 
 # --- py3langid (statistical language ID) for every other language -------------
 # Restricted to a curated, extensible set of languages a Riyadh clinic realistically sees —
@@ -341,8 +360,11 @@ def _latin_only(text: str) -> str:
 
 
 def _latin_lang(text: str) -> str:
-    """ISO code for Latin-script text — 'en' unless it is long enough AND confidently another
-    Latin-script language. Biased to English to avoid false positives on short text."""
+    """ISO code for Latin-script text — 'en' unless a high-precision override (Tagalog) fires,
+    or it is long enough AND confidently another Latin-script language. Biased to English to
+    avoid false positives on short text."""
+    if _is_tagalog(text):
+        return "tl"                          # high-precision override (langid confuses short tl)
     lo = _latin_only(text).strip()
     if len(lo) < _MIN_LATIN_CHARS:
         return "en"

@@ -307,3 +307,22 @@ def test_language_mismatch_other_scripts():
 def test_localize_other_language_falls_back_to_english():
     es = "Necesito una cita con el dentista urgente"
     assert reply_guard.localize(es, "EN", "AR", ur="UR", hi="HI") == "EN"
+
+
+def test_tagalog_override():
+    # High-precision word override fixes short Tagalog the statistical classifier gets wrong.
+    assert reply_guard.detect_language("Gusto ko po magpa-appointment sa dentista") == "tl"
+    assert reply_guard.detect_language("Magkano ang pagpapalinis ng ngipin?") == "tl"
+    assert reply_guard.detect_language("Salamat po sa tulong ninyo") == "tl"
+    # No false positives: Spanish / French (incl. French "sa") / English stay themselves.
+    assert reply_guard.detect_language("Sa maison et sa voiture sont grandes") != "tl"
+    assert reply_guard.detect_language("Book me an appointment") == "en"
+    assert reply_guard.detect_language("Necesito una cita con el dentista urgente") == "es"
+
+
+def test_language_mismatch_tagalog():
+    tl = "Gusto ko po magpa-appointment sa dentista"
+    # Tagalog patient, English reply → mismatch; Tagalog reply → fine.
+    assert reply_guard.language_mismatch(tl, "Sure, you're booked for tomorrow!") is True
+    assert reply_guard.language_mismatch(
+        tl, "Sige po, naka-book na po kayo bukas ng 5 PM kay Dr. Khalid.") is False
