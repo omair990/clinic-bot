@@ -1,57 +1,39 @@
-import {
-  Card, CardContent, Grid, Table, TableHead, TableRow, TableCell, TableBody, Chip, Typography, Rating,
-} from "@mui/material";
-import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, Loading, QueryError } from "../lib";
+import { Grid, Chip, Rating, Typography } from "@mui/material";
+import { GridColDef } from "@mui/x-data-grid";
+import StarIcon from "@mui/icons-material/StarRounded";
+import CheckIcon from "@mui/icons-material/TaskAltOutlined";
+import PercentIcon from "@mui/icons-material/PercentOutlined";
+import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, KpiCard } from "../lib";
 
 export default function Reviews() {
   const [clinic] = useClinic();
   const q = useApiQuery<any>(["reviews", clinic], `/reviews?clinic=${clinic}`);
-  if (q.isLoading) return <Loading />;
+  if (q.isLoading) return <><PageTitle title="Patient reviews" /><TableSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
   const { rows = [], stats = {}, is_super, tenant_names = {}, selected_clinic } = q.data;
   const showClinic = is_super && !selected_clinic;
   const rate = stats.requested ? Math.floor((stats.responded / stats.requested) * 100) : 0;
 
+  const cols: GridColDef[] = [
+    ...(showClinic ? [{ field: "clinic", headerName: "Clinic", width: 140, valueGetter: (_v: any, r: any) => tenant_names[r.tenant_id] || "—" }] : []),
+    { field: "patient_name", headerName: "Patient", width: 150, valueGetter: (v: any) => v || "—" },
+    { field: "service", headerName: "Visit", width: 160, valueGetter: (v: any, r: any) => `${v || "—"}${r.doctor ? " · " + r.doctor : ""}` },
+    { field: "rating", headerName: "Rating", width: 150, renderCell: (p) => p.value ? <Rating value={p.value} readOnly size="small" /> : "—" },
+    { field: "comment", headerName: "Comment", flex: 1, minWidth: 200, valueGetter: (v: any) => v || "" },
+    { field: "stage", headerName: "Status", width: 120, renderCell: (p) => <Chip size="small" color={p.value === "done" ? "success" : "warning"} variant="outlined" label={p.value === "done" ? "received" : "awaiting"} /> },
+    { field: "responded_at", headerName: "When", width: 150, valueGetter: (v: any, r: any) => v || r.created_at, valueFormatter: (v: any) => fmtDate(v) },
+  ];
+
   return (
     <>
       <PageTitle title="Patient reviews" right={<ClinicFilter meta={q.data} />} />
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={4}><Card><CardContent>
-          <Typography variant="h4" fontWeight={700}>{stats.avg_rating != null ? stats.avg_rating : "—"} <Typography component="span" color="warning.main">★</Typography></Typography>
-          <Typography variant="caption" color="text.secondary">Average rating</Typography>
-        </CardContent></Card></Grid>
-        <Grid item xs={4}><Card><CardContent>
-          <Typography variant="h4" fontWeight={700}>{stats.responded ?? 0}</Typography>
-          <Typography variant="caption" color="text.secondary">Reviews received</Typography>
-        </CardContent></Card></Grid>
-        <Grid item xs={4}><Card><CardContent>
-          <Typography variant="h4" fontWeight={700}>{rate}%</Typography>
-          <Typography variant="caption" color="text.secondary">Response rate ({stats.responded ?? 0}/{stats.requested ?? 0})</Typography>
-        </CardContent></Card></Grid>
+        <Grid item xs={12} md={4}><KpiCard label="Average rating" color="warning" icon={<StarIcon fontSize="small" />}
+          value={<>{stats.avg_rating != null ? stats.avg_rating : "—"} <Typography component="span" variant="h6" color="warning.main">★</Typography></>} /></Grid>
+        <Grid item xs={12} md={4}><KpiCard label="Reviews received" value={stats.responded ?? 0} color="success" icon={<CheckIcon fontSize="small" />} /></Grid>
+        <Grid item xs={12} md={4}><KpiCard label={`Response rate (${stats.responded ?? 0}/${stats.requested ?? 0})`} value={`${rate}%`} color="info" icon={<PercentIcon fontSize="small" />} /></Grid>
       </Grid>
-      <Card>
-        <Table size="small">
-          <TableHead><TableRow>
-            {showClinic && <TableCell>Clinic</TableCell>}
-            <TableCell>Patient</TableCell><TableCell>Visit</TableCell><TableCell>Rating</TableCell>
-            <TableCell>Comment</TableCell><TableCell>Status</TableCell><TableCell>When</TableCell>
-          </TableRow></TableHead>
-          <TableBody>
-            {rows.map((r: any) => (
-              <TableRow key={r.id} hover>
-                {showClinic && <TableCell><Typography variant="caption" color="text.secondary">{tenant_names[r.tenant_id] || "—"}</Typography></TableCell>}
-                <TableCell>{r.patient_name || "—"}<Typography variant="caption" color="text.secondary" display="block">+{r.wa_user}</Typography></TableCell>
-                <TableCell>{r.service || "—"}<Typography variant="caption" color="text.secondary" display="block">{r.doctor || ""}</Typography></TableCell>
-                <TableCell>{r.rating ? <Rating value={r.rating} readOnly size="small" /> : "—"}</TableCell>
-                <TableCell sx={{ maxWidth: 280, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.comment || ""}</TableCell>
-                <TableCell><Chip size="small" color={r.stage === "done" ? "success" : "warning"} label={r.stage === "done" ? "received" : "awaiting"} /></TableCell>
-                <TableCell><Typography variant="caption" color="text.secondary">{fmtDate(r.responded_at || r.created_at)}</Typography></TableCell>
-              </TableRow>
-            ))}
-            {rows.length === 0 && <TableRow><TableCell colSpan={showClinic ? 7 : 6} align="center" sx={{ py: 6, color: "text.secondary" }}>No reviews yet</TableCell></TableRow>}
-          </TableBody>
-        </Table>
-      </Card>
+      <DataTable rows={rows} columns={cols} />
     </>
   );
 }
