@@ -43,6 +43,35 @@ def test_connector_api_returns_config(db_ready):
     assert "config" in body and "secrets_set" in body
 
 
+def test_save_validates_required_fields(db_ready):
+    tid = _tenant()
+    c = _super_client()
+    # cliniko without api_key → rejected
+    r = c.post(f"/api/tenants/{tid}/connector",
+               json={"config": {"type": "cliniko", "business_id": "b"}})
+    assert r.status_code == 400 and "API key" in r.json()["detail"]
+    # google_calendar without refresh_token → rejected
+    r = c.post(f"/api/tenants/{tid}/connector",
+               json={"config": {"type": "google_calendar", "calendars": {}}})
+    assert r.status_code == 400 and "Refresh token" in r.json()["detail"]
+    # custom_erp / fhir without base_url → rejected
+    assert c.post(f"/api/tenants/{tid}/connector", json={"config": {"type": "custom_erp"}}).status_code == 400
+    assert c.post(f"/api/tenants/{tid}/connector", json={"config": {"type": "fhir"}}).status_code == 400
+    # a malformed map (not an object) → rejected
+    r = c.post(f"/api/tenants/{tid}/connector",
+               json={"config": {**CLINIKO, "api_key": "k", "practitioners": "oops"}})
+    assert r.status_code == 400 and "JSON object" in r.json()["detail"]
+
+
+def test_save_validation_keeps_existing_secret(db_ready):
+    # blank api_key on re-save passes validation because the existing secret is merged in.
+    tid = _tenant()
+    c = _super_client()
+    c.post(f"/api/tenants/{tid}/connector", json={"config": {**CLINIKO, "api_key": "K1"}})
+    r = c.post(f"/api/tenants/{tid}/connector", json={"config": {**CLINIKO, "api_key": ""}})
+    assert r.status_code == 200   # not rejected — secret carried over from existing
+
+
 def test_save_encrypts_at_rest_and_decrypts_on_read(db_ready):
     tid = _tenant()
     r = _super_client().post(f"/api/tenants/{tid}/connector",

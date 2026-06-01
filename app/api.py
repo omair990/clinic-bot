@@ -472,6 +472,39 @@ def _merge_secrets(submitted: dict, existing: dict) -> dict:
     return out
 
 
+def _validate_connector(cfg: dict) -> str | None:
+    """Per-type required-field validation of a (secrets-merged) connector config. Returns an
+    error message, or None if valid. Mirrors the old form builder's rules."""
+    t = cfg.get("type")
+
+    def missing(field: str) -> bool:
+        return not str(cfg.get(field) or "").strip()
+
+    def bad_map(field: str, label: str) -> str | None:
+        v = cfg.get(field)
+        return f"{label} must be a JSON object." if (v is not None and not isinstance(v, dict)) else None
+
+    if t == "google_calendar":
+        if missing("refresh_token"):
+            return "Refresh token is required for Google Calendar."
+        return bad_map("calendars", "Calendars (doctor → calendarId)")
+    if t == "cliniko":
+        if missing("api_key"):
+            return "API key is required for Cliniko."
+        if missing("business_id"):
+            return "Business id is required for Cliniko."
+        return bad_map("practitioners", "Practitioners") or bad_map("appointment_types", "Appointment types")
+    if t == "custom_erp":
+        return "Base URL is required for Custom ERP." if missing("base_url") else None
+    if t == "fhir":
+        if missing("base_url"):
+            return "Base URL is required for FHIR."
+        return bad_map("schedules", "Schedules") or bad_map("practitioners", "Practitioners")
+    if t in (None, "native"):
+        return None
+    return f"Unknown connector type: {t}"
+
+
 @router.get("/tenants/{tenant_id}/connector")
 async def get_connector(request: Request, tenant_id: int):
     _require_super(request)
@@ -491,6 +524,9 @@ async def save_connector(request: Request, tenant_id: int, body: dict = Body(...
     cfg = body.get("config")
     if cfg and (cfg.get("type") or "native") != "native":
         cfg = _merge_secrets(cfg, (t.get("clinic_data") or {}).get("connector") or {})
+        err = _validate_connector(cfg)
+        if err:
+            raise HTTPException(400, err)
     else:
         cfg = None  # native = no external connector
     if body.get("test"):
