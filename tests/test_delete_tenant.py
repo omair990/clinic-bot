@@ -21,8 +21,7 @@ def _super_client():
     from app.config import ADMIN_PASSWORD
     import main
     c = TestClient(main.app)
-    assert c.post("/admin/login", data={"username": "", "password": ADMIN_PASSWORD},
-                  follow_redirects=False).status_code == 303
+    assert c.post("/api/login", json={"username": "", "password": ADMIN_PASSWORD}).status_code == 200
     return c
 
 
@@ -37,9 +36,8 @@ def test_default_tenant_cannot_be_deleted():
     default = db.get_default_tenant()
     assert default, "expected a seeded default tenant"
     c = _super_client()
-    r = c.post(f"/admin/tenants/{default['id']}/delete",
-               data={"confirm_slug": default.get("slug") or "default"},
-               follow_redirects=False)
+    r = c.post(f"/api/tenants/{default['id']}/delete",
+               json={"confirm_slug": default.get("slug") or "default"})
     assert r.status_code == 403
     assert db.get_tenant(default["id"]) is not None      # still there
 
@@ -47,8 +45,7 @@ def test_default_tenant_cannot_be_deleted():
 def test_wrong_slug_is_rejected_and_tenant_survives():
     tid, slug = _make_tenant()
     c = _super_client()
-    r = c.post(f"/admin/tenants/{tid}/delete", data={"confirm_slug": "not-the-slug"},
-               follow_redirects=False)
+    r = c.post(f"/api/tenants/{tid}/delete", json={"confirm_slug": "not-the-slug"})
     assert r.status_code == 400
     assert db.get_tenant(tid) is not None
     db.delete_tenant(tid)  # cleanup
@@ -61,9 +58,8 @@ def test_delete_removes_tenant_and_its_children():
     assert db.recent_history(tid, "966500000000"), "precondition: message logged"
 
     c = _super_client()
-    r = c.post(f"/admin/tenants/{tid}/delete", data={"confirm_slug": slug},
-               follow_redirects=False)
-    assert r.status_code == 303
+    r = c.post(f"/api/tenants/{tid}/delete", json={"confirm_slug": slug})
+    assert r.status_code == 200
     assert db.get_tenant(tid) is None                    # tenant gone
     assert db.recent_history(tid, "966500000000") == []  # child rows gone
 

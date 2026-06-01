@@ -134,8 +134,14 @@ async def overview(request: Request):
 async def dashboard(request: Request):
     """A single clinic's own dashboard stats."""
     scope = _view_scope(request)
+    try:
+        from app.wa_client import auth_failing
+        wa_failing = auth_failing()
+    except Exception:  # noqa: BLE001
+        wa_failing = False
     return {"stats": db.stats(scope),
-            "no_shows_month": db.no_show_count_since(_month_start(), scope)}
+            "no_shows_month": db.no_show_count_since(_month_start(), scope),
+            "wa_send_failing": wa_failing}
 
 
 @router.get("/clinics")

@@ -17,8 +17,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <CssBaseline />
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          {/* Served under /console on this branch; cuts over to /admin at parity. */}
-          <BrowserRouter basename="/console">
+          {/* React console owns /admin (cut over from the legacy Jinja admin). */}
+          <BrowserRouter basename="/admin">
             <App />
           </BrowserRouter>
         </AuthProvider>
