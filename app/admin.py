@@ -22,6 +22,7 @@ from app.config import (
 from app.auth import hash_password, verify_password
 from app.db import (
     admin_set_appointment_status,
+    clinic_overview,
     conversation_thread,
     create_tenant,
     delete_tenant,
@@ -49,6 +50,7 @@ from app.db import (
     set_tenant_status,
     staff_username_taken,
     stats,
+    tenant_usage_row,
     unresolved_event_count,
     update_tenant_config,
     upsert_plan,
@@ -171,6 +173,38 @@ def _scope(request: Request) -> int | None:
     return p["tenant_id"] if p["role"] == "clinic" else None
 
 
+def _view_scope(request: Request) -> int | None:
+    """Effective scope for a viewing/list page. A clinic login is locked to its own tenant;
+    the super-admin sees all clinics, or one when the `?clinic=<id>` filter is set."""
+    p = _require_auth(request)
+    if p["role"] == "clinic":
+        return p["tenant_id"]
+    raw = (request.query_params.get("clinic") or "").strip()
+    return int(raw) if raw.isdigit() else None
+
+
+def _tenant_name_map() -> dict:
+    """{tenant_id: name} for the Clinic column and filter dropdown (never raises)."""
+    try:
+        return {t["id"]: t["name"] for t in list_tenants(current_period(str(TZ)))}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _filter_ctx(request: Request) -> dict:
+    """Clinic-filter context for super-admin list pages; inert for clinic logins (which
+    are locked to their own tenant and never see the picker or the Clinic column)."""
+    if _require_auth(request)["role"] != "super":
+        return {"is_super": False, "clinics": [], "selected_clinic": None, "tenant_names": {}}
+    names = _tenant_name_map()
+    return {
+        "is_super": True,
+        "clinics": [{"id": i, "name": n} for i, n in names.items()],
+        "selected_clinic": _view_scope(request),
+        "tenant_names": names,
+    }
+
+
 def _open_issue_count(request: Request) -> int:
     """Unresolved issues for the sidebar badge — never raises (0 on any error)."""
     try:
@@ -242,7 +276,13 @@ async def do_logout(request: Request):
 
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    _require_auth(request)
+    p = _require_auth(request)
+    # Super-admin lands on a per-clinic overview (one card per clinic); a clinic login
+    # lands on its own single-clinic dashboard.
+    if p["role"] == "super":
+        rows = await asyncio.to_thread(clinic_overview, current_period(str(TZ)), _month_start())
+        return templates.TemplateResponse(
+            "overview.html", {"request": request, "active": "home", "clinics": rows})
     scope = _scope(request)
     return templates.TemplateResponse(
         "home.html", {"request": request, "stats": stats(scope),
@@ -255,7 +295,9 @@ async def conversations(request: Request):
     _require_auth(request)
     return templates.TemplateResponse(
         "conversations.html",
-        {"request": request, "rows": list_conversations(tenant_id=_scope(request))},
+        {"request": request, "active": "conv",
+         "rows": list_conversations(tenant_id=_view_scope(request)),
+         **_filter_ctx(request)},
     )
 
 
@@ -357,8 +399,9 @@ async def appointments(request: Request, status: str | None = None):
     _require_auth(request)
     return templates.TemplateResponse(
         "appointments.html",
-        {"request": request, "rows": list_appointments(status, tenant_id=_scope(request)),
-         "filter_status": status},
+        {"request": request, "active": "appt",
+         "rows": list_appointments(status, tenant_id=_view_scope(request)),
+         "filter_status": status, **_filter_ctx(request)},
     )
 
 
@@ -396,17 +439,18 @@ async def update_appointment(request: Request, appointment_id: int, status: str 
 @router.get("/no-shows", response_class=HTMLResponse)
 async def no_shows_page(request: Request):
     _require_auth(request)
-    scope = _scope(request)
+    scope = _view_scope(request)
     since = _month_start()
     return templates.TemplateResponse(
         "no_shows.html",
-        {"request": request,
+        {"request": request, "active": "noshow",
          "rows": list_no_show_followups(tenant_id=scope),
          "month_count": no_show_count_since(since, scope),
          "reasons": no_show_reason_breakdown(since, scope),
          "risk": risk_band_counts(scope),
          "predictor_on": NO_SHOW_PREDICTOR,
-         "auto_send": NO_SHOW_AUTO_SEND},
+         "auto_send": NO_SHOW_AUTO_SEND,
+         **_filter_ctx(request)},
     )
 
 
@@ -449,20 +493,36 @@ def _render_plans(request: Request, *, error: str | None = None, status_code: in
 @router.get("/reviews", response_class=HTMLResponse)
 async def reviews_page(request: Request):
     _require_auth(request)
-    scope = _scope(request)
+    scope = _view_scope(request)
     return templates.TemplateResponse(
         "reviews.html",
-        {"request": request, "rows": list_reviews(tenant_id=scope),
-         "stats": review_stats(scope)})
+        {"request": request, "active": "reviews", "rows": list_reviews(tenant_id=scope),
+         "stats": review_stats(scope), **_filter_ctx(request)})
 
 
 @router.get("/insights", response_class=HTMLResponse)
 async def insights_page(request: Request, period: str = "day"):
     _require_auth(request)
-    scope = _scope(request)
+    scope = _view_scope(request)
     report = await asyncio.to_thread(insights_mod.report, scope, period, str(TZ))
     return templates.TemplateResponse(
-        "insights.html", {"request": request, "report": report})
+        "insights.html", {"request": request, "active": "insights", "report": report,
+                          "period": period, **_filter_ctx(request)})
+
+
+@router.get("/usage", response_class=HTMLResponse)
+async def usage_page(request: Request):
+    """A clinic's read-only view of its own plan usage vs. quota, with a near-limit warning.
+    Super-admins use the richer cross-clinic /plans page instead."""
+    p = _require_auth(request)
+    if p["role"] != "clinic":
+        return RedirectResponse("/admin/plans", status_code=303)
+    period = current_period(str(TZ))
+    return templates.TemplateResponse(
+        "usage.html",
+        {"request": request, "active": "usage", "period": period,
+         "usage": tenant_usage_row(p["tenant_id"], period)},
+    )
 
 
 def _build_connector_config(ctype: str, form, existing: dict):
@@ -874,21 +934,21 @@ async def edit_tenant(request: Request, tenant_id: int,
 
 @router.get("/logs", response_class=HTMLResponse)
 async def logs_page(request: Request, show: str = "open"):
-    _require_auth(request)
-    scope = _scope(request)
+    _require_super(request)   # Issues/incidents are platform-admin only, never per-clinic
+    scope = _view_scope(request)   # super can still filter issues to one clinic
     resolved = {"open": False, "resolved": True}.get(show, None)
     return templates.TemplateResponse(
         "logs.html",
-        {"request": request, "show": show,
+        {"request": request, "active": "logs", "show": show,
          "events": list_events(resolved=resolved, tenant_id=scope),
-         "open_count": unresolved_event_count(scope)},
+         "open_count": unresolved_event_count(scope), **_filter_ctx(request)},
     )
 
 
 @router.post("/logs/{event_id}/resolve")
 async def resolve_log(request: Request, event_id: int):
-    scope = _scope(request)
-    resolve_event(event_id, tenant_id=scope)  # clinic can only resolve its own
+    _require_super(request)   # Issues are platform-admin only
+    resolve_event(event_id, tenant_id=None)
     return RedirectResponse(request.headers.get("referer", "/admin/logs"), status_code=303)
 
 

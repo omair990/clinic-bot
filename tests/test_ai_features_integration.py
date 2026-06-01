@@ -586,3 +586,64 @@ def test_run_digests_skips_before_send_hour(monkeypatch):
     early = datetime(2026, 6, 2, 6, 0, tzinfo=TZ)             # 06:00 < 08:00 send hour
     asyncio.run(insights.run_digests(early))
     assert [s for s in sent if s[0] == owner] == []
+
+
+# --- Clinic-wise admin views (overview, usage, issues access control) ---
+def _clinic_client(tenant_id: int):
+    """A TestClient logged in as a clinic staff user for `tenant_id`."""
+    from fastapi.testclient import TestClient
+    from app.auth import hash_password
+    import main
+    uname = "staff-" + uuid.uuid4().hex[:8]
+    db.set_tenant_credentials(tenant_id, uname, hash_password("pw-123"))
+    c = TestClient(main.app)
+    r = c.post("/admin/login", data={"username": uname, "password": "pw-123"},
+               follow_redirects=False)
+    assert r.status_code == 303, "clinic login failed"
+    return c
+
+
+def test_overview_is_super_admin_landing():
+    c = _super_client()
+    r = c.get("/admin/")
+    assert r.status_code == 200 and "Clinics overview" in r.text
+
+
+def test_super_list_pages_have_clinic_filter():
+    c = _super_client()
+    for path in ("/admin/conversations", "/admin/appointments", "/admin/reviews",
+                 "/admin/no-shows"):
+        r = c.get(path)
+        assert r.status_code == 200 and "All clinics" in r.text, path
+
+
+def test_clinic_login_lands_on_own_dashboard_not_overview():
+    c = _clinic_client(_tenant())
+    r = c.get("/admin/")
+    assert r.status_code == 200
+    assert "Clinics overview" not in r.text   # not the super overview
+    assert "Live activity" in r.text          # its own single-clinic dashboard
+
+
+def test_issues_are_super_admin_only():
+    c = _clinic_client(_tenant())
+    assert c.get("/admin/logs").status_code == 403          # hidden from clinics
+    assert _super_client().get("/admin/logs").status_code == 200
+
+
+def test_clinic_usage_page_renders():
+    c = _clinic_client(_tenant())
+    r = c.get("/admin/usage")
+    assert r.status_code == 200 and "usage" in r.text.lower()
+
+
+def test_clinic_cannot_see_other_clinic_via_filter():
+    # A clinic login is locked to its own tenant; the ?clinic= filter must be ignored.
+    mine, other = _tenant(), _tenant()
+    u = _user()
+    db.create_appointment(other, u, "Other Pt", "+1", "Dr. X", "Consult",
+                          datetime(2026, 6, 9, 10, 0, tzinfo=TZ),
+                          datetime(2026, 6, 9, 10, 30, tzinfo=TZ))
+    c = _clinic_client(mine)
+    r = c.get(f"/admin/appointments?clinic={other}")
+    assert r.status_code == 200 and "Other Pt" not in r.text   # cross-clinic leak blocked

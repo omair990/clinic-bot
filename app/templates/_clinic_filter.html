@@ -1,0 +1,12 @@
+{# Super-admin clinic filter. Inert for clinic logins (is_super is false). #}
+{% if is_super %}
+<form method="get" class="mb-4 flex items-center gap-2 text-sm">
+  <label class="text-slate-500">Clinic</label>
+  <select name="clinic" onchange="this.form.submit()" class="border rounded px-2 py-1 bg-white">
+    <option value="">All clinics</option>
+    {% for c in clinics %}
+    <option value="{{ c.id }}" {% if selected_clinic == c.id %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+</form>
+{% endif %}

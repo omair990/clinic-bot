@@ -30,10 +30,13 @@
   </div>
 </div>
 
+{% include "_clinic_filter.html" %}
+{% set show_clinic = is_super and not selected_clinic %}
 <div class="bg-white rounded-lg shadow overflow-hidden">
   <table class="w-full text-sm">
     <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
       <tr>
+        {% if show_clinic %}<th class="text-left px-4 py-2">Clinic</th>{% endif %}
         <th class="text-left px-4 py-2">Patient</th>
         <th class="text-left px-4 py-2">Visit</th>
         <th class="text-left px-4 py-2">Rating</th>
@@ -45,6 +48,7 @@
     <tbody class="divide-y">
       {% for r in rows %}
       <tr>
+        {% if show_clinic %}<td class="px-4 py-3 text-xs text-slate-500">{{ tenant_names.get(r.tenant_id, '—') }}</td>{% endif %}
         <td class="px-4 py-3">
           {{ r.patient_name or '—' }}
           <a class="block text-xs text-slate-400 hover:underline" href="/admin/conversations/{{ r.wa_user }}">+{{ r.wa_user }}</a>
@@ -63,7 +67,7 @@
         <td class="px-4 py-3 text-slate-500 text-xs">{{ (r.responded_at or r.created_at) | fmt_dt }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400 text-sm">No reviews yet</td></tr>
+      <tr><td colspan="{{ 7 if show_clinic else 6 }}" class="px-4 py-8 text-center text-slate-400 text-sm">No reviews yet</td></tr>
       {% endfor %}
     </tbody>
   </table>

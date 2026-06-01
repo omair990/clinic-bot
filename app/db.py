@@ -914,7 +914,7 @@ def get_followup(followup_id: int, tenant_id: int | None = None) -> dict | None:
 
 
 def list_no_show_followups(tenant_id: int | None = None, limit: int = 200) -> list[dict]:
-    sql = ("SELECT f.id, f.appointment_id, f.wa_user, f.stage, f.outcome, f.reason, "
+    sql = ("SELECT f.id, f.tenant_id, f.appointment_id, f.wa_user, f.stage, f.outcome, f.reason, "
            "f.risk_score, f.risk_band, f.created_at, f.notified_at, "
            "a.doctor, a.service, a.start_at, a.patient_name "
            "FROM no_show_followups f JOIN appointments a ON a.id = f.appointment_id")
@@ -991,6 +991,7 @@ def list_conversations(limit: int = 100, tenant_id: int | None = None) -> list[d
     with get_conn() as conn:
         rows = conn.execute(
             f"""SELECT c.wa_user,
+                      MAX(c.tenant_id) AS tenant_id,
                       MAX(c.created_at) AS last_at,
                       COUNT(*) AS msg_count,
                       bool_or(c.needs_human) AS needs_human,
@@ -1043,8 +1044,8 @@ def conversation_thread(wa_user: str, limit: int = 200,
 
 def list_appointments(status: str | None = None, limit: int = 200,
                       tenant_id: int | None = None) -> list[dict]:
-    sql = ("SELECT id, wa_user, patient_name, phone, doctor, service, start_at, end_at, "
-           "status, notes, extra, risk_score, risk_band, created_at FROM appointments")
+    sql = ("SELECT id, tenant_id, wa_user, patient_name, phone, doctor, service, start_at, "
+           "end_at, status, notes, extra, risk_score, risk_band, created_at FROM appointments")
     clauses, params = [], []
     if tenant_id is not None:
         clauses.append("tenant_id = %s")
@@ -1199,7 +1200,7 @@ def record_review(tenant_id: int, appointment_id: int, rating: int,
 
 
 def list_reviews(tenant_id: int | None = None, limit: int = 200) -> list[dict]:
-    sql = ("SELECT r.id, r.wa_user, r.rating, r.comment, r.stage, r.responded_at, "
+    sql = ("SELECT r.id, r.tenant_id, r.wa_user, r.rating, r.comment, r.stage, r.responded_at, "
            "r.created_at, a.doctor, a.service, a.patient_name "
            "FROM reviews r JOIN appointments a ON a.id = r.appointment_id")
     params: list = []
@@ -1425,6 +1426,65 @@ def list_tenants(period: str) -> list[dict]:
             "ORDER BY t.id",
             (period,),
         ).fetchall()
+
+
+def tenant_usage_row(tenant_id: int, period: str) -> dict | None:
+    """A single tenant's plan + usage for `period` — the read-only usage a clinic sees."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT t.id, t.name, t.slug, t.status, "
+            "       p.name AS plan_name, p.monthly_text_quota, p.voice_enabled, "
+            "       p.monthly_voice_quota, "
+            "       COALESCE(u.text_count, 0) AS text_count, "
+            "       COALESCE(u.voice_count, 0) AS voice_count "
+            "FROM tenants t LEFT JOIN plans p ON p.id = t.plan_id "
+            "LEFT JOIN tenant_usage u ON u.tenant_id = t.id AND u.period = %s "
+            "WHERE t.id = %s",
+            (period, tenant_id),
+        ).fetchone()
+
+
+def clinic_overview(period: str, since: datetime) -> list[dict]:
+    """One row per clinic for the super-admin overview: plan/usage plus at-a-glance
+    counts (open issues, review average, no-shows since `since`, upcoming appointments)."""
+    with get_conn() as conn:
+        tenants = conn.execute(
+            "SELECT t.id, t.name, t.slug, t.status, "
+            "       p.name AS plan_name, p.monthly_text_quota, p.voice_enabled, "
+            "       p.monthly_voice_quota, "
+            "       COALESCE(u.text_count, 0) AS text_count, "
+            "       COALESCE(u.voice_count, 0) AS voice_count "
+            "FROM tenants t LEFT JOIN plans p ON p.id = t.plan_id "
+            "LEFT JOIN tenant_usage u ON u.tenant_id = t.id AND u.period = %s "
+            "ORDER BY t.id",
+            (period,),
+        ).fetchall()
+        issues = {r["tenant_id"]: r["n"] for r in conn.execute(
+            "SELECT tenant_id, COUNT(*) AS n FROM system_events "
+            "WHERE resolved = FALSE GROUP BY tenant_id").fetchall()}
+        reviews = {r["tenant_id"]: r for r in conn.execute(
+            "SELECT tenant_id, AVG(rating) AS avg_rating, "
+            "COUNT(*) FILTER (WHERE rating IS NOT NULL) AS n "
+            "FROM reviews GROUP BY tenant_id").fetchall()}
+        noshows = {r["tenant_id"]: r["n"] for r in conn.execute(
+            "SELECT tenant_id, COUNT(*) AS n FROM no_show_followups "
+            "WHERE created_at >= %s GROUP BY tenant_id", (since,)).fetchall()}
+        upcoming = {r["tenant_id"]: r["n"] for r in conn.execute(
+            "SELECT tenant_id, COUNT(*) AS n FROM appointments "
+            "WHERE status = 'confirmed' AND start_at >= now() GROUP BY tenant_id").fetchall()}
+    out = []
+    for t in tenants:
+        tid = t["id"]
+        rv = reviews.get(tid)
+        out.append({
+            **t,
+            "open_issues": issues.get(tid, 0),
+            "reviews_avg": float(rv["avg_rating"]) if rv and rv["avg_rating"] is not None else None,
+            "reviews_count": rv["n"] if rv else 0,
+            "no_shows_month": noshows.get(tid, 0),
+            "upcoming_appts": upcoming.get(tid, 0),
+        })
+    return out
 
 
 def set_tenant_plan(tenant_id: int, plan_id: int) -> None:
