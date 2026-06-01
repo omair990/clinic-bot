@@ -36,6 +36,24 @@ function clock(iso?: string | null) {
   return isNaN(d.getTime()) ? "" : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+// Render WhatsApp / markdown inline formatting the same way the patient sees it on WhatsApp:
+// **bold** or *bold*, _italic_, ~strike~, `mono`. Output is React nodes (never raw HTML),
+// so patient/AI text can't inject markup. Newlines are preserved by the bubble's pre-wrap.
+const FMT = /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+function formatText(text: string) {
+  return text.split(FMT).map((part, i) => {
+    if (!part) return null;
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("*") && part.endsWith("*")) return <strong key={i}>{part.slice(1, -1)}</strong>;
+    if (part.startsWith("_") && part.endsWith("_")) return <em key={i}>{part.slice(1, -1)}</em>;
+    if (part.startsWith("~") && part.endsWith("~")) return <s key={i}>{part.slice(1, -1)}</s>;
+    if (part.startsWith("`") && part.endsWith("`")) return (
+      <Box component="code" key={i} sx={{ fontFamily: "monospace", fontSize: "0.92em", px: 0.5,
+        borderRadius: 0.75, bgcolor: "rgba(127,127,127,.18)" }}>{part.slice(1, -1)}</Box>);
+    return <span key={i}>{part}</span>;
+  });
+}
+
 type Msg = { id: any; direction: "in" | "out"; message: string; created_at: string; source?: string; _live?: boolean };
 
 // Group consecutive same-direction messages (within GROUP_GAP_MS) and flag day breaks,
@@ -83,7 +101,7 @@ function Bubble({ m, isFirst, isLast }: { m: Msg; isFirst: boolean; isLast: bool
           background: inb ? undefined : "linear-gradient(180deg,#0A84FF 0%,#0066FF 100%)",
         }}>
           <Typography sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 15, lineHeight: 1.35, fontFamily: APPLE_FONT }}>
-            {m.message}
+            {formatText(m.message)}
           </Typography>
         </Box>
         {isLast && (
