@@ -122,7 +122,7 @@ app.include_router(api_router)      # JSON API for the React console (/api/*)
 # --- React console (built SPA) served under /admin -----------------------------------------
 # Present only when the Vite build has been produced (frontend/dist) — so local dev / tests
 # without a build are unaffected. A catch-all serves index.html for client-side routes.
-_SPA_DIST = (BASE_DIR.parent if (BASE_DIR / "templates").exists() else BASE_DIR) / "frontend" / "dist"
+_SPA_DIST = BASE_DIR.parent / "frontend" / "dist"   # BASE_DIR is app/, repo root is its parent
 if _SPA_DIST.is_dir():
     from fastapi.responses import FileResponse
 

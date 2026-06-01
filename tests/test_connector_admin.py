@@ -1,62 +1,10 @@
-"""Admin connector configuration: the config builder (unit) and the full save/test/mask
-flow via the real routes. DB/route tests auto-skip without Postgres."""
+"""Connector configuration via the /api routes: save / test / secret-mask flow.
+Auto-skips without Postgres."""
 import uuid
 
 import pytest
 
-from app import admin, db
-
-
-# --- _build_connector_config (pure) ---
-
-def test_build_native_clears_connector():
-    cfg, err = admin._build_connector_config("native", {}, {})
-    assert cfg is None and err is None
-
-
-def test_build_google_requires_refresh_token():
-    cfg, err = admin._build_connector_config("google_calendar", {"g_calendars": "{}"}, {})
-    assert cfg is None and "Refresh token" in err
-
-
-def test_build_keeps_existing_secret_when_blank():
-    cfg, err = admin._build_connector_config(
-        "google_calendar", {"g_calendars": '{"Dr. A": "cal1"}'}, {"refresh_token": "EXISTING"})
-    assert err is None
-    assert cfg["refresh_token"] == "EXISTING" and cfg["calendars"] == {"Dr. A": "cal1"}
-
-
-def test_build_cliniko_validates_required_fields():
-    _, err = admin._build_connector_config("cliniko", {"c_api_key": "k"}, {})
-    assert "Business id" in err
-    cfg, err = admin._build_connector_config("cliniko", {"c_api_key": "k", "c_business_id": "b"}, {})
-    assert err is None and cfg["type"] == "cliniko" and cfg["api_key"] == "k"
-
-
-def test_build_rejects_bad_json_map():
-    cfg, err = admin._build_connector_config(
-        "cliniko", {"c_api_key": "k", "c_business_id": "b", "c_practitioners": "{bad"}, {})
-    assert cfg is None and "invalid JSON" in err
-
-
-def test_build_erp_and_fhir():
-    cfg, err = admin._build_connector_config(
-        "custom_erp", {"e_base_url": "https://x", "e_auth_type": "bearer", "e_token": "T"}, {})
-    assert err is None and cfg["base_url"] == "https://x" and cfg["auth"]["token"] == "T"
-    cfg, err = admin._build_connector_config(
-        "fhir", {"f_base_url": "https://f", "f_auth_type": "bearer", "f_token": "T",
-                 "f_booking_status": "proposed"}, {})
-    assert err is None and cfg["booking_status"] == "proposed" and cfg["auth"]["token"] == "T"
-
-
-def test_build_includes_webhook_secret_and_keeps_on_blank():
-    cfg, err = admin._build_connector_config(
-        "cliniko", {"c_api_key": "k", "c_business_id": "b", "webhook_secret": "WS"}, {})
-    assert err is None and cfg["webhook_secret"] == "WS"
-    cfg, _ = admin._build_connector_config(
-        "cliniko", {"c_api_key": "", "c_business_id": "b", "webhook_secret": ""},
-        {"api_key": "k", "business_id": "b", "webhook_secret": "OLD"})
-    assert cfg["webhook_secret"] == "OLD"          # kept when blank
+from app import db
 
 
 # --- routes (DB + TestClient) ---
