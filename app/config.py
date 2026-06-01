@@ -82,7 +82,8 @@ AI_PROVIDERS = [
     p.strip()
     for p in os.environ.get(
         "AI_PROVIDERS",
-        "claude,mistral").split(",")
+        # Claude primary; Gemini ahead of Mistral as the stronger, better-grounded fallback.
+        "claude,gemini,mistral").split(",")
     if p.strip()
 ]
 
