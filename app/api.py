@@ -6,16 +6,19 @@ Mirrors the data and actions of the legacy Jinja admin, but returns JSON and use
 cookie just works. Tenant scoping mirrors the Jinja admin: a clinic login is locked to its
 own tenant; the super-admin sees everything, or one clinic via the `clinic` query param.
 """
+import json
 import logging
 from datetime import datetime
 
+import psycopg
 from fastapi import APIRouter, Body, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
 
+from app import clinic_schema as cs
+from app import connectors as connectors_mod
 from app import db
 from app import insights as insights_mod
 from app import no_show as no_show_mod
-from app.auth import verify_password
+from app.auth import hash_password, verify_password
 from app.config import (
     ADMIN_PASSWORD,
     NO_SHOW_AUTO_SEND,
@@ -341,6 +344,178 @@ async def logs(request: Request, show: str = Query("open")):
 async def resolve_log(request: Request, event_id: int):
     _require_super(request)
     db.resolve_event(event_id, tenant_id=None)
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- tenants
+def _parse_clinic_data(raw: str):
+    """('normalized dict' | None, warnings). Raises HTTPException(400) on JSON/schema errors."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None, []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(400, f"Invalid JSON: {e}")
+    norm, errors, warnings = cs.validate_and_normalize(data)
+    if errors:
+        raise HTTPException(400, "Clinic data invalid — " + "; ".join(errors))
+    return norm, warnings
+
+
+@router.get("/tenants/{tenant_id}")
+async def get_tenant(request: Request, tenant_id: int):
+    _require_super(request)
+    t = db.get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    data = t.get("clinic_data") or {}
+    return {
+        "id": t["id"], "name": t.get("name"), "slug": t.get("slug"),
+        "wa_phone_number_id": t.get("wa_phone_number_id") or "",
+        "timezone": t.get("timezone") or "Asia/Riyadh",
+        "staff_username": t.get("staff_username") or "",
+        "has_wa_access_token": bool(t.get("wa_access_token")),
+        "clinic_data": json.dumps(data, indent=2, ensure_ascii=False),
+        "connector_type": (data.get("connector") or {}).get("type", "native"),
+        "is_default": tenant_id == 1 or t.get("slug") == "default",
+    }
+
+
+@router.post("/tenants")
+async def create_tenant(request: Request, body: dict = Body(...)):
+    _require_super(request)
+    uname = (body.get("staff_username") or "").strip() or None
+    if uname and db.staff_username_taken(uname):
+        raise HTTPException(409, f'Staff username "{uname}" is already in use.')
+    parsed, _w = _parse_clinic_data(body.get("clinic_data") or "")
+    try:
+        tid = db.create_tenant(
+            (body.get("name") or "").strip(), (body.get("slug") or "").strip(),
+            (body.get("wa_phone_number_id") or "").strip() or None,
+            int(body["plan_id"]), (body.get("timezone") or "Asia/Riyadh").strip() or "Asia/Riyadh",
+            (body.get("wa_access_token") or "").strip() or None, parsed)
+    except psycopg.errors.UniqueViolation:
+        raise HTTPException(409, "Slug, WhatsApp number, or staff username already in use.")
+    if uname:
+        db.set_tenant_credentials(tid, uname, hash_password(body.get("staff_password") or "") if body.get("staff_password") else None)
+    return {"id": tid}
+
+
+@router.post("/tenants/{tenant_id}/edit")
+async def edit_tenant(request: Request, tenant_id: int, body: dict = Body(...)):
+    _require_super(request)
+    if not db.get_tenant(tenant_id):
+        raise HTTPException(404, "Tenant not found")
+    uname = (body.get("staff_username") or "").strip() or None
+    parsed, warnings = _parse_clinic_data(body.get("clinic_data") or "")
+    if uname and db.staff_username_taken(uname, exclude_tenant_id=tenant_id):
+        raise HTTPException(409, f'Staff username "{uname}" is already in use.')
+    db.update_tenant_config(
+        tenant_id, name=(body.get("name") or "").strip(),
+        wa_phone_number_id=(body.get("wa_phone_number_id") or "").strip() or None,
+        wa_access_token=(body.get("wa_access_token") or "").strip() or None,
+        timezone=(body.get("timezone") or "Asia/Riyadh").strip() or "Asia/Riyadh",
+        clinic_data=parsed)
+    pw = body.get("staff_password") or ""
+    try:
+        db.set_tenant_credentials(tenant_id, uname, hash_password(pw) if pw.strip() else None)
+    except psycopg.errors.UniqueViolation:
+        raise HTTPException(409, f'Staff username "{uname}" is already in use.')
+    return {"ok": True, "warnings": warnings}
+
+
+@router.post("/tenants/{tenant_id}/delete")
+async def delete_tenant(request: Request, tenant_id: int, body: dict = Body(...)):
+    _require_super(request)
+    t = db.get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    if tenant_id == 1 or t.get("slug") == "default":
+        raise HTTPException(403, "The default tenant cannot be deleted.")
+    if (body.get("confirm_slug") or "").strip() != t.get("slug"):
+        raise HTTPException(400, f'Type the slug "{t.get("slug")}" to confirm deletion.')
+    cleared = db.delete_tenant(tenant_id)
+    log.warning("Tenant %s (%s) hard-deleted via API; cleared %s table(s)", tenant_id, t.get("slug"), cleared)
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- connector
+_SECRET_FIELDS = ("api_key", "refresh_token", "token", "value", "client_secret", "webhook_secret")
+
+
+def _redact(cfg: dict) -> dict:
+    """Mask secret values (top-level + nested auth) but report which are set."""
+    out = json.loads(json.dumps(cfg or {}))
+    secrets_set = []
+    for d, prefix in ((out, ""), (out.get("auth") or {}, "auth.")):
+        for f in _SECRET_FIELDS:
+            if d.get(f):
+                secrets_set.append(prefix + f)
+                d[f] = ""
+    return {"config": out, "secrets_set": secrets_set}
+
+
+def _merge_secrets(submitted: dict, existing: dict) -> dict:
+    """Carry over existing secrets where the submitted value is blank (blank = keep)."""
+    out = json.loads(json.dumps(submitted or {}))
+    for d, e in ((out, existing or {}), (out.get("auth") or {}, (existing or {}).get("auth") or {})):
+        for f in _SECRET_FIELDS:
+            if f in d and not d.get(f) and e.get(f):
+                d[f] = e[f]
+    return out
+
+
+@router.get("/tenants/{tenant_id}/connector")
+async def get_connector(request: Request, tenant_id: int):
+    _require_super(request)
+    t = db.get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    conn = (t.get("clinic_data") or {}).get("connector") or {}
+    return {"tenant_id": tenant_id, "name": t.get("name"), **_redact(conn)}
+
+
+@router.post("/tenants/{tenant_id}/connector")
+async def save_connector(request: Request, tenant_id: int, body: dict = Body(...)):
+    _require_super(request)
+    t = db.get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    cfg = body.get("config")
+    if cfg and (cfg.get("type") or "native") != "native":
+        cfg = _merge_secrets(cfg, (t.get("clinic_data") or {}).get("connector") or {})
+    else:
+        cfg = None  # native = no external connector
+    if body.get("test"):
+        synthetic = {"id": tenant_id, "clinic_data": {"connector": cfg} if cfg else {}}
+        try:
+            result = await _to_thread(lambda s: connectors_mod.probe(connectors_mod.get_connector(s)), synthetic)
+        except Exception as e:  # noqa: BLE001
+            result = {"ok": False, "detail": str(e)[:300]}
+        return {"tested": True, "result": result}
+    db.set_tenant_connector(tenant_id, cfg)
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- settings
+@router.get("/settings")
+async def get_settings(request: Request):
+    _require_super(request)
+    from app import settings as settings_mod
+    editable = {k: {"value": settings_mod.get(k) or "", "label": lbl, "group": grp}
+                for k, (lbl, grp) in settings_mod.EDITABLE.items()}
+    return {"editable": editable, "inventory": settings_mod.inventory_status()}
+
+
+@router.post("/settings")
+async def save_settings(request: Request, body: dict = Body(...)):
+    _require_super(request)
+    from app import settings as settings_mod
+    values = body.get("values") or {}
+    for key in settings_mod.EDITABLE:
+        if key in values:
+            settings_mod.set_value(key, (values.get(key) or "").strip() or None)
     return {"ok": True}
 
 

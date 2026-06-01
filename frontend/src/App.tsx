@@ -13,6 +13,9 @@ import Insights from "./pages/Insights";
 import Usage from "./pages/Usage";
 import Plans from "./pages/Plans";
 import Issues from "./pages/Issues";
+import TenantEdit from "./pages/TenantEdit";
+import Connector from "./pages/Connector";
+import Settings from "./pages/Settings";
 
 function Splash() {
   return (
@@ -48,6 +51,9 @@ export default function App() {
         {!isSuper && <Route path="/usage" element={<Usage />} />}
         {isSuper && <Route path="/plans" element={<Plans />} />}
         {isSuper && <Route path="/issues" element={<Issues />} />}
+        {isSuper && <Route path="/settings" element={<Settings />} />}
+        {isSuper && <Route path="/tenants/:id" element={<TenantEdit />} />}
+        {isSuper && <Route path="/tenants/:id/connector" element={<Connector />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

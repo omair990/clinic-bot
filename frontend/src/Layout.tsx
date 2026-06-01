@@ -12,6 +12,7 @@ import StarIcon from "@mui/icons-material/Star";
 import SpeedIcon from "@mui/icons-material/Speed";
 import LayersIcon from "@mui/icons-material/Layers";
 import ReportProblemIcon from "@mui/icons-material/ReportProblem";
+import SettingsIcon from "@mui/icons-material/Settings";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useAuth } from "./auth";
 
@@ -36,6 +37,7 @@ export default function Layout() {
     ...(isSuper ? [
       { label: "Issues", to: "/issues", icon: <ReportProblemIcon /> },
       { label: "Plans & Usage", to: "/plans", icon: <LayersIcon /> },
+      { label: "Settings", to: "/settings", icon: <SettingsIcon /> },
     ] : []),
   ];
 
