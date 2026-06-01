@@ -9,3 +9,6 @@ __pycache__
 clinic.db
 tests
 *.md
+frontend/node_modules
+frontend/dist
+e2e/node_modules
