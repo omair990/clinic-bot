@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, Grid, Chip, Button, Typography, Box, Stack } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
 import { BarChart } from "@mui/x-charts/BarChart";
@@ -9,6 +10,7 @@ import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
 
 export default function NoShows() {
+  const nav = useNavigate();
   const [clinic] = useClinic();
   const qc = useQueryClient();
   const toast = useToast();
@@ -72,7 +74,8 @@ export default function NoShows() {
           </CardContent></Card>
         </Grid>
       </Grid>
-      <DataTable rows={rows} columns={cols} loading={act.isPending} />
+      <DataTable rows={rows} columns={cols} loading={act.isPending}
+        onRowClick={(r) => nav(`/patients/${r.wa_user}`)} />
     </>
   );
 }

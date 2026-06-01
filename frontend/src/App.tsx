@@ -5,7 +5,8 @@ import Layout from "./Layout";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Conversations from "./pages/Conversations";
-import ConversationDetail from "./pages/ConversationDetail";
+import PatientDetail from "./pages/PatientDetail";
+import ClinicDetail from "./pages/ClinicDetail";
 import Appointments from "./pages/Appointments";
 import NoShows from "./pages/NoShows";
 import Reviews from "./pages/Reviews";
@@ -43,7 +44,9 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
         <Route path="/conversations" element={<Conversations />} />
-        <Route path="/conversations/:wa" element={<ConversationDetail />} />
+        <Route path="/patients/:wa" element={<PatientDetail />} />
+        <Route path="/conversations/:wa" element={<PatientDetail />} />
+        {isSuper && <Route path="/clinics/:id" element={<ClinicDetail />} />}
         <Route path="/appointments" element={<Appointments />} />
         <Route path="/no-shows" element={<NoShows />} />
         <Route path="/insights" element={<Insights />} />

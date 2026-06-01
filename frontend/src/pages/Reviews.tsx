@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { Grid, Chip, Rating, Typography } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
 import StarIcon from "@mui/icons-material/StarRounded";
@@ -6,6 +7,7 @@ import PercentIcon from "@mui/icons-material/PercentOutlined";
 import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, KpiCard } from "../lib";
 
 export default function Reviews() {
+  const nav = useNavigate();
   const [clinic] = useClinic();
   const q = useApiQuery<any>(["reviews", clinic], `/reviews?clinic=${clinic}`);
   if (q.isLoading) return <><PageTitle title="Patient reviews" /><TableSkeleton /></>;
@@ -33,7 +35,7 @@ export default function Reviews() {
         <Grid item xs={12} md={4}><KpiCard label="Reviews received" value={stats.responded ?? 0} color="success" icon={<CheckIcon fontSize="small" />} /></Grid>
         <Grid item xs={12} md={4}><KpiCard label={`Response rate (${stats.responded ?? 0}/${stats.requested ?? 0})`} value={`${rate}%`} color="info" icon={<PercentIcon fontSize="small" />} /></Grid>
       </Grid>
-      <DataTable rows={rows} columns={cols} />
+      <DataTable rows={rows} columns={cols} onRowClick={(r) => nav(`/patients/${r.wa_user}`)} />
     </>
   );
 }

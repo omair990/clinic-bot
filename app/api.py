@@ -144,6 +144,24 @@ async def dashboard(request: Request):
             "wa_send_failing": wa_failing}
 
 
+@router.get("/clinics/{tenant_id}")
+async def clinic_detail(request: Request, tenant_id: int):
+    """Single-clinic profile: at-a-glance metrics, usage, trend, recent activity."""
+    _require_super(request)
+    period = current_period(str(TZ))
+    ov = next((c for c in db.clinic_overview(period, _month_start()) if c["id"] == tenant_id), None)
+    if not ov:
+        raise HTTPException(404, "Clinic not found")
+    return {
+        "clinic": ov,
+        "stats": db.stats(tenant_id),
+        "trends": db.daily_message_counts(14, tenant_id),
+        "review_stats": db.review_stats(tenant_id),
+        "recent_appointments": db.list_appointments(None, tenant_id=tenant_id)[:8],
+        "recent_reviews": db.list_reviews(tenant_id=tenant_id)[:6],
+    }
+
+
 @router.get("/trends")
 async def trends(request: Request):
     """Real daily inbound-message series (last 14 days) for dashboard sparklines."""
@@ -185,6 +203,33 @@ def analysis_for(wa_user: str, tenant_id: int | None):
     if not tenant_id:
         return None
     return analysis_mod.get_or_build(tenant_id, wa_user)
+
+
+@router.get("/patients/{wa_user}")
+async def patient(request: Request, wa_user: str):
+    """360° patient profile: profile + conversation + appointments + reviews + no-shows."""
+    scope = _view_scope(request)
+    tid = scope if scope is not None else db.tenant_id_for_user(wa_user)
+    if tid is None:
+        raise HTTPException(404, "Unknown patient")
+    analysis = None
+    try:
+        from app import analysis as analysis_mod
+        analysis = analysis_mod.get_or_build(tid, wa_user)
+    except Exception:  # noqa: BLE001
+        pass
+    return {
+        "wa_user": wa_user,
+        "tenant_id": tid,
+        "clinic": _tenant_names().get(tid),
+        "name": db.get_patient_name(tid, wa_user),
+        "message_count": db.message_count(tid, wa_user),
+        "analysis": analysis,
+        "messages": db.conversation_thread(wa_user, tenant_id=tid),
+        "appointments": db.appointments_for_user(tid, wa_user),
+        "reviews": db.reviews_for_user(tid, wa_user),
+        "no_shows": db.no_shows_for_user(tid, wa_user),
+    }
 
 
 @router.post("/conversations/{wa_user}/analysis/refresh")

@@ -39,7 +39,7 @@ export default function Conversations() {
     <>
       <PageTitle title="Conversations" subtitle={`${rows.length} active`} right={<ClinicFilter meta={q.data} />} />
       <DataTable rows={rows} columns={cols} getRowId={(r) => r.wa_user}
-        onRowClick={(r) => nav(`/conversations/${r.wa_user}`)} />
+        onRowClick={(r) => nav(`/patients/${r.wa_user}`)} />
     </>
   );
 }
