@@ -7,8 +7,9 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.admin import router as admin_router
+from app.api import router as api_router
 from app.config import (
+    BASE_DIR,
     COMMIT_SHA,
     EVENT_RETENTION_DAYS,
     INSIGHTS_DIGEST_ENABLED,
@@ -112,7 +113,29 @@ def health() -> JSONResponse:
 
 
 app.include_router(webhook_router)
-app.include_router(admin_router)
+app.include_router(api_router)      # JSON API for the React console (/api/*)
+
+# The React console now owns /admin (the legacy Jinja admin_router is no longer mounted;
+# app/admin.py is retained only for its unit-tested helpers and will be deleted later).
+
+
+# --- React console (built SPA) served under /admin -----------------------------------------
+# Present only when the Vite build has been produced (frontend/dist) — so local dev / tests
+# without a build are unaffected. A catch-all serves index.html for client-side routes.
+_SPA_DIST = BASE_DIR.parent / "frontend" / "dist"   # BASE_DIR is app/, repo root is its parent
+if _SPA_DIST.is_dir():
+    from fastapi.responses import FileResponse
+
+    @app.get("/admin")
+    @app.get("/admin/{full_path:path}")
+    def console_spa(full_path: str = "") -> FileResponse:
+        target = _SPA_DIST / full_path
+        if full_path and target.is_file():
+            return FileResponse(target)          # built asset (JS/CSS/etc.)
+        return FileResponse(_SPA_DIST / "index.html")   # client-side route → SPA shell
+    log.info("React console served at /admin from %s", _SPA_DIST)
+else:
+    log.info("React console build not found (%s) — /admin SPA disabled", _SPA_DIST)
 
 
 if __name__ == "__main__":

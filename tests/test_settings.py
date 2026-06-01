@@ -46,23 +46,21 @@ def _super_client():
     from app.config import ADMIN_PASSWORD
     import main
     c = TestClient(main.app)
-    assert c.post("/admin/login", data={"username": "", "password": ADMIN_PASSWORD},
-                  follow_redirects=False).status_code == 303
+    assert c.post("/api/login", json={"username": "", "password": ADMIN_PASSWORD}).status_code == 200
     return c
 
 
-def test_settings_page_renders():
-    r = _super_client().get("/admin/settings")
+def test_settings_api_returns_editable_and_inventory():
+    r = _super_client().get("/api/settings")
     assert r.status_code == 200
-    assert "Platform settings" in r.text and "Platform configuration" in r.text
-    assert "ADMIN_WA_NUMBER" in r.text and "ANTHROPIC_API_KEY" in r.text
+    body = r.json()
+    assert "ADMIN_WA_NUMBER" in body["editable"] and "inventory" in body
 
 
 def test_settings_save_updates_editable_value():
     c = _super_client()
-    r = c.post("/admin/settings", data={"ADMIN_WA_NUMBER": "966500009999"},
-               follow_redirects=False)
-    assert r.status_code == 303
+    r = c.post("/api/settings", json={"values": {"ADMIN_WA_NUMBER": "966500009999"}})
+    assert r.status_code == 200
     assert settings.get("ADMIN_WA_NUMBER") == "966500009999"
     # and the inventory flags it as a DB override now
     inv = {s["key"]: s for s in settings.inventory_status()}

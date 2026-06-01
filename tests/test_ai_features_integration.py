@@ -106,16 +106,16 @@ def test_completion_opens_review_request(monkeypatch):
         sent.append(body)
     monkeypatch.setattr(notif, "send_text", fake_send)
     c = _super_client()
-    c.post(f"/admin/appointments/{appt['id']}/status",
-           data={"status": "completed"}, follow_redirects=False)
+    c.post(f"/api/appointments/{appt['id']}/status",
+           json={"status": "completed"}, follow_redirects=False)
     assert any("rating from 1 to 5" in b for b in sent)      # review ask sent
     assert db.open_review_request(tid, user) is not None      # request opened
 
 
-def test_reviews_page_renders():
+def test_reviews_api_returns_rows_and_stats():
     c = _super_client()
-    r = c.get("/admin/reviews")
-    assert r.status_code == 200 and "Patient reviews" in r.text
+    r = c.get("/api/reviews")
+    assert r.status_code == 200 and "rows" in r.json() and "stats" in r.json()
 
 
 def test_conversation_thread_returns_most_recent_in_chronological_order():
@@ -226,9 +226,8 @@ def _super_client():
     from app.config import ADMIN_PASSWORD
     import main
     c = TestClient(main.app)
-    r = c.post("/admin/login", data={"username": "", "password": ADMIN_PASSWORD},
-               follow_redirects=False)
-    assert r.status_code == 303, "super-admin login failed (check ADMIN_PASSWORD)"
+    r = c.post("/api/login", json={"username": "", "password": ADMIN_PASSWORD})
+    assert r.status_code == 200, "super-admin login failed (check ADMIN_PASSWORD)"
     return c
 
 
@@ -240,9 +239,10 @@ def test_conversation_page_renders_analysis(monkeypatch):
                             "next_action": "Offer evening slot", "lead_band": "hot",
                             "lead_score": 92, "lead_rationale": "keen"})
     c = _super_client()
-    r = c.get(f"/admin/conversations/{user}")
+    r = c.get(f"/api/conversations/{user}")
     assert r.status_code == 200
-    assert "AI summary" in r.text and "Hot" in r.text and "Offer evening slot" in r.text
+    a = r.json()["analysis"]
+    assert a["lead_band"] == "hot" and a["next_action"] == "Offer evening slot"
 
 
 def test_insights_page_renders(monkeypatch):
@@ -251,9 +251,9 @@ def test_insights_page_renders(monkeypatch):
     monkeypatch.setattr(insights, "generate",
                         lambda s, m, t: LLMResult(text="Quiet day; nurture leads."))
     c = _super_client()
-    r = c.get("/admin/insights?period=week")
+    r = c.get("/api/insights?period=week")
     assert r.status_code == 200
-    assert "Business Insights" in r.text and "Last 7 days" in r.text
+    assert r.json()["report"]["period"] == "week" and "metrics" in r.json()["report"]
 
 
 def test_refresh_analysis_route(monkeypatch):
@@ -261,8 +261,8 @@ def test_refresh_analysis_route(monkeypatch):
     db.log_message(tid, user, "in", "hi")
     _stub_llm(monkeypatch, {"lead_band": "warm", "lead_score": 50, "next_action": "follow up"})
     c = _super_client()
-    r = c.post(f"/admin/conversations/{user}/analysis/refresh", follow_redirects=False)
-    assert r.status_code == 303
+    r = c.post(f"/api/conversations/{user}/analysis/refresh")
+    assert r.status_code == 200
     assert db.get_conversation_analysis(tid, user)["lead_band"] == "warm"
 
 
@@ -385,9 +385,8 @@ def test_dashboard_cancel_notifies_patient(monkeypatch):
     monkeypatch.setattr(notif, "send_text", fake_send)
 
     c = _super_client()
-    r = c.post(f"/admin/appointments/{appt['id']}/status",
-               data={"status": "cancelled"}, follow_redirects=False)
-    assert r.status_code == 303
+    r = c.post(f"/api/appointments/{appt['id']}/status", json={"status": "cancelled"})
+    assert r.status_code == 200
     assert db.get_appointment_by_id(appt["id"])["status"] == "cancelled"
     assert any(to == user and "cancelled" in body for to, body in sent)
     conv = db.conversation_thread(user, tenant_id=tid)
@@ -406,8 +405,8 @@ def test_dashboard_complete_notifies_patient(monkeypatch):
     monkeypatch.setattr(notif, "send_text", fake_send)
 
     c = _super_client()
-    c.post(f"/admin/appointments/{appt['id']}/status",
-           data={"status": "completed"}, follow_redirects=False)
+    c.post(f"/api/appointments/{appt['id']}/status",
+           json={"status": "completed"}, follow_redirects=False)
     assert any(to == user and "Thank you" in body for to, body in sent)
 
 
@@ -422,8 +421,8 @@ def test_no_show_status_does_not_notify(monkeypatch):
     monkeypatch.setattr(notif, "send_text", fake_send)
 
     c = _super_client()
-    c.post(f"/admin/appointments/{appt['id']}/status",
-           data={"status": "no_show"}, follow_redirects=False)
+    c.post(f"/api/appointments/{appt['id']}/status",
+           json={"status": "no_show"}, follow_redirects=False)
     assert sent == []   # only cancel/complete notify
 
 
@@ -438,10 +437,10 @@ def test_repeat_cancel_does_not_double_notify(monkeypatch):
     monkeypatch.setattr(notif, "send_text", fake_send)
 
     c = _super_client()
-    c.post(f"/admin/appointments/{appt['id']}/status",
-           data={"status": "cancelled"}, follow_redirects=False)
-    c.post(f"/admin/appointments/{appt['id']}/status",   # already cancelled -> no send
-           data={"status": "cancelled"}, follow_redirects=False)
+    c.post(f"/api/appointments/{appt['id']}/status",
+           json={"status": "cancelled"}, follow_redirects=False)
+    c.post(f"/api/appointments/{appt['id']}/status",   # already cancelled -> no send
+           json={"status": "cancelled"}, follow_redirects=False)
     assert len([s for s in sent if s[0] == user]) == 1
 
 
@@ -546,30 +545,25 @@ def test_list_tenants_includes_connector_type():
     assert row["connector_type"] == "cliniko"        # type is readable (not a secret)
 
 
-def test_plans_page_shows_connector_column():
+def test_plans_api_includes_connector_type():
     sfx = uuid.uuid4().hex[:8]
     db.create_tenant(f"Cn2 {sfx}", f"cn2-{sfx}", f"PNCN2{sfx}", None, "Asia/Riyadh", None,
                      {"clinic": {"name": "X"},
                       "connector": {"type": "cliniko", "api_key": "k", "business_id": "b"}})
-    c = _super_client()
-    r = c.get("/admin/plans")
+    r = _super_client().get("/api/plans")
     assert r.status_code == 200
-    assert "Connector" in r.text and "Cliniko" in r.text and "Native" in r.text
+    assert any(t["connector_type"] == "cliniko" for t in r.json()["tenants"])
 
 
-def test_dashboard_banner_appears_when_sends_are_401ing(monkeypatch):
+def test_dashboard_flags_failing_whatsapp_sends(monkeypatch):
     import app.wa_client as wa
     c = _super_client()
-    # Healthy: no banner.
     monkeypatch.setattr(wa, "_auth_failed_at", None)
-    assert "failing to send" not in c.get("/admin/").text
-    # A 401 flips the flag -> banner shows on the dashboard.
-    wa._note_send_result(401)
-    body = c.get("/admin/").text
-    assert "failing to send" in body and "WA_ACCESS_TOKEN" in body
-    # A later success clears it -> banner gone.
-    wa._note_send_result(200)
-    assert "failing to send" not in c.get("/admin/").text
+    assert c.get("/api/dashboard").json()["wa_send_failing"] is False
+    wa._note_send_result(401)                 # a 401 flips the flag
+    assert c.get("/api/dashboard").json()["wa_send_failing"] is True
+    wa._note_send_result(200)                 # a later success clears it
+    assert c.get("/api/dashboard").json()["wa_send_failing"] is False
 
 
 def test_run_digests_skips_before_send_hour(monkeypatch):
@@ -597,44 +591,40 @@ def _clinic_client(tenant_id: int):
     uname = "staff-" + uuid.uuid4().hex[:8]
     db.set_tenant_credentials(tenant_id, uname, hash_password("pw-123"))
     c = TestClient(main.app)
-    r = c.post("/admin/login", data={"username": uname, "password": "pw-123"},
-               follow_redirects=False)
-    assert r.status_code == 303, "clinic login failed"
+    r = c.post("/api/login", json={"username": uname, "password": "pw-123"})
+    assert r.status_code == 200, "clinic login failed"
     return c
 
 
-def test_overview_is_super_admin_landing():
+def test_overview_is_super_admin_only():
     c = _super_client()
-    r = c.get("/admin/")
-    assert r.status_code == 200 and "Clinics overview" in r.text
+    r = c.get("/api/overview")
+    assert r.status_code == 200 and "clinics" in r.json()
 
 
 def test_super_list_pages_have_clinic_filter():
     c = _super_client()
-    for path in ("/admin/conversations", "/admin/appointments", "/admin/reviews",
-                 "/admin/no-shows"):
-        r = c.get(path)
-        assert r.status_code == 200 and "All clinics" in r.text, path
+    for path in ("/api/conversations", "/api/appointments", "/api/reviews", "/api/no-shows"):
+        body = c.get(path).json()
+        assert body.get("is_super") is True and "clinics" in body, path
 
 
-def test_clinic_login_lands_on_own_dashboard_not_overview():
+def test_clinic_login_gets_dashboard_not_overview():
     c = _clinic_client(_tenant())
-    r = c.get("/admin/")
-    assert r.status_code == 200
-    assert "Clinics overview" not in r.text   # not the super overview
-    assert "Live activity" in r.text          # its own single-clinic dashboard
+    assert c.get("/api/dashboard").status_code == 200    # its own single-clinic dashboard
+    assert c.get("/api/overview").status_code == 403      # super-only
 
 
 def test_issues_are_super_admin_only():
     c = _clinic_client(_tenant())
-    assert c.get("/admin/logs").status_code == 403          # hidden from clinics
-    assert _super_client().get("/admin/logs").status_code == 200
+    assert c.get("/api/logs").status_code == 403          # hidden from clinics
+    assert _super_client().get("/api/logs").status_code == 200
 
 
-def test_clinic_usage_page_renders():
+def test_clinic_usage_is_available():
     c = _clinic_client(_tenant())
-    r = c.get("/admin/usage")
-    assert r.status_code == 200 and "usage" in r.text.lower()
+    r = c.get("/api/usage")
+    assert r.status_code == 200 and "usage" in r.json()
 
 
 def test_clinic_cannot_see_other_clinic_via_filter():
@@ -645,5 +635,5 @@ def test_clinic_cannot_see_other_clinic_via_filter():
                           datetime(2026, 6, 9, 10, 0, tzinfo=TZ),
                           datetime(2026, 6, 9, 10, 30, tzinfo=TZ))
     c = _clinic_client(mine)
-    r = c.get(f"/admin/appointments?clinic={other}")
-    assert r.status_code == 200 and "Other Pt" not in r.text   # cross-clinic leak blocked
+    rows = c.get(f"/api/appointments?clinic={other}").json()["rows"]
+    assert not any(a["patient_name"] == "Other Pt" for a in rows)   # cross-clinic leak blocked

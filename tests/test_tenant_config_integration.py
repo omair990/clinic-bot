@@ -69,9 +69,8 @@ def _super_client():
     from app.config import ADMIN_PASSWORD
     import main
     c = TestClient(main.app)
-    r = c.post("/admin/login", data={"username": "", "password": ADMIN_PASSWORD},
-               follow_redirects=False)
-    assert r.status_code == 303, "super-admin login failed (check ADMIN_PASSWORD env)"
+    assert c.post("/api/login", json={"username": "", "password": ADMIN_PASSWORD}).status_code == 200, \
+        "super-admin login failed (check ADMIN_PASSWORD env)"
     return c
 
 
@@ -79,11 +78,11 @@ def test_duplicate_username_on_create_is_graceful(tenant):
     uname = "dup-" + uuid.uuid4().hex[:8]
     db.set_tenant_credentials(tenant, uname, None)            # tenant already owns it
     c = _super_client()
-    r = c.post("/admin/tenants", follow_redirects=False, data={
+    r = c.post("/api/tenants", json={
         "name": "New Clinic", "slug": "new-" + uuid.uuid4().hex[:8], "timezone": "Asia/Riyadh",
-        "plan_id": "1", "staff_username": uname, "staff_password": "x"})
-    assert r.status_code == 409          # not a 500
-    assert "already in use" in r.text    # friendly banner, not a stack trace
+        "plan_id": 1, "staff_username": uname, "staff_password": "x"})
+    assert r.status_code == 409                          # not a 500
+    assert "already in use" in r.json()["detail"]        # friendly message, not a stack trace
 
 
 def test_duplicate_username_on_edit_is_graceful(tenant):
@@ -92,11 +91,11 @@ def test_duplicate_username_on_edit_is_graceful(tenant):
     taken = "taken-" + uuid.uuid4().hex[:8]
     db.set_tenant_credentials(other, taken, None)
     c = _super_client()
-    r = c.post(f"/admin/tenants/{tenant}/edit", follow_redirects=False, data={
+    r = c.post(f"/api/tenants/{tenant}/edit", json={
         "name": "X", "timezone": "Asia/Riyadh",
         "clinic_data": '{"clinic": {"name": "X"}}', "staff_username": taken})
     assert r.status_code == 409
-    assert "already in use" in r.text
+    assert "already in use" in r.json()["detail"]
     assert db.get_tenant(tenant)["staff_username"] != taken   # not stolen from the other clinic
 
 
@@ -104,8 +103,8 @@ def test_edit_keeping_own_username_succeeds(tenant):
     mine = "mine-" + uuid.uuid4().hex[:8]
     db.set_tenant_credentials(tenant, mine, None)
     c = _super_client()
-    r = c.post(f"/admin/tenants/{tenant}/edit", follow_redirects=False, data={
+    r = c.post(f"/api/tenants/{tenant}/edit", json={
         "name": "Y", "timezone": "Asia/Riyadh",
         "clinic_data": '{"clinic": {"name": "Y"}}', "staff_username": mine})
-    assert r.status_code == 303                               # saved, no false collision
+    assert r.status_code == 200                               # saved, no false collision
     assert db.get_tenant(tenant)["staff_username"] == mine
