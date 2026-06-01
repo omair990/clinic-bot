@@ -27,18 +27,37 @@ _FALLBACK_REPLY_UR = (
 _FALLBACK_REPLY_HI = (
     "क्षमा करें, मुझे अभी इसमें परेशानी हो रही है। मैं आपकी मदद के लिए किसी स्टाफ सदस्य को बुलाता हूँ।"
 )
-_LANG_NAME = {"ar": "Arabic", "ur": "Urdu", "hi": "Hindi", "en": "English"}
+# ISO 639-1 → English name, for the curated languages the guard recognises. Used only to name
+# the language in the regeneration nudge.
+_LANG_NAME = {
+    "en": "English", "ar": "Arabic", "ur": "Urdu", "hi": "Hindi", "fa": "Persian",
+    "ps": "Pashto", "bn": "Bengali", "ta": "Tamil", "te": "Telugu", "ml": "Malayalam",
+    "kn": "Kannada", "gu": "Gujarati", "mr": "Marathi", "ne": "Nepali", "pa": "Punjabi",
+    "si": "Sinhala", "es": "Spanish", "fr": "French", "pt": "Portuguese", "it": "Italian",
+    "de": "German", "nl": "Dutch", "ru": "Russian", "uk": "Ukrainian", "tr": "Turkish",
+    "id": "Indonesian", "ms": "Malay", "tl": "Tagalog", "sw": "Swahili", "am": "Amharic",
+    "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "th": "Thai", "vi": "Vietnamese",
+    "he": "Hebrew", "el": "Greek",
+}
+# Fallback name by Unicode script, when the classifier can't pin an exact language code.
+_SCRIPT_NAME = {
+    "ARABIC": "Arabic", "DEVANAGARI": "Hindi", "BENGALI": "Bengali", "TAMIL": "Tamil",
+    "TELUGU": "Telugu", "MALAYALAM": "Malayalam", "KANNADA": "Kannada", "GUJARATI": "Gujarati",
+    "SINHALA": "Sinhala", "THAI": "Thai", "CYRILLIC": "Russian", "HEBREW": "Hebrew",
+    "GREEK": "Greek", "CJK": "Chinese", "HANGUL": "Korean", "HIRAGANA": "Japanese",
+    "KATAKANA": "Japanese",
+}
 
 
 def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: str) -> str:
-    """Strong language guard: the reply MUST be in the patient's language. The system prompt
-    already asks for this, but models occasionally drift — so when the reply clearly answers
-    in the wrong language we ask the model, once, to rewrite the SAME answer in the right one.
-    We only accept the rewrite if it actually fixes the language; otherwise keep the original."""
+    """Strong language guard: the reply MUST be in the patient's language (any language). The
+    system prompt already asks for this, but models occasionally drift — so when the reply
+    clearly answers in the wrong language we ask the model, once, to rewrite the SAME answer in
+    the right one. We only accept the rewrite if it actually fixes the language; else keep it."""
     if not reply_guard.language_mismatch(user_text, reply):
         return reply
     want = reply_guard.detect_language(user_text)
-    target = _LANG_NAME.get(want)
+    target = _LANG_NAME.get(want) or _SCRIPT_NAME.get(reply_guard._dominant_script(user_text))
     if not target:
         return reply
     # Urdu and Hindi can be written in their own script or in Roman/Latin — keep the patient's.

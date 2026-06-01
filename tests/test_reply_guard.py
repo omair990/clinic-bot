@@ -264,3 +264,46 @@ def test_verify_safe_reply_is_localized_for_hindi(monkeypatch):
     c = _ctx("आपकी अपॉइंटमेंट बुक हो गई है")   # false Hindi booking claim
     reply_guard.verify(c, user_text="मेरी अपॉइंटमेंट कन्फर्म करें")
     assert c.reply == reply_guard.SAFE_REPLY_HI and c.guard_tripped is True
+
+
+# --- all-language guard (any language via langid) -----------------------------
+def test_detect_language_latin_languages():
+    # Long enough, confidently non-English Latin languages are identified.
+    assert reply_guard.detect_language("Necesito una cita con el dentista urgente") == "es"
+    assert reply_guard.detect_language("Quel est le prix du nettoyage dentaire?") == "fr"
+    assert reply_guard.detect_language("Magkano ang pagpapalinis ng ngipin?") == "tl"
+    # Short / ambiguous Latin text defaults to English (precision over recall).
+    assert reply_guard.detect_language("Can I reschedule?") == "en"
+    assert reply_guard.detect_language("Book me an appointment") == "en"
+
+
+def test_detect_language_other_scripts():
+    assert reply_guard.detect_language("আমার একটি অ্যাপয়েন্টমেন্ট দরকার") == "bn"   # Bengali
+    assert reply_guard.detect_language("எனக்கு ஒரு சந்திப்பு வேண்டும்") == "ta"      # Tamil
+
+
+def test_language_mismatch_latin_languages():
+    es = "Necesito una cita con el dentista urgente"
+    # Spanish patient, English reply → mismatch; Spanish reply → fine.
+    assert reply_guard.language_mismatch(es, "Sure, you're booked for 5 PM tomorrow.") is True
+    assert reply_guard.language_mismatch(es, "Claro, su cita está reservada para mañana.") is False
+    # English patient, Spanish reply → mismatch.
+    assert reply_guard.language_mismatch(
+        "What are your opening hours please?", "Estamos abiertos de 9 a 11 todos los días.") is True
+    # English patient, English reply (quoting an Arabic name) → fine.
+    assert reply_guard.language_mismatch(
+        "What are your opening hours please?", "We're open 9 to 11 with الدكتور Khalid.") is False
+
+
+def test_language_mismatch_other_scripts():
+    bn = "আমার একটি অ্যাপয়েন্টমেন্ট দরকার"
+    # Bengali patient, English reply → mismatch; Bengali reply → fine.
+    assert reply_guard.language_mismatch(bn, "You're all booked!") is True
+    assert reply_guard.language_mismatch(bn, "আপনার অ্যাপয়েন্টমেন্ট বুক হয়ে গেছে") is False
+    # English patient, Bengali reply → mismatch.
+    assert reply_guard.language_mismatch("book me a slot please now", bn) is True
+
+
+def test_localize_other_language_falls_back_to_english():
+    es = "Necesito una cita con el dentista urgente"
+    assert reply_guard.localize(es, "EN", "AR", ur="UR", hi="HI") == "EN"

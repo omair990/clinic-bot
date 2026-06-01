@@ -65,3 +65,19 @@ def test_matching_hindi_reply_is_not_regenerated(monkeypatch):
     _replies(monkeypatch, "हम सुबह 9 बजे खुलते हैं।")
     ctx = agent.run_agent(None, "966500000000", "आप कब खुलते हैं?", history=[])
     assert ctx.reply == "हम सुबह 9 बजे खुलते हैं।"
+
+
+def test_spanish_patient_english_reply_is_regenerated(monkeypatch):
+    # Any language: Spanish patient, model drifts to English → rewrite in Spanish.
+    _replies(monkeypatch, "We are open from 9 AM to 11 PM every day.",
+             "Estamos abiertos de 9 a 11 todos los días.")
+    ctx = agent.run_agent(None, "966500000000",
+                          "¿Cuál es su horario de atención por favor?", history=[])
+    assert ctx.reply == "Estamos abiertos de 9 a 11 todos los días."
+
+
+def test_matching_spanish_reply_is_not_regenerated(monkeypatch):
+    _replies(monkeypatch, "Estamos abiertos de 9 a 11 todos los días.")
+    ctx = agent.run_agent(None, "966500000000",
+                          "¿Cuál es su horario de atención por favor?", history=[])
+    assert ctx.reply == "Estamos abiertos de 9 a 11 todos los días."

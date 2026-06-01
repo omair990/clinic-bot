@@ -17,6 +17,9 @@ The decision functions are pure and unit-tested; `verify` applies them to the co
 """
 import logging
 import re
+import threading
+import unicodedata
+from functools import lru_cache
 
 from app import db
 
@@ -185,18 +188,27 @@ def _availability_reply(ctx, user_text: str = "") -> str:
 
 
 # --------------------------------------------------------------------------- language
-# The reply MUST be in the patient's language: Arabic → Arabic, English → English, Urdu → Urdu,
-# Hindi → Hindi. We work at the SCRIPT level because a correct reply still carries English
-# tokens (doctor names, "mada", "SAR", digits) and an English reply may quote a foreign name —
-# so the test is deliberately asymmetric and lenient to avoid false positives.
+# The reply MUST be in the patient's language, for ANY language. Two layers:
 #
-# Three scripts are counted: Perso-Arabic, Devanagari (Hindi) and Latin.
-#  * Arabic and Urdu share the Perso-Arabic script. Urdu uses letters standard Arabic does not
-#    (ٹ ڈ ڑ پ چ گ ک ہ ھ ں ے ی …); their presence marks Perso-Arabic text as Urdu.
-#  * Hindi has its own script (Devanagari), so it is unambiguous in script.
-#  * Romanised Hindi and Urdu (Latin: "appointment book ho gaya hai") overlap almost entirely
-#    and cannot be told apart reliably — we treat shared romanised text as the Urdu bucket and
-#    only flip to Hindi on a few distinctively-Hindi words.
+#  1. SCRIPT layer (fast, dependency-free, very lenient) handles the languages we see most and
+#     the cases a statistical detector gets wrong on short text:
+#       * Arabic vs Urdu — both Perso-Arabic; Urdu uses letters Arabic does not (ٹ ڈ ڑ پ چ گ ک
+#         ہ ھ ں ے ی …), so their presence marks the text as Urdu.
+#       * Hindi — its own script (Devanagari), unambiguous.
+#       * Romanised Hindi/Urdu ("appointment book ho gaya hai") — Latin; spotted by a small word
+#         list (the two overlap almost entirely, so shared text is the Urdu bucket).
+#     For these we compare by SCRIPT and stay lenient: a correct reply still carries English
+#     tokens (doctor names, "mada", "SAR", digits), so an Arabic/Urdu/Hindi reply is only
+#     flagged when it has NONE of the expected script.
+#
+#  2. LANGUAGE-ID layer (py3langid) handles every OTHER language:
+#       * other scripts (Bengali, Tamil, Thai, Cyrillic, CJK, …) — compared by Unicode script,
+#         which is robust even on short text;
+#       * Latin-script languages (Spanish, French, Tagalog, …) — distinguished from English by
+#         a curated, length-gated, English-protective classifier. Statistical LID is unreliable
+#         on short text, so we default to English (the clinic's lingua franca) unless a long
+#         enough message is confidently another language — precision over recall, so we never
+#         wrongly demand a non-English reply from an English speaker.
 _ARABIC_CHAR_RE = re.compile(
     "[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]")
 _DEVANAGARI_CHAR_RE = re.compile(r"[ऀ-ॿ]")
@@ -220,13 +232,88 @@ _ROMAN_HINDI_WORDS = (
 )
 _ROMAN_HINDI_RE = re.compile(r"\b(?:" + "|".join(_ROMAN_HINDI_WORDS) + r")\b", re.IGNORECASE)
 
+# --- py3langid (statistical language ID) for every other language -------------
+# Restricted to a curated, extensible set of languages a Riyadh clinic realistically sees —
+# this both improves accuracy (fewer rare-language false attractors) and bounds the output.
+_CURATED_LANGS = (
+    "en", "ar", "ur", "hi", "fa", "ps", "bn", "ta", "te", "ml", "kn", "gu", "mr", "ne", "pa",
+    "si", "es", "fr", "pt", "it", "de", "nl", "ru", "uk", "tr", "id", "ms", "tl", "sw", "am",
+    "zh", "ja", "ko", "th", "vi", "he", "el",
+)
+_MIN_LATIN_CHARS = 25        # below this, Latin-script text is too short to trust → assume English
+_LATIN_CONF = 0.90           # confidence required to call Latin text a non-English language
+_OTHER_CONF = 0.50           # confidence required to name a non-Latin (other-script) language
 
-def _script_counts(text: str) -> tuple[int, int, int]:
-    """(perso-arabic, devanagari, latin) letter counts."""
-    t = text or ""
-    return (len(_ARABIC_CHAR_RE.findall(t)),
-            len(_DEVANAGARI_CHAR_RE.findall(t)),
-            len(_LATIN_CHAR_RE.findall(t)))
+_lid_lock = threading.Lock()
+_lid_identifier = None
+
+
+def _identifier():
+    """Lazily build the langid identifier (loads a pickled model once)."""
+    global _lid_identifier
+    if _lid_identifier is None:
+        from py3langid.langid import MODEL_FILE, LanguageIdentifier
+        ident = LanguageIdentifier.from_pickled_model(MODEL_FILE, norm_probs=True)
+        supported = set(ident.nb_classes)
+        ident.set_languages([l for l in _CURATED_LANGS if l in supported])
+        _lid_identifier = ident
+    return _lid_identifier
+
+
+@lru_cache(maxsize=2048)
+def _classify(text: str) -> tuple[str | None, float]:
+    """(iso code, confidence in 0..1), or (None, 0.0) on any failure. Thread-safe + cached."""
+    t = (text or "").strip()
+    if not t:
+        return None, 0.0
+    try:
+        with _lid_lock:
+            lang, conf = _identifier().classify(t)
+        return lang, float(conf)
+    except Exception:  # noqa: BLE001 — language ID must never break a turn
+        log.warning("langid classify failed", exc_info=True)
+        return None, 0.0
+
+
+@lru_cache(maxsize=4096)
+def _char_script(ch: str) -> str | None:
+    """Unicode script family of a character, e.g. 'LATIN', 'ARABIC', 'DEVANAGARI', 'BENGALI',
+    'CJK', 'HANGUL', 'THAI', 'CYRILLIC' … (the first word of its Unicode name)."""
+    try:
+        return unicodedata.name(ch).split(" ")[0]
+    except ValueError:
+        return None
+
+
+def _script_counts(text: str) -> tuple[int, int, int, int]:
+    """(perso-arabic, devanagari, latin, other) letter counts. 'other' is any alphabetic
+    character in a further script (Bengali, Tamil, Thai, CJK, Cyrillic, …)."""
+    pa = dev = la = oth = 0
+    for ch in text or "":
+        if not ch.isalpha():
+            continue
+        s = _char_script(ch)
+        if s == "ARABIC":
+            pa += 1
+        elif s == "DEVANAGARI":
+            dev += 1
+        elif s == "LATIN":
+            la += 1
+        else:
+            oth += 1
+    return pa, dev, la, oth
+
+
+def _dominant_script(text: str) -> str | None:
+    """The most common Unicode script family among the text's letters, or None if it has none."""
+    counts: dict[str, int] = {}
+    for ch in text or "":
+        if not ch.isalpha():
+            continue
+        s = _char_script(ch)
+        if s:
+            counts[s] = counts.get(s, 0) + 1
+    return max(counts, key=counts.get) if counts else None
 
 
 def _has_urdu_script(text: str) -> bool:
@@ -238,8 +325,8 @@ def _has_devanagari(text: str) -> bool:
 
 
 def _roman_lang(text: str) -> str:
-    """Classify Latin-script text: 'hi' (distinctively Hindi), 'ur' (shared romanised Indic),
-    or 'en'. Shared romanised text defaults to Urdu since Hindi and Urdu are indistinguishable."""
+    """Classify Latin-script text as romanised Indic: 'hi' (distinctively Hindi), 'ur' (shared
+    romanised Indic), or 'en'. Shared text defaults to Urdu (Hindi/Urdu are indistinguishable)."""
     if _ROMAN_HINDI_RE.search(text or ""):
         return "hi"
     if _ROMAN_INDIC_RE.search(text or ""):
@@ -247,21 +334,46 @@ def _roman_lang(text: str) -> str:
     return "en"
 
 
+def _latin_only(text: str) -> str:
+    """Drop non-Latin letters (e.g. an Arabic doctor name) so they don't skew Latin LID."""
+    return "".join(ch if (not ch.isalpha() or _char_script(ch) == "LATIN") else " "
+                   for ch in text or "")
+
+
+def _latin_lang(text: str) -> str:
+    """ISO code for Latin-script text — 'en' unless it is long enough AND confidently another
+    Latin-script language. Biased to English to avoid false positives on short text."""
+    lo = _latin_only(text).strip()
+    if len(lo) < _MIN_LATIN_CHARS:
+        return "en"
+    lang, conf = _classify(lo)
+    if lang is None or lang == "en" or conf < _LATIN_CONF:
+        return "en"
+    return lang
+
+
 def detect_language(text: str) -> str | None:
-    """'ar', 'ur', 'hi', 'en', or None when there aren't enough letters to tell."""
-    pa, dev, la = _script_counts(text)
-    if not pa and not dev and not la:
+    """Best-effort language of the text as an ISO code ('ar', 'ur', 'hi', 'en', 'es', 'bn', …),
+    or None when there aren't enough letters to tell (digits/emoji only). Used to localise canned
+    replies and to name the language in the regeneration nudge."""
+    pa, dev, la, oth = _script_counts(text)
+    if not (pa or dev or la or oth):
         return None
-    if dev and dev >= pa and dev >= la:           # Devanagari dominates → Hindi
-        return "hi"
-    if pa and pa >= la:                           # Perso-Arabic dominates
+    m = max(pa, dev, la, oth)
+    if pa == m:
         return "ur" if _has_urdu_script(text) else "ar"
-    return _roman_lang(text)                       # Latin dominates
+    if dev == m:
+        return "hi"
+    if oth == m:
+        lang, conf = _classify(text)
+        return lang if (lang and conf >= _OTHER_CONF) else None
+    roman = _roman_lang(text)               # Latin dominates
+    return roman if roman != "en" else _latin_lang(text)
 
 
 def localize(user_text: str, en: str, ar: str, ur: str | None = None, hi: str | None = None) -> str:
-    """Localise a canned reply to the patient's language. Defaults to English unless the patient
-    clearly wrote Arabic, Urdu or Hindi (Urdu/Hindi fall back to English if not provided)."""
+    """Localise a canned reply to the patient's language. Only English/Arabic/Urdu/Hindi have
+    canned translations; every other language falls back to English."""
     lang = detect_language(user_text)
     if lang == "ar":
         return ar
@@ -273,40 +385,44 @@ def localize(user_text: str, en: str, ar: str, ur: str | None = None, hi: str | 
 
 
 def language_mismatch(user_text: str, reply: str) -> bool:
-    """True when the reply clearly answers in the wrong language for the patient.
-
-    Asymmetric and lenient to avoid false positives — a correct reply that merely quotes
-    foreign names/codes is never flagged:
-      * Arabic/Urdu patient → flag if the reply has NO Perso-Arabic script at all, or is in
-        the other Perso-Arabic language (Arabic reply to an Urdu patient, or vice versa).
-      * Hindi-script patient → flag if the reply has NO Devanagari at all.
-      * English patient → flag if the reply is DOMINATED by a non-Latin script.
-      * Romanised Hindi/Urdu patient → flag only if the reply switched to a non-Latin script;
-        a Latin reply is left alone (romanised Indic can't be told apart from English)."""
-    pa_r, dev_r, la_r = _script_counts(reply)
-    nonlatin_r = pa_r + dev_r
-    if not pa_r and not dev_r and not la_r:
+    """True when the reply clearly answers in the wrong language for the patient — for any
+    language. Asymmetric and lenient so a correct reply quoting foreign names/codes is never
+    flagged. Routes by the patient's dominant script:
+      * Arabic/Urdu patient → flag if the reply has NO Perso-Arabic at all, or is the other
+        Perso-Arabic language (Arabic reply to an Urdu patient, or vice versa).
+      * Hindi-script patient → flag if the reply has NO Devanagari.
+      * Other-script patient (Bengali, Thai, CJK, …) → flag if the reply's dominant script differs.
+      * Romanised Hindi/Urdu patient → flag only a switch to a non-Latin script (romanised Indic
+        can't be told from English, so Latin replies are left alone).
+      * Latin-script patient (English/Spanish/French/…) → flag a non-Latin reply, else flag when
+        the reply's Latin language differs from the patient's."""
+    pa_u, dev_u, la_u, oth_u = _script_counts(user_text)
+    if not (pa_u or dev_u or la_u or oth_u):
+        return False                              # patient text has no letters → can't tell
+    pa_r, dev_r, la_r, oth_r = _script_counts(reply)
+    if not (pa_r or dev_r or la_r or oth_r):
         return False                              # reply has no letters to judge
-    want = detect_language(user_text)
-    if want == "ar":
-        if pa_r == 0:
-            return True                           # asked in Arabic, answered with no Arabic
-        return _has_urdu_script(reply)            # answered in Urdu instead of Arabic
-    if want == "ur":
-        if _has_urdu_script(user_text):           # patient wrote Urdu SCRIPT
+    nonlatin_r = pa_r + dev_r + oth_r
+
+    if pa_u >= dev_u and pa_u >= la_u and pa_u >= oth_u and pa_u:   # Perso-Arabic patient
+        if _has_urdu_script(user_text):           # Urdu SCRIPT
             if pa_r == 0:
                 return True                       # answered with no Perso-Arabic at all
             return not _has_urdu_script(reply)    # answered in Arabic, not Urdu
-        # patient wrote romanised Urdu (Latin) — only flag a switch to a non-Latin script
+        if pa_r == 0:
+            return True                           # Arabic asked, answered with no Arabic
+        return _has_urdu_script(reply)            # answered in Urdu instead of Arabic
+    if dev_u >= la_u and dev_u >= oth_u and dev_u:                  # Devanagari (Hindi) patient
+        return dev_r == 0
+    if oth_u > la_u and oth_u:                                     # other-script patient
+        return _dominant_script(reply) != _dominant_script(user_text)
+    # Latin-script patient — romanised Indic, or a genuine Latin-script language.
+    roman = _roman_lang(user_text)
+    if roman in ("ur", "hi"):                     # romanised Urdu/Hindi
         return nonlatin_r > 0 and nonlatin_r >= la_r
-    if want == "hi":
-        if _has_devanagari(user_text):            # patient wrote Hindi SCRIPT
-            return dev_r == 0                     # answered with no Devanagari
-        # patient wrote romanised Hindi (Latin) — only flag a switch to a non-Latin script
-        return nonlatin_r > 0 and nonlatin_r >= la_r
-    if want == "en":
-        return nonlatin_r > 0 and nonlatin_r >= la_r  # asked in English, answered in script
-    return False                                  # patient language unknown → don't police
+    if nonlatin_r > 0 and nonlatin_r >= la_r:
+        return True                               # English/etc. asked, answered in another script
+    return _latin_lang(reply) != _latin_lang(user_text)
 
 
 def verify(ctx, user_text: str = "") -> None:
