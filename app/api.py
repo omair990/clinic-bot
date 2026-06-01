@@ -388,10 +388,19 @@ async def get_tenant(request: Request, tenant_id: int):
         "timezone": t.get("timezone") or "Asia/Riyadh",
         "staff_username": t.get("staff_username") or "",
         "has_wa_access_token": bool(t.get("wa_access_token")),
+        # Structured (normalized) object for the guided editor — sections always present so
+        # the editor renders clean empty tabs for a new clinic.
+        "clinic_data_obj": {**cs.blank_template(), **cs.normalize(data)},
         "clinic_data": json.dumps(data, indent=2, ensure_ascii=False),
         "connector_type": (data.get("connector") or {}).get("type", "native"),
         "is_default": tenant_id == 1 or t.get("slug") == "default",
     }
+
+
+@router.get("/weekdays")
+async def weekdays(request: Request):
+    _require(request)
+    return {"days": cs.DAYS}
 
 
 @router.post("/tenants")

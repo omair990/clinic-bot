@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card, CardContent, Table, TableHead, TableRow, TableCell, TableBody, Select, MenuItem,
   Button, Typography, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Grid, Alert,
-  Stack,
+  Stack, FormControlLabel, Switch,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { apiPost, ApiError } from "../api";
@@ -55,6 +55,7 @@ export default function Plans() {
   const nav = useNavigate();
   const toast = useToast();
   const [addOpen, setAddOpen] = useState(false);
+  const [pkg, setPkg] = useState<any | null>(null);   // null = closed, {} = new, {…} = edit
   const q = useApiQuery<any>(["plans"], "/plans");
   const setPlan = useMutation({
     mutationFn: (v: { id: number; plan_id: number }) => apiPost(`/tenants/${v.id}/plan`, { plan_id: v.plan_id }),
@@ -114,25 +115,70 @@ export default function Plans() {
       </Card>
 
       <Card>
-        <CardContent><Typography fontWeight={700} sx={{ mb: 1 }}>Packages</Typography></CardContent>
+        <CardContent sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Typography fontWeight={700}>Packages</Typography>
+          <Button size="small" startIcon={<AddIcon />} onClick={() => setPkg({})}>New package</Button>
+        </CardContent>
         <Table size="small">
           <TableHead><TableRow>
             <TableCell>Name</TableCell><TableCell>Text/mo</TableCell><TableCell>Voice</TableCell>
-            <TableCell>Trial</TableCell><TableCell>Price (SAR)</TableCell>
+            <TableCell>Trial</TableCell><TableCell>Price (SAR)</TableCell><TableCell align="right" />
           </TableRow></TableHead>
           <TableBody>
             {plans.map((p: any) => (
-              <TableRow key={p.id}>
+              <TableRow key={p.id} hover>
                 <TableCell>{p.name}</TableCell>
                 <TableCell>{p.monthly_text_quota ?? "∞"}</TableCell>
                 <TableCell>{p.voice_enabled ? (p.monthly_voice_quota ?? "∞") : "off"}</TableCell>
                 <TableCell>{p.is_trial ? `${p.trial_days}d` : "—"}</TableCell>
                 <TableCell>{p.price_sar ?? "—"}</TableCell>
+                <TableCell align="right"><Button size="small" onClick={() => setPkg(p)}>Edit</Button></TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+
+      <PackageDialog pkg={pkg} onClose={() => setPkg(null)}
+        onSaved={() => { toast.ok("Package saved"); qc.invalidateQueries({ queryKey: ["plans"] }); }} />
     </>
+  );
+}
+
+function PackageDialog({ pkg, onClose, onSaved }: { pkg: any | null; onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState<any>({});
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setF(pkg || {}); }, [pkg]);
+  if (pkg === null) return null;
+  const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
+  const save = async () => {
+    setBusy(true);
+    try {
+      await apiPost("/plans", {
+        name: f.name, monthly_text_quota: f.monthly_text_quota, monthly_voice_quota: f.monthly_voice_quota,
+        voice_enabled: !!f.voice_enabled, is_trial: !!f.is_trial, trial_days: f.trial_days, price_sar: f.price_sar,
+      });
+      onSaved(); onClose();
+    } finally { setBusy(false); }
+  };
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle>{pkg?.id ? "Edit package" : "New package"}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <TextField size="small" label="Name (existing name = edit)" value={f.name || ""} onChange={set("name")} disabled={!!pkg?.id} />
+          <TextField size="small" type="number" label="Monthly text quota (blank = unlimited)" value={f.monthly_text_quota ?? ""} onChange={set("monthly_text_quota")} />
+          <FormControlLabel control={<Switch checked={!!f.voice_enabled} onChange={(e) => setF({ ...f, voice_enabled: e.target.checked })} />} label="Voice enabled" />
+          <TextField size="small" type="number" label="Monthly voice quota (blank = unlimited)" value={f.monthly_voice_quota ?? ""} onChange={set("monthly_voice_quota")} disabled={!f.voice_enabled} />
+          <FormControlLabel control={<Switch checked={!!f.is_trial} onChange={(e) => setF({ ...f, is_trial: e.target.checked })} />} label="Trial plan" />
+          <TextField size="small" type="number" label="Trial days" value={f.trial_days ?? ""} onChange={set("trial_days")} disabled={!f.is_trial} />
+          <TextField size="small" type="number" label="Price (SAR)" value={f.price_sar ?? ""} onChange={set("price_sar")} />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" disabled={busy || !f.name} onClick={save}>Save package</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
