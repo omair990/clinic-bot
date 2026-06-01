@@ -176,9 +176,14 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
             # Temporary blip (rate limits / timeouts): ask the user to retry; the
             # message_id of a resend is new, so it won't be deduped away. No staff page.
             log.warning("LLM transiently unavailable for %s: %s", sender, e)
-            await send_text(sender,
-                            "I'm getting a lot of messages right now — please send that again "
-                            "in a moment. 🙏", **creds)
+            retry_msg = ("I'm getting a lot of messages right now — please send that again "
+                         "in a moment. 🙏")
+            await send_text(sender, retry_msg, **creds)
+            # Mirror to the conversation log + live feed so it shows in the dashboard like
+            # every other outbound (the other error paths log; this one used not to).
+            await asyncio.to_thread(log_message, tid, sender, "out", retry_msg, "error", False)
+            publish("message", {"wa_user": sender, "direction": "out", "text": retry_msg,
+                                "intent": "error", "tenant_id": tid})
         else:
             # Sustained outage / misconfig: own the failure and bring in a human.
             log.error("LLM unavailable (hard) for %s: %s", sender, e)
