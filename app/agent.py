@@ -24,7 +24,10 @@ _FALLBACK_REPLY_AR = (
 _FALLBACK_REPLY_UR = (
     "معذرت، مجھے ابھی اس میں دشواری ہو رہی ہے۔ میں عملے کے کسی فرد سے آپ کی مدد کرواتا ہوں۔"
 )
-_LANG_NAME = {"ar": "Arabic", "ur": "Urdu", "en": "English"}
+_FALLBACK_REPLY_HI = (
+    "क्षमा करें, मुझे अभी इसमें परेशानी हो रही है। मैं आपकी मदद के लिए किसी स्टाफ सदस्य को बुलाता हूँ।"
+)
+_LANG_NAME = {"ar": "Arabic", "ur": "Urdu", "hi": "Hindi", "en": "English"}
 
 
 def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: str) -> str:
@@ -38,9 +41,11 @@ def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: s
     target = _LANG_NAME.get(want)
     if not target:
         return reply
-    # Urdu can be written in Perso-Arabic or Roman/Latin script — keep the patient's script.
+    # Urdu and Hindi can be written in their own script or in Roman/Latin — keep the patient's.
     if want == "ur" and not reply_guard._has_urdu_script(user_text):
         target = "Urdu written in Roman/Latin script (as the patient used)"
+    elif want == "hi" and not reply_guard._has_devanagari(user_text):
+        target = "Hindi written in Roman/Latin script (as the patient used)"
     log.warning("Reply language mismatch (patient=%s) — regenerating in %s", want, target)
     nudge = (
         f"Your previous reply was in the wrong language. The patient wrote in {target}, so you "
@@ -108,7 +113,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
         if not result.tool_calls:
             ctx.reply = ((result.text or "").strip()
                          or reply_guard.localize(user_text, _FALLBACK_REPLY, _FALLBACK_REPLY_AR,
-                                                 ur=_FALLBACK_REPLY_UR))
+                                                 ur=_FALLBACK_REPLY_UR, hi=_FALLBACK_REPLY_HI))
             reply_guard.verify(ctx, user_text)   # never state a booking/time we can't back
             if not ctx.guard_tripped:            # don't re-touch a localized safe message
                 ctx.reply = _enforce_language(system, messages, user_text, ctx.reply)
@@ -126,7 +131,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
     ctx.needs_human = True
     if not ctx.reply:
         ctx.reply = reply_guard.localize(user_text, _FALLBACK_REPLY, _FALLBACK_REPLY_AR,
-                                         ur=_FALLBACK_REPLY_UR)
+                                         ur=_FALLBACK_REPLY_UR, hi=_FALLBACK_REPLY_HI)
     reply_guard.verify(ctx, user_text)
     return ctx
 

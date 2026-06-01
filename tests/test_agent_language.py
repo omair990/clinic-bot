@@ -52,3 +52,16 @@ def test_roman_urdu_patient_arabic_reply_is_regenerated(monkeypatch):
     _replies(monkeypatch, "نحن مفتوحون من ٩ إلى ١١.", "Hum subah 9 se raat 11 baje tak khule hain.")
     ctx = agent.run_agent(None, "966500000000", "aap kab khulte hain?", history=[])
     assert ctx.reply == "Hum subah 9 se raat 11 baje tak khule hain."
+
+
+def test_hindi_script_patient_english_reply_is_regenerated(monkeypatch):
+    _replies(monkeypatch, "We are open from 9 to 11.", "हम सुबह 9 से रात 11 बजे तक खुले रहते हैं।")
+    ctx = agent.run_agent(None, "966500000000", "आप कब खुलते हैं?", history=[])
+    assert ctx.reply == "हम सुबह 9 से रात 11 बजे तक खुले रहते हैं।"
+
+
+def test_matching_hindi_reply_is_not_regenerated(monkeypatch):
+    # Only one reply provided; a needless regeneration would exhaust the iterator and raise.
+    _replies(monkeypatch, "हम सुबह 9 बजे खुलते हैं।")
+    ctx = agent.run_agent(None, "966500000000", "आप कब खुलते हैं?", history=[])
+    assert ctx.reply == "हम सुबह 9 बजे खुलते हैं।"

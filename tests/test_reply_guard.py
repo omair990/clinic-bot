@@ -218,3 +218,49 @@ def test_verify_safe_reply_is_localized_for_urdu(monkeypatch):
     c = _ctx("آپ کی اپائنٹمنٹ بک ہو گئی ہے")   # false Urdu booking claim
     reply_guard.verify(c, user_text="mujhe appointment chahiye")
     assert c.reply == reply_guard.SAFE_REPLY_UR and c.guard_tripped is True
+
+
+# --- Hindi language guard -----------------------------------------------------
+def test_detect_language_hindi():
+    # Devanagari is its own script → unambiguous Hindi.
+    assert reply_guard.detect_language("मुझे अपॉइंटमेंट चाहिए") == "hi"
+    assert reply_guard.detect_language("क्या कल कोई समय है?") == "hi"
+    # Distinctively-Hindi romanised word flips the shared bucket to Hindi.
+    assert reply_guard.detect_language("namaste, mujhe appointment chahiye") == "hi"
+    # Shared romanised Indic (no Hindi-distinctive word) stays in the Urdu bucket.
+    assert reply_guard.detect_language("mujhe appointment chahiye") == "ur"
+    # Arabic / English are unaffected.
+    assert reply_guard.detect_language("احجزلي موعد") == "ar"
+    assert reply_guard.detect_language("Book me an appointment") == "en"
+
+
+def test_language_mismatch_hindi():
+    # Hindi-script patient, non-Devanagari reply → mismatch.
+    assert reply_guard.language_mismatch("मुझे अपॉइंटमेंट चाहिए", "You're booked.") is True
+    assert reply_guard.language_mismatch("मुझे अपॉइंटमेंट चाहिए", "تم الحجز مع خالد") is True
+    assert reply_guard.language_mismatch("मुझे अपॉइंटमेंट चाहिए", "aap ki appointment ho gayi") is True
+    # English / Arabic patient getting a Hindi (Devanagari) reply → mismatch.
+    assert reply_guard.language_mismatch("book me", "आपकी अपॉइंटमेंट बुक हो गई है") is True
+    assert reply_guard.language_mismatch("احجزلي موعد", "आपकी अपॉइंटमेंट बुक हो गई है") is True
+
+
+def test_language_mismatch_hindi_allows_matching_and_mixed():
+    # Hindi reply quoting an English doctor/service name → fine.
+    assert reply_guard.language_mismatch(
+        "मुझे अपॉइंटमेंट चाहिए",
+        "आपकी अपॉइंटमेंट Dr. Khalid के साथ Dental Checkup बुक हो गई है") is False
+    # Romanised-Hindi patient getting a Latin reply is left alone (can't tell apart from English).
+    assert reply_guard.language_mismatch("namaste mujhe appointment chahiye", "Sure, booked!") is False
+
+
+def test_localize_picks_hindi():
+    assert reply_guard.localize("मुझे अपॉइंटमेंट चाहिए", "EN", "AR", ur="UR", hi="HI") == "HI"
+    # No Hindi string given → fall back to English.
+    assert reply_guard.localize("मुझे अपॉइंटमेंट चाहिए", "EN", "AR", ur="UR") == "EN"
+
+
+def test_verify_safe_reply_is_localized_for_hindi(monkeypatch):
+    monkeypatch.setattr(reply_guard.db, "has_confirmed_upcoming", lambda t, u: False)
+    c = _ctx("आपकी अपॉइंटमेंट बुक हो गई है")   # false Hindi booking claim
+    reply_guard.verify(c, user_text="मेरी अपॉइंटमेंट कन्फर्म करें")
+    assert c.reply == reply_guard.SAFE_REPLY_HI and c.guard_tripped is True
