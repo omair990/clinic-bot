@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import {
   MenuItem, Select, Stack, Typography, Box, Alert, Card, CardContent, Skeleton, Grid,
-  alpha, useTheme,
+  alpha, useTheme, Dialog, DialogTitle, DialogContent, DialogActions,
 } from "@mui/material";
 import { DataGrid, GridColDef, GridToolbar } from "@mui/x-data-grid";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
@@ -106,6 +106,38 @@ export function Loading() {
 export function QueryError({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : "Failed to load";
   return <Alert severity="error" variant="outlined" sx={{ my: 2 }}>{msg}</Alert>;
+}
+
+export interface DetailField { label: string; value: React.ReactNode; full?: boolean }
+
+export function DetailDialog({ open, onClose, title, subtitle, fields, actions }: {
+  open: boolean; onClose: () => void; title: React.ReactNode; subtitle?: React.ReactNode;
+  fields: DetailField[]; actions?: React.ReactNode;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ pb: subtitle ? 0.5 : 2 }}>
+        {title}
+        {subtitle && <Typography variant="body2" color="text.secondary">{subtitle}</Typography>}
+      </DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={1.5}>
+          {fields.map((f, i) => f.full ? (
+            <Box key={i}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600}>{f.label}</Typography>
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 0.3 }}>{f.value || "—"}</Typography>
+            </Box>
+          ) : (
+            <Stack key={i} direction="row" spacing={2} alignItems="center">
+              <Typography variant="body2" color="text.secondary" sx={{ minWidth: 130 }}>{f.label}</Typography>
+              <Box sx={{ flex: 1, minWidth: 0 }}>{f.value ?? <span style={{ opacity: 0.5 }}>—</span>}</Box>
+            </Stack>
+          ))}
+        </Stack>
+      </DialogContent>
+      {actions && <DialogActions sx={{ px: 3, py: 2 }}>{actions}</DialogActions>}
+    </Dialog>
+  );
 }
 
 export function EmptyState({ text }: { text: string }) {
