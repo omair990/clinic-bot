@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Chip, Button, Stack, ToggleButton, ToggleButtonGroup, Box } from "@mui/material";
 import { GridColDef } from "@mui/x-data-grid";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { apiPost, ApiError } from "../api";
 import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, DataTable, useToast } from "../lib";
 
@@ -11,6 +11,7 @@ const riskColor: Record<string, any> = { low: "success", medium: "warning", high
 export default function Appointments() {
   const [clinic] = useClinic();
   const [params, setParams] = useSearchParams();
+  const nav = useNavigate();
   const status = params.get("status") || "";
   const qc = useQueryClient();
   const toast = useToast();
@@ -58,7 +59,8 @@ export default function Appointments() {
           </ToggleButtonGroup>
           <ClinicFilter meta={q.data} />
         </Stack>} />
-      <DataTable rows={rows} columns={cols} loading={act.isPending} />
+      <DataTable rows={rows} columns={cols} loading={act.isPending}
+        onRowClick={(r) => nav(`/patients/${r.wa_user}`)} />
     </>
   );
 }

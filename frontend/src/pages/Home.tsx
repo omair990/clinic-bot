@@ -55,8 +55,8 @@ function Overview() {
             <Card sx={{ height: "100%" }}>
               <CardContent>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                  <Box>
-                    <Typography fontWeight={800}>{c.name}</Typography>
+                  <Box onClick={() => nav(`/clinics/${c.id}`)} sx={{ cursor: "pointer", "&:hover .cn": { color: "primary.main" } }}>
+                    <Typography className="cn" fontWeight={800}>{c.name}</Typography>
                     <Typography variant="caption" color="text.secondary">{c.slug} · {c.plan_name || "no plan"}</Typography>
                   </Box>
                   <Chip size="small" label={c.status}
@@ -83,9 +83,9 @@ function Overview() {
                   <UsageBar label="Voice" used={c.voice_count} quota={c.monthly_voice_quota} on={c.voice_enabled} />
                 </Stack>
                 <Stack direction="row" spacing={1} sx={{ mt: 1.5, pt: 1.5, borderTop: (t) => `1px solid ${t.palette.divider}` }}>
-                  <Button size="small" onClick={() => nav(`/conversations?clinic=${c.id}`)}>Conversations</Button>
+                  <Button size="small" variant="outlined" onClick={() => nav(`/clinics/${c.id}`)}>Open profile</Button>
                   <Button size="small" onClick={() => nav(`/insights?clinic=${c.id}`)}>Insights</Button>
-                  <Button size="small" color="inherit" onClick={() => nav(`/tenants/${c.id}`)}>Settings</Button>
+                  <Button size="small" color="inherit" onClick={() => nav(`/tenants/${c.id}`)}>Manage</Button>
                 </Stack>
               </CardContent>
             </Card>

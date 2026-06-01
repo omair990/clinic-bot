@@ -500,6 +500,40 @@ def recent_appointments_for_user(tenant_id: int, wa_user: str, limit: int = 3) -
         ).fetchall()
 
 
+def appointments_for_user(tenant_id: int, wa_user: str, limit: int = 50) -> list[dict]:
+    """All of a patient's appointments (newest first) — for the patient profile page."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT id, doctor, service, start_at, end_at, status, risk_band, risk_score, "
+            "notes, extra, created_at FROM appointments "
+            "WHERE tenant_id = %s AND wa_user = %s ORDER BY start_at DESC LIMIT %s",
+            (tenant_id, wa_user, limit),
+        ).fetchall()
+
+
+def reviews_for_user(tenant_id: int, wa_user: str) -> list[dict]:
+    """A patient's reviews (newest first)."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT r.id, r.rating, r.comment, r.stage, r.created_at, r.responded_at, "
+            "a.doctor, a.service FROM reviews r JOIN appointments a ON a.id = r.appointment_id "
+            "WHERE r.tenant_id = %s AND r.wa_user = %s ORDER BY r.created_at DESC",
+            (tenant_id, wa_user),
+        ).fetchall()
+
+
+def no_shows_for_user(tenant_id: int, wa_user: str) -> list[dict]:
+    """A patient's no-show follow-ups (newest first)."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT f.id, f.stage, f.outcome, f.reason, f.created_at, f.notified_at, "
+            "a.doctor, a.service, a.start_at FROM no_show_followups f "
+            "JOIN appointments a ON a.id = f.appointment_id "
+            "WHERE f.tenant_id = %s AND f.wa_user = %s ORDER BY f.created_at DESC",
+            (tenant_id, wa_user),
+        ).fetchall()
+
+
 def has_appointment(tenant_id: int, wa_user: str) -> bool:
     """Whether this patient has ever booked (any status) — a strong lead signal."""
     with get_conn() as conn:
