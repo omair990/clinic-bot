@@ -86,6 +86,10 @@ async def _provider_monitor_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Let off-loop producers (incidents.record, the agent's record_review — both run in
+    # worker threads) deliver real-time events safely back onto this loop.
+    from app import events
+    events.set_loop(asyncio.get_running_loop())
     tasks = [asyncio.create_task(_maintenance_loop())]
     if NO_SHOW_ENABLED:
         tasks.append(asyncio.create_task(_no_show_loop()))

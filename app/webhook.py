@@ -18,7 +18,7 @@ from app.db import (
     recent_history,
     set_message_intent,
 )
-from app.events import publish
+from app.events import notify, publish
 from app.llm import LLMUnavailable
 from app import voice_reply
 from app.tenancy import check_quota, record_usage, resolve_tenant
@@ -246,8 +246,15 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         if summary:
             msg += f"\n--- AI summary ---\n{summary}"
         await _notify_admin(msg)
+        notify(f"{'Emergency' if ctx.emergency else 'Handover'} · +{sender}",
+               ctx.escalation_reason or summary or user_text,
+               level="error" if ctx.emergency else "warning", category="handover",
+               tenant_id=tid, wa_user=sender, link=f"/conversations/{sender}")
     elif ctx.booked_ids or ctx.changed_ids:
         await _notify_admin(f"[BOOKING] +{sender}\n" + "\n".join(ctx.actions))
+        notify(f"New booking · +{sender}", "\n".join(ctx.actions),
+               level="success", category="booking", tenant_id=tid, wa_user=sender,
+               link=f"/conversations/{sender}")
 
 
 @router.post("/connector/{tenant_id}/webhook")

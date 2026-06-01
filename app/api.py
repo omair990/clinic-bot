@@ -168,6 +168,61 @@ async def trends(request: Request):
     return {"daily_messages": db.daily_message_counts(14, _view_scope(request))}
 
 
+# --------------------------------------------------------------------------- real-time
+@router.get("/stream")
+async def stream(request: Request):
+    """Server-Sent Events feed: live messages, typing, and staff notifications.
+
+    Scoped like the rest of the console — a clinic login only receives its own tenant's
+    events; the super-admin receives everything. Keepalive comments every 15s keep the
+    connection (and any proxy) from idling out."""
+    import asyncio
+
+    from fastapi.responses import StreamingResponse
+    from app import events
+
+    p = _require(request)
+    scope = p["tenant_id"] if p["role"] == "clinic" else None
+
+    async def gen():
+        q = events.subscribe()
+        try:
+            yield ": connected\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                tid = ev.get("tenant_id")
+                if scope is not None and tid is not None and tid != scope:
+                    continue  # not this clinic's event
+                yield f"data: {json.dumps(ev, default=str)}\n\n"
+        finally:
+            events.unsubscribe(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",  # don't let nginx/proxies buffer the stream
+    })
+
+
+@router.get("/notifications")
+async def notifications(request: Request):
+    """Recent staff notifications (newest first) + the open-issue count, for the bell.
+
+    The list is the in-memory ring buffer the bus keeps; `unresolved` is the durable
+    open-issue count so the badge survives restarts even when the buffer is empty."""
+    from app import events
+
+    p = _require(request)
+    scope = p["tenant_id"] if p["role"] == "clinic" else None
+    return {"notifications": events.recent(scope), "unresolved": db.unresolved_event_count(scope)}
+
+
 @router.get("/clinics")
 async def clinics(request: Request):
     """Tenant id/name list for filters (super only; clinic gets just its own)."""

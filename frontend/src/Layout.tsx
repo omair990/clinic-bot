@@ -22,6 +22,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
 import { useAuth } from "./auth";
 import { useColorMode } from "./ColorMode";
+import NotificationBell from "./NotificationBell";
 
 const FULL = 248;
 const MINI = 76;
@@ -125,6 +126,7 @@ export default function Layout() {
               <Link underline="hover" color="inherit" sx={{ cursor: "pointer" }} onClick={() => nav("/")}>Home</Link>
               <Typography color="text.primary" sx={{ fontWeight: 700 }}>{crumbLabel}</Typography>
             </Breadcrumbs>
+            <NotificationBell />
             <Tooltip title={mode === "dark" ? "Light mode" : "Dark mode"}>
               <IconButton onClick={toggle}>{mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}</IconButton>
             </Tooltip>
