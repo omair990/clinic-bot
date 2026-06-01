@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import router as admin_router
+from app.api import router as api_router
 from app.config import (
     COMMIT_SHA,
     EVENT_RETENTION_DAYS,
@@ -112,7 +113,8 @@ def health() -> JSONResponse:
 
 
 app.include_router(webhook_router)
-app.include_router(admin_router)
+app.include_router(api_router)      # JSON API for the React console (/api/*)
+app.include_router(admin_router)    # legacy Jinja admin (removed once the SPA reaches parity)
 
 
 if __name__ == "__main__":
