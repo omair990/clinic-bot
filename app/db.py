@@ -940,6 +940,27 @@ def no_show_count_since(since: datetime, tenant_id: int | None = None) -> int:
         ).fetchone()["n"]
 
 
+def daily_message_counts(days: int = 14, tenant_id: int | None = None) -> list[int]:
+    """Inbound message count per day for the last `days` days (oldest first), zero-filled —
+    a real series for the dashboard sparklines."""
+    wa = "AND tenant_id = %s" if tenant_id is not None else ""
+    params: tuple = (days - 1,) + ((tenant_id,) if tenant_id is not None else ())
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""WITH days AS (
+                    SELECT generate_series(
+                        (current_date - %s::int), current_date, interval '1 day')::date AS d)
+                SELECT days.d AS d,
+                       COUNT(c.*) FILTER (WHERE c.direction = 'in') AS n
+                FROM days
+                LEFT JOIN conversations c
+                  ON c.created_at::date = days.d {wa}
+                GROUP BY days.d ORDER BY days.d""",
+            params,
+        ).fetchall()
+    return [int(r["n"]) for r in rows]
+
+
 def no_show_reason_breakdown(since: datetime, tenant_id: int | None = None) -> list[dict]:
     where = "WHERE created_at >= %s AND reason IS NOT NULL"
     params: list = [since]

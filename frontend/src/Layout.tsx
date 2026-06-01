@@ -1,32 +1,48 @@
+import { useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   Box, Drawer, AppBar, Toolbar, Typography, List, ListItemButton, ListItemIcon,
-  ListItemText, Divider, Button, Chip,
+  ListItemText, Divider, IconButton, Tooltip, Avatar, Menu, MenuItem, Breadcrumbs, Link,
+  Fade, alpha,
 } from "@mui/material";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import ChatIcon from "@mui/icons-material/Chat";
-import EventIcon from "@mui/icons-material/Event";
-import EventBusyIcon from "@mui/icons-material/EventBusy";
-import InsightsIcon from "@mui/icons-material/Insights";
-import StarIcon from "@mui/icons-material/Star";
-import SpeedIcon from "@mui/icons-material/Speed";
-import LayersIcon from "@mui/icons-material/Layers";
-import ReportProblemIcon from "@mui/icons-material/ReportProblem";
-import SettingsIcon from "@mui/icons-material/Settings";
+import DashboardIcon from "@mui/icons-material/SpaceDashboard";
+import ChatIcon from "@mui/icons-material/ForumOutlined";
+import EventIcon from "@mui/icons-material/EventAvailableOutlined";
+import EventBusyIcon from "@mui/icons-material/EventBusyOutlined";
+import InsightsIcon from "@mui/icons-material/InsightsOutlined";
+import StarIcon from "@mui/icons-material/StarBorderOutlined";
+import SpeedIcon from "@mui/icons-material/SpeedOutlined";
+import LayersIcon from "@mui/icons-material/LayersOutlined";
+import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
+import SettingsIcon from "@mui/icons-material/SettingsOutlined";
+import MenuIcon from "@mui/icons-material/Menu";
+import LightModeIcon from "@mui/icons-material/LightModeOutlined";
+import DarkModeIcon from "@mui/icons-material/DarkModeOutlined";
 import LogoutIcon from "@mui/icons-material/Logout";
+import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
 import { useAuth } from "./auth";
+import { useColorMode } from "./ColorMode";
 
-const DRAWER = 248;
+const FULL = 248;
+const MINI = 76;
 
-interface NavItem { label: string; to: string; icon: JSX.Element; }
+const LABELS: Record<string, string> = {
+  "": "Overview", conversations: "Conversations", appointments: "Appointments",
+  "no-shows": "No-shows", insights: "Insights", reviews: "Reviews", usage: "Usage",
+  plans: "Plans & Usage", issues: "Issues", settings: "Settings", tenants: "Clinic",
+};
 
 export default function Layout() {
   const { me, logout } = useAuth();
+  const { mode, toggle } = useColorMode();
   const nav = useNavigate();
   const loc = useLocation();
+  const [open, setOpen] = useState(true);
+  const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const isSuper = me?.role === "super";
+  const W = open ? FULL : MINI;
 
-  const items: NavItem[] = [
+  const items = [
     { label: isSuper ? "Overview" : "Dashboard", to: "/", icon: <DashboardIcon /> },
     { label: "Conversations", to: "/conversations", icon: <ChatIcon /> },
     { label: "Appointments", to: "/appointments", icon: <EventIcon /> },
@@ -40,73 +56,103 @@ export default function Layout() {
       { label: "Settings", to: "/settings", icon: <SettingsIcon /> },
     ] : []),
   ];
-
   const active = (to: string) => (to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(to));
+  const seg = loc.pathname.split("/").filter(Boolean);
+  const crumbLabel = LABELS[seg[0] ?? ""] ?? (seg[0] ?? "Overview");
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: DRAWER, flexShrink: 0,
-          "& .MuiDrawer-paper": {
-            width: DRAWER, boxSizing: "border-box", bgcolor: "#0f172a", color: "#e2e8f0",
-            border: 0,
-          },
-        }}
-      >
-        <Box sx={{ px: 2.5, py: 2.5 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#fff" }}>
-            {me?.tenant_name || "Platform Admin"}
-          </Typography>
-          <Chip
-            size="small"
-            label={isSuper ? "Platform" : "Clinic"}
-            sx={{ mt: 0.5, bgcolor: "rgba(20,184,166,.15)", color: "#5eead4", height: 20 }}
-          />
+      <Drawer variant="permanent" sx={{
+        width: W, flexShrink: 0, whiteSpace: "nowrap",
+        "& .MuiDrawer-paper": {
+          width: W, boxSizing: "border-box", border: 0, overflowX: "hidden",
+          transition: "width .22s ease",
+          background: (t) => t.palette.mode === "dark"
+            ? "linear-gradient(180deg, #0d1424 0%, #0a101d 100%)"
+            : "linear-gradient(180deg, #0f172a 0%, #111a2e 100%)",
+          color: "#cbd5e1",
+        },
+      }}>
+        <Box sx={{ px: open ? 2.5 : 0, py: 2.4, display: "flex", alignItems: "center",
+          justifyContent: open ? "flex-start" : "center", gap: 1.2 }}>
+          <Box sx={{ width: 38, height: 38, borderRadius: 2.5, display: "grid", placeItems: "center",
+            background: "linear-gradient(135deg,#14b8a6,#6366f1)", color: "#fff", flexShrink: 0 }}>
+            <LocalHospitalIcon fontSize="small" />
+          </Box>
+          {open && (
+            <Box sx={{ overflow: "hidden" }}>
+              <Typography noWrap sx={{ fontWeight: 800, color: "#fff", fontSize: 15 }}>
+                {me?.tenant_name || "Clinic Platform"}
+              </Typography>
+              <Typography noWrap variant="caption" sx={{ color: "#5eead4" }}>
+                {isSuper ? "Platform admin" : "Clinic console"}
+              </Typography>
+            </Box>
+          )}
         </Box>
-        <Divider sx={{ borderColor: "rgba(255,255,255,.08)" }} />
+        <Divider sx={{ borderColor: alpha("#fff", 0.08) }} />
         <List sx={{ px: 1, py: 1 }}>
           {items.map((it) => (
-            <ListItemButton
-              key={it.to}
-              selected={active(it.to)}
-              onClick={() => nav(it.to)}
-              sx={{
-                borderRadius: 1.5, mb: 0.5, color: "#cbd5e1",
-                "& .MuiListItemIcon-root": { color: "inherit", minWidth: 38 },
-                "&.Mui-selected": { bgcolor: "rgba(255,255,255,.10)", color: "#fff" },
-                "&.Mui-selected:hover": { bgcolor: "rgba(255,255,255,.14)" },
-                "&:hover": { bgcolor: "rgba(255,255,255,.06)" },
-              }}
-            >
-              <ListItemIcon>{it.icon}</ListItemIcon>
-              <ListItemText primaryTypographyProps={{ fontSize: 14 }} primary={it.label} />
-            </ListItemButton>
+            <Tooltip key={it.to} title={open ? "" : it.label} placement="right">
+              <ListItemButton selected={active(it.to)} onClick={() => nav(it.to)}
+                sx={{
+                  borderRadius: 2, mb: 0.5, minHeight: 44, px: open ? 1.5 : 0,
+                  justifyContent: open ? "flex-start" : "center", color: "#cbd5e1",
+                  "& .MuiListItemIcon-root": { color: "inherit", minWidth: 0, mr: open ? 1.5 : 0 },
+                  "&.Mui-selected": {
+                    color: "#fff",
+                    background: "linear-gradient(90deg, rgba(20,184,166,.25), rgba(99,102,241,.18))",
+                    boxShadow: "inset 2px 0 0 #14b8a6",
+                  },
+                  "&.Mui-selected:hover": { background: "linear-gradient(90deg, rgba(20,184,166,.32), rgba(99,102,241,.24))" },
+                  "&:hover": { background: alpha("#fff", 0.06) },
+                }}>
+                <ListItemIcon>{it.icon}</ListItemIcon>
+                {open && <ListItemText primaryTypographyProps={{ fontSize: 14, fontWeight: 600 }} primary={it.label} />}
+              </ListItemButton>
+            </Tooltip>
           ))}
         </List>
-        <Box sx={{ mt: "auto", p: 2 }}>
-          <Button
-            fullWidth size="small" startIcon={<LogoutIcon />} onClick={logout}
-            sx={{ color: "#94a3b8", justifyContent: "flex-start" }}
-          >
-            Sign out
-          </Button>
-        </Box>
       </Drawer>
 
-      <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}>
-        <AppBar position="static" color="inherit" sx={{ bgcolor: "#fff", borderBottom: "1px solid #e2e8f0" }}>
-          <Toolbar variant="dense" sx={{ minHeight: 52 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "success.main" }} />
-              <Typography variant="body2" color="text.secondary">Live</Typography>
-            </Box>
+      <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppBar position="sticky" color="transparent"
+          sx={{ backdropFilter: "blur(10px)", bgcolor: (t) => alpha(t.palette.background.default, 0.7),
+            borderBottom: (t) => `1px solid ${t.palette.divider}` }}>
+          <Toolbar sx={{ gap: 1 }}>
+            <IconButton onClick={() => setOpen((o) => !o)} edge="start"><MenuIcon /></IconButton>
+            <Breadcrumbs sx={{ flexGrow: 1 }}>
+              <Link underline="hover" color="inherit" sx={{ cursor: "pointer" }} onClick={() => nav("/")}>Home</Link>
+              <Typography color="text.primary" sx={{ fontWeight: 700 }}>{crumbLabel}</Typography>
+            </Breadcrumbs>
+            <Tooltip title={mode === "dark" ? "Light mode" : "Dark mode"}>
+              <IconButton onClick={toggle}>{mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}</IconButton>
+            </Tooltip>
+            <Tooltip title="Account">
+              <IconButton onClick={(e) => setAnchor(e.currentTarget)}>
+                <Avatar sx={{ width: 32, height: 32, background: "linear-gradient(135deg,#14b8a6,#6366f1)", fontSize: 14 }}>
+                  {(me?.tenant_name || "PA").slice(0, 2).toUpperCase()}
+                </Avatar>
+              </IconButton>
+            </Tooltip>
+            <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
+              <MenuItem disabled sx={{ opacity: "1 !important" }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={700}>{me?.tenant_name || "Platform admin"}</Typography>
+                  <Typography variant="caption" color="text.secondary">{isSuper ? "Super admin" : "Clinic staff"}</Typography>
+                </Box>
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={logout}><LogoutIcon fontSize="small" style={{ marginRight: 10 }} /> Sign out</MenuItem>
+            </Menu>
           </Toolbar>
         </AppBar>
-        <Box sx={{ p: 3, flexGrow: 1, overflow: "auto" }}>
-          <Outlet />
-        </Box>
+
+        <Fade in key={loc.pathname} timeout={260}>
+          <Box sx={{ p: { xs: 2, md: 3 }, flexGrow: 1, overflow: "auto" }}>
+            <Outlet />
+          </Box>
+        </Fade>
       </Box>
     </Box>
   );

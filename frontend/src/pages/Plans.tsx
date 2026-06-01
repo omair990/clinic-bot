@@ -8,7 +8,7 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { apiPost, ApiError } from "../api";
-import { useApiQuery, PageTitle, Loading, QueryError } from "../lib";
+import { useApiQuery, PageTitle, Loading, QueryError, useToast } from "../lib";
 
 function AddClinicDialog({ open, onClose, plans, onCreated }: any) {
   const [f, setF] = useState<any>({ timezone: "Asia/Riyadh", plan_id: plans[0]?.id });
@@ -53,15 +53,16 @@ function AddClinicDialog({ open, onClose, plans, onCreated }: any) {
 export default function Plans() {
   const qc = useQueryClient();
   const nav = useNavigate();
+  const toast = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const q = useApiQuery<any>(["plans"], "/plans");
   const setPlan = useMutation({
     mutationFn: (v: { id: number; plan_id: number }) => apiPost(`/tenants/${v.id}/plan`, { plan_id: v.plan_id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["plans"] }),
+    onSuccess: () => { toast.ok("Plan updated"); qc.invalidateQueries({ queryKey: ["plans"] }); },
   });
   const setStatus = useMutation({
     mutationFn: (v: { id: number; status: string }) => apiPost(`/tenants/${v.id}/status`, { status: v.status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["plans"] }),
+    onSuccess: () => { toast.ok("Status updated"); qc.invalidateQueries({ queryKey: ["plans"] }); },
   });
 
   if (q.isLoading) return <Loading />;

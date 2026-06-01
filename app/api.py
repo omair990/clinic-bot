@@ -144,6 +144,12 @@ async def dashboard(request: Request):
             "wa_send_failing": wa_failing}
 
 
+@router.get("/trends")
+async def trends(request: Request):
+    """Real daily inbound-message series (last 14 days) for dashboard sparklines."""
+    return {"daily_messages": db.daily_message_counts(14, _view_scope(request))}
+
+
 @router.get("/clinics")
 async def clinics(request: Request):
     """Tenant id/name list for filters (super only; clinic gets just its own)."""
