@@ -49,7 +49,7 @@ export default function Insights() {
         <Grid item xs={6} md={3}><KpiCard label="Messages" value={m.messages ?? 0} color="primary" /></Grid>
         <Grid item xs={6} md={3}><KpiCard label="Users" value={m.users ?? 0} color="secondary" /></Grid>
         <Grid item xs={6} md={3}><KpiCard label="Voice share" value={`${m.voice_share_pct ?? 0}%`} color="info" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="No-shows" value={m.no_shows ?? 0} color="error" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label="Missed visits" value={m.no_shows ?? 0} color="error" /></Grid>
       </Grid>
 
       <Grid container spacing={2}>

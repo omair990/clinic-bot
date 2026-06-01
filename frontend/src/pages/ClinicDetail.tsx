@@ -59,12 +59,12 @@ export default function ClinicDetail() {
             <Divider sx={{ my: 1.5 }} />
             <Stack direction="row" spacing={3}>
               <Box><Typography variant="h6" color="warning.main">{rv?.avg_rating ?? "—"} ★</Typography><Typography variant="caption" color="text.secondary">Avg rating</Typography></Box>
-              <Box><Typography variant="h6">{c.no_shows_month ?? 0}</Typography><Typography variant="caption" color="text.secondary">No-shows (mo)</Typography></Box>
+              <Box><Typography variant="h6">{c.no_shows_month ?? 0}</Typography><Typography variant="caption" color="text.secondary">Missed visits (mo)</Typography></Box>
             </Stack>
             <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: "wrap" }}>
               <Button size="small" onClick={() => nav(`/conversations?clinic=${id}`)}>Conversations</Button>
               <Button size="small" onClick={() => nav(`/insights?clinic=${id}`)}>Insights</Button>
-              <Button size="small" onClick={() => nav(`/no-shows?clinic=${id}`)}>No-shows</Button>
+              <Button size="small" onClick={() => nav(`/no-shows?clinic=${id}`)}>Missed visits</Button>
             </Stack>
           </CardContent></Card>
         </Grid>

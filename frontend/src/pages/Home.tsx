@@ -137,7 +137,7 @@ function Overview() {
                   {[
                     { v: c.open_issues, l: "Issues", to: `/issues?clinic=${c.id}`, c: c.open_issues ? "error" : "text.primary" },
                     { v: c.reviews_avg != null ? c.reviews_avg.toFixed(1) : "—", l: `★ (${c.reviews_count})`, to: `/reviews?clinic=${c.id}`, c: "warning.main" },
-                    { v: c.no_shows_month, l: "No-shows", to: `/no-shows?clinic=${c.id}`, c: "text.primary" },
+                    { v: c.no_shows_month, l: "Missed", to: `/no-shows?clinic=${c.id}`, c: "text.primary" },
                     { v: c.upcoming_appts, l: "Upcoming", to: `/appointments?clinic=${c.id}`, c: "text.primary" },
                   ].map((m, i) => (
                     <Grid item xs={3} key={i}>
@@ -181,7 +181,7 @@ function Dashboard() {
     { l: "Appointments", v: s.appointments, icon: <EventIcon fontSize="small" />, c: "success" },
     { l: "Upcoming", v: s.upcoming_appointments, icon: <UpcomingIcon fontSize="small" />, c: "info" },
     { l: "Need human", v: s.needs_human_users, icon: <WarningIcon fontSize="small" />, c: "warning" },
-    { l: "No-shows (mo)", v: q.data?.no_shows_month, icon: <EventBusyIcon fontSize="small" />, c: "error" },
+    { l: "Missed visits (mo)", v: q.data?.no_shows_month, icon: <EventBusyIcon fontSize="small" />, c: "error" },
   ];
   return (
     <>
