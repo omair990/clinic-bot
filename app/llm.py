@@ -135,11 +135,17 @@ def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResu
                 last_err = e
                 transient = provider.is_transient(e)
                 rate_limited = getattr(provider, "is_rate_limit", lambda _e: False)(e)
-                if transient and attempt == 0:
+                # A rate limit (429) is a per-minute window — a 1.5s same-provider retry won't
+                # clear it and just adds latency, so fall straight through to the next provider.
+                # Genuine transient errors (5xx, timeouts) still get one quick retry.
+                if transient and not rate_limited and attempt == 0:
                     log.warning("[%s] transient %s — retrying", provider.NAME, type(e).__name__)
                     time.sleep(1.5)
                     continue
-                if transient:
+                if rate_limited:
+                    log.warning("[%s] rate-limited (429) — falling through to next provider",
+                                provider.NAME)
+                elif transient:
                     log.warning("[%s] still failing — falling back", provider.NAME)
                 else:
                     any_hard = True

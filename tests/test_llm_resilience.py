@@ -114,6 +114,19 @@ def test_rate_limit_never_trips_breaker(monkeypatch):
     assert "a" not in llm._breaker  # breaker never opened
 
 
+def test_rate_limit_falls_through_without_same_provider_retry(monkeypatch):
+    # A 429 is a per-minute window: don't burn a 1.5s retry on the same provider — fall
+    # straight through to the next one. (A generic transient still gets its one retry.)
+    ok = LLMResult(text="hi")
+    a = FakeProvider("a", [_RateLimit(), ok])   # if it retried, a.calls would be 2
+    b = FakeProvider("b", [ok])
+    _install(monkeypatch, a, b)
+
+    assert llm.generate("s", [], []) is ok
+    assert a.calls == 1   # NO same-provider retry on 429
+    assert b.calls == 1   # fell straight through to b
+
+
 def test_transient_outage_is_flagged_transient(monkeypatch):
     a = FakeProvider("a", [_Transient(), _Transient()])
     _install(monkeypatch, a)
