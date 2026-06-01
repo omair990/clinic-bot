@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -146,32 +147,35 @@ export function KpiCard({ label, value, icon, color = "primary", spark }: {
 }
 
 // --- styled DataGrid wrapper ---------------------------------------------------
-export function DataTable({ rows, columns, getRowId, loading, height = 560, density = "standard", onRowClick }: {
+export function DataTable({ rows, columns, getRowId, loading, density = "standard", onRowClick }: {
   rows: any[]; columns: GridColDef[]; getRowId?: (r: any) => any;
-  loading?: boolean; height?: number; density?: "compact" | "standard" | "comfortable";
+  loading?: boolean; density?: "compact" | "standard" | "comfortable";
   onRowClick?: (row: any) => void;
 }) {
+  // Controlled pagination + autoHeight so "Rows per page" reliably re-renders and the grid
+  // grows to fit the selected page (no fixed-height clipping / inner scroll surprises).
+  const [paginationModel, setPaginationModel] = useState({ pageSize: 10, page: 0 });
   return (
-    <Card sx={{ p: 0 }}>
-      <Box sx={{ height, width: "100%" }}>
-        <DataGrid
-          rows={rows} columns={columns} getRowId={getRowId} loading={loading}
-          density={density}
-          initialState={{ pagination: { paginationModel: { pageSize: 25, page: 0 } } }}
-          pageSizeOptions={[10, 25, 50, 100]}
-          slots={{ toolbar: GridToolbar }}
-          slotProps={{ toolbar: { showQuickFilter: true, csvOptions: { allColumns: true } } }}
-          disableRowSelectionOnClick
-          onRowClick={onRowClick ? (p) => onRowClick(p.row) : undefined}
-          sx={{
-            border: 0,
-            "& .MuiDataGrid-columnHeaders": { bgcolor: (t) => alpha(t.palette.text.primary, 0.04) },
-            "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within": { outline: "none" },
-            "& .MuiDataGrid-row:hover": { bgcolor: (t) => alpha(t.palette.primary.main, 0.06) },
-            ...(onRowClick ? { "& .MuiDataGrid-row": { cursor: "pointer" } } : {}),
-          }}
-        />
-      </Box>
+    <Card sx={{ p: 0, overflow: "hidden" }}>
+      <DataGrid
+        autoHeight
+        rows={rows} columns={columns} getRowId={getRowId} loading={loading}
+        density={density}
+        paginationModel={paginationModel}
+        onPaginationModelChange={setPaginationModel}
+        pageSizeOptions={[10, 25, 50, 100]}
+        slots={{ toolbar: GridToolbar }}
+        slotProps={{ toolbar: { showQuickFilter: true, csvOptions: { allColumns: true } } }}
+        disableRowSelectionOnClick
+        onRowClick={onRowClick ? (p) => onRowClick(p.row) : undefined}
+        sx={{
+          border: 0,
+          "& .MuiDataGrid-columnHeaders": { bgcolor: (t) => alpha(t.palette.text.primary, 0.04) },
+          "& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within": { outline: "none" },
+          "& .MuiDataGrid-row:hover": { bgcolor: (t) => alpha(t.palette.primary.main, 0.06) },
+          ...(onRowClick ? { "& .MuiDataGrid-row": { cursor: "pointer" } } : {}),
+        }}
+      />
     </Card>
   );
 }
