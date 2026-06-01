@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,12 +8,18 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesomeOutlined";
+import DoneAllIcon from "@mui/icons-material/DoneAll";
 import { apiPost } from "../api";
 import { useApiQuery, Loading, QueryError, fmtDate, EmptyState, useToast } from "../lib";
 import { useLive } from "../realtime";
 
 const statusColor: Record<string, any> = { confirmed: "success", completed: "info", cancelled: "default", no_show: "warning" };
-const blink = keyframes`0%,80%,100%{opacity:.25}40%{opacity:1}`;
+// Apple system typeface for that native-chat feel; falls back to the app font elsewhere.
+const APPLE_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", system-ui, sans-serif';
+const GROUP_GAP_MS = 5 * 60 * 1000;
+
+const popIn = keyframes`from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; }`;
+const wave = keyframes`0%,60%,100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-5px); opacity: 1; }`;
 
 function dayLabel(iso?: string | null) {
   if (!iso) return "";
@@ -24,17 +30,72 @@ function dayLabel(iso?: string | null) {
   if (diff === 1) return "Yesterday";
   return d.toLocaleDateString(undefined, { weekday: "long", day: "2-digit", month: "short" });
 }
+function clock(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+type Msg = { id: any; direction: "in" | "out"; message: string; created_at: string; source?: string; _live?: boolean };
+
+// Group consecutive same-direction messages (within GROUP_GAP_MS) and flag day breaks,
+// so we can render iMessage-style stacks with a single tail + timestamp per group.
+function layout(messages: Msg[]) {
+  return messages.map((m, i) => {
+    const prev = messages[i - 1], next = messages[i + 1];
+    const t = new Date(m.created_at).getTime();
+    const samePrev = prev && prev.direction === m.direction && t - new Date(prev.created_at).getTime() < GROUP_GAP_MS;
+    const sameNext = next && next.direction === m.direction && new Date(next.created_at).getTime() - t < GROUP_GAP_MS;
+    const newDay = !prev || dayLabel(prev.created_at) !== dayLabel(m.created_at);
+    return { m, isFirst: !samePrev, isLast: !sameNext, showSep: newDay };
+  });
+}
 
 function TypingBubble() {
   return (
-    <Box sx={{ display: "flex", justifyContent: "flex-start" }}>
-      <Paper elevation={0} sx={{ p: 1.4, px: 1.8, borderRadius: "16px 16px 16px 4px",
-        bgcolor: (t) => alpha(t.palette.text.primary, 0.06), display: "flex", gap: 0.6 }}>
+    <Box sx={{ display: "flex", justifyContent: "flex-start", animation: `${popIn} .25s ease both` }}>
+      <Box sx={{ py: 1.3, px: 1.8, borderRadius: "20px 20px 20px 6px", display: "flex", gap: 0.7, alignItems: "center",
+        bgcolor: (t) => (t.palette.mode === "dark" ? "#2C2C2E" : "#E9E9EB"),
+        boxShadow: "0 1px 1px rgba(0,0,0,.06)" }}>
         {[0, 1, 2].map((i) => (
-          <Box key={i} sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: "text.secondary",
-            animation: `${blink} 1.3s infinite`, animationDelay: `${i * 0.18}s` }} />
+          <Box key={i} sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "text.secondary",
+            animation: `${wave} 1.2s ease-in-out infinite`, animationDelay: `${i * 0.16}s` }} />
         ))}
-      </Paper>
+      </Box>
+    </Box>
+  );
+}
+
+function Bubble({ m, isFirst, isLast }: { m: Msg; isFirst: boolean; isLast: boolean }) {
+  const inb = m.direction === "in";
+  const r = 20, tail = 6;
+  const radius = inb
+    ? `${isFirst ? r : tail}px ${r}px ${r}px ${isLast ? tail : r}px`
+    : `${r}px ${isFirst ? r : tail}px ${isLast ? tail : r}px ${r}px`;
+  return (
+    <Box sx={{ display: "flex", justifyContent: inb ? "flex-start" : "flex-end", mt: isFirst ? 0.9 : 0.25 }}>
+      <Box sx={{ maxWidth: "74%", animation: `${popIn} .26s cubic-bezier(.2,.7,.3,1) both` }}>
+        <Box sx={{
+          py: 0.95, px: 1.5, borderRadius: radius, fontFamily: APPLE_FONT,
+          boxShadow: "0 1px 1px rgba(0,0,0,.07)",
+          color: inb ? "text.primary" : "#fff",
+          bgcolor: inb ? (t) => (t.palette.mode === "dark" ? "#2C2C2E" : "#E9E9EB") : undefined,
+          background: inb ? undefined : "linear-gradient(180deg,#0A84FF 0%,#0066FF 100%)",
+        }}>
+          <Typography sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 15, lineHeight: 1.35, fontFamily: APPLE_FONT }}>
+            {m.message}
+          </Typography>
+        </Box>
+        {isLast && (
+          <Stack direction="row" spacing={0.5} alignItems="center"
+            sx={{ justifyContent: inb ? "flex-start" : "flex-end", px: 0.5, mt: 0.4 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
+              {clock(m.created_at)}{m.source && m.source !== "text" ? ` · ${m.source}` : ""}
+            </Typography>
+            {!inb && <DoneAllIcon sx={{ fontSize: 13, color: "#0A84FF" }} />}
+          </Stack>
+        )}
+      </Box>
     </Box>
   );
 }
@@ -44,7 +105,7 @@ export default function PatientDetail() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
-  const { typing } = useLive();
+  const { typing, activity } = useLive();
   const [tab, setTab] = useState(0);
   const q = useApiQuery<any>(["patient", wa], `/patients/${wa}`);
   const refresh = useMutation({
@@ -52,13 +113,26 @@ export default function PatientDetail() {
     onSuccess: () => { toast.ok("Analysis refreshed"); qc.invalidateQueries({ queryKey: ["patient", wa] }); },
   });
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const messages = q.data?.messages || [];
+  const fetched: Msg[] = q.data?.messages || [];
   const isTyping = !!wa && typing.has(wa);
-  // Keep the thread pinned to the newest message as live turns stream in.
+
+  // Live merge: append SSE turns for this patient that the refetch hasn't landed yet, so
+  // new messages pop in instantly. Once the (debounced) refetch includes them, they match
+  // a fetched row by direction+text and drop out of `pending` — no duplicates, no flicker.
+  const messages: Msg[] = useMemo(() => {
+    const recent = new Set(fetched.slice(-14).map((m) => `${m.direction}|${m.message}`));
+    const pending = activity
+      .filter((a) => a.wa_user === wa && !recent.has(`${a.direction}|${a.text}`))
+      .slice().reverse()
+      .map((a) => ({ id: `live-${a.key}`, direction: a.direction, message: a.text,
+                     created_at: new Date(a.ts).toISOString(), source: a.intent, _live: true } as Msg));
+    return [...fetched, ...pending];
+  }, [fetched, activity, wa]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && tab === 0) el.scrollTop = el.scrollHeight;
+    if (el && tab === 0) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages.length, isTyping, tab]);
 
   if (q.isLoading) return <Loading />;
@@ -66,8 +140,7 @@ export default function PatientDetail() {
   const p = q.data;
   const a = p.analysis;
   const initials = (p.name || "P").slice(0, 2).toUpperCase();
-
-  let lastDay = "";
+  const laid = layout(messages);
 
   return (
     <>
@@ -85,11 +158,17 @@ export default function PatientDetail() {
             border: `2px solid ${alpha("#fff", 0.5)}` }}>{initials}</Avatar>
           <Box sx={{ flex: 1, minWidth: 200 }}>
             <Typography variant="h5" sx={{ color: "#fff" }}>{p.name || "Unknown patient"}</Typography>
-            <Typography sx={{ color: alpha("#fff", 0.85) }}>
-              +{p.wa_user}{p.clinic ? ` · ${p.clinic}` : ""}
-            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography sx={{ color: alpha("#fff", 0.85) }}>+{p.wa_user}{p.clinic ? ` · ${p.clinic}` : ""}</Typography>
+              {isTyping && (
+                <Stack direction="row" spacing={0.6} alignItems="center">
+                  <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "#34d399",
+                    boxShadow: "0 0 0 0 #34d399", animation: `${wave} 1.2s ease-in-out infinite` }} />
+                  <Typography sx={{ color: "#d1fae5", fontWeight: 700, fontSize: 13 }}>typing…</Typography>
+                </Stack>
+              )}
+            </Stack>
             <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
-              {isTyping && <Chip size="small" label="online · typing" sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700 }} />}
               {a?.lead_band && <Chip size="small" label={`Lead: ${a.lead_band}${a.lead_score != null ? ` (${a.lead_score})` : ""}`}
                 sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700 }} />}
               {a?.urgency && <Chip size="small" label={`Urgency: ${a.urgency}`} sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700 }} />}
@@ -117,40 +196,26 @@ export default function PatientDetail() {
           {tab === 0 && (
             <Grid container spacing={2}>
               <Grid item xs={12} md={8}>
-                <Box ref={scrollRef} sx={{ maxHeight: "62vh", overflow: "auto", pr: 1, py: 1,
-                  borderRadius: 3, bgcolor: (t) => alpha(t.palette.text.primary, 0.02) }}>
-                  <Stack spacing={1.2} sx={{ px: 1 }}>
-                    {messages.map((m: any) => {
-                      const inb = m.direction === "in";
-                      const d = dayLabel(m.created_at);
-                      const showDay = d !== lastDay; lastDay = d;
-                      return (
-                        <Box key={m.id}>
-                          {showDay && (
-                            <Box sx={{ display: "flex", justifyContent: "center", my: 1 }}>
-                              <Chip size="small" label={d} sx={{ bgcolor: (t) => alpha(t.palette.text.primary, 0.06), fontWeight: 600 }} />
-                            </Box>
-                          )}
-                          <Box sx={{ display: "flex", justifyContent: inb ? "flex-start" : "flex-end" }}>
-                            <Paper elevation={0} sx={{
-                              p: 1.2, px: 1.6, maxWidth: "80%",
-                              borderRadius: inb ? "16px 16px 16px 4px" : "16px 16px 4px 16px",
-                              bgcolor: inb ? (t) => alpha(t.palette.text.primary, 0.06) : "transparent",
-                              background: inb ? undefined : "linear-gradient(135deg,#14b8a6,#6366f1)",
-                              color: inb ? "text.primary" : "#fff",
-                            }}>
-                              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.message}</Typography>
-                              <Typography variant="caption" sx={{ opacity: 0.7, display: "block", mt: 0.4, textAlign: "right" }}>
-                                {fmtDate(m.created_at)}{m.source ? ` · ${m.source}` : ""}
-                              </Typography>
-                            </Paper>
-                          </Box>
+                <Box ref={scrollRef} sx={{ height: "62vh", overflow: "auto", px: { xs: 1, sm: 2 }, py: 1.5,
+                  borderRadius: 3, scrollBehavior: "smooth",
+                  bgcolor: (t) => (t.palette.mode === "dark" ? alpha("#000", 0.18) : alpha("#000", 0.015)) }}>
+                  {laid.map(({ m, isFirst, isLast, showSep }) => (
+                    <Box key={m.id}>
+                      {showSep && (
+                        <Box sx={{ textAlign: "center", my: 1.5 }}>
+                          <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 700, fontFamily: APPLE_FONT }}>
+                            {dayLabel(m.created_at)}
+                          </Typography>
+                          <Typography component="span" variant="caption" sx={{ color: "text.disabled", ml: 0.8, fontFamily: APPLE_FONT }}>
+                            {clock(m.created_at)}
+                          </Typography>
                         </Box>
-                      );
-                    })}
-                    {isTyping && <TypingBubble />}
-                    {messages.length === 0 && !isTyping && <EmptyState text="No messages yet." />}
-                  </Stack>
+                      )}
+                      <Bubble m={m} isFirst={isFirst} isLast={isLast} />
+                    </Box>
+                  ))}
+                  {isTyping && <Box sx={{ mt: 0.9 }}><TypingBubble /></Box>}
+                  {messages.length === 0 && !isTyping && <EmptyState text="No messages yet." />}
                 </Box>
               </Grid>
               <Grid item xs={12} md={4}>
