@@ -18,6 +18,8 @@ from app.config import (
     NO_SHOW_SWEEP_INTERVAL_MIN,
     PORT,
     PROCESSED_MSG_RETENTION_HOURS,
+    PROVIDER_MONITOR_ENABLED,
+    PROVIDER_MONITOR_INTERVAL_MIN,
     SECRET_KEY,
 )
 from app.db import close_db, init_db, ping, prune_processed_messages, prune_resolved_events
@@ -68,6 +70,18 @@ async def _insights_digest_loop() -> None:
         await asyncio.sleep(INSIGHTS_DIGEST_INTERVAL_MIN * 60)
 
 
+async def _provider_monitor_loop() -> None:
+    """Periodically check the primary LLM provider's health and alert staff if it has been
+    down for a sustained period (e.g. Claude credits exhausted — see app/provider_monitor.py)."""
+    from app import provider_monitor
+    while True:
+        await asyncio.sleep(PROVIDER_MONITOR_INTERVAL_MIN * 60)   # check after a grace period
+        try:
+            await provider_monitor.check()
+        except Exception:  # noqa: BLE001 — a bad check must not kill the loop
+            log.exception("provider monitor failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -76,6 +90,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(_no_show_loop()))
     if INSIGHTS_DIGEST_ENABLED:
         tasks.append(asyncio.create_task(_insights_digest_loop()))
+    if PROVIDER_MONITOR_ENABLED:
+        tasks.append(asyncio.create_task(_provider_monitor_loop()))
     yield
     for task in tasks:
         task.cancel()

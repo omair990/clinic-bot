@@ -179,6 +179,14 @@ USAGE_ENFORCEMENT = os.getenv("USAGE_ENFORCEMENT", "true").lower() in ("1", "tru
 # plan on the default clinic — e.g. a single-tenant deployment that wants its own limits.
 ENFORCE_DEFAULT_TENANT = os.getenv("ENFORCE_DEFAULT_TENANT", "false").lower() in ("1", "true", "yes", "on")
 ADMIN_WA_NUMBER = os.getenv("ADMIN_WA_NUMBER", "").strip()
+
+# --- Provider health monitor ---
+# Raise an incident (and WhatsApp ADMIN_WA_NUMBER) when the primary LLM provider stays down
+# this long — so a silent fallback-only degradation (e.g. Claude credits exhausted) is noticed.
+PROVIDER_MONITOR_ENABLED = os.getenv(
+    "PROVIDER_MONITOR_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+LLM_OUTAGE_ALERT_MIN = int(os.getenv("LLM_OUTAGE_ALERT_MIN", "30"))
+PROVIDER_MONITOR_INTERVAL_MIN = int(os.getenv("PROVIDER_MONITOR_INTERVAL_MIN", "5"))
 PORT = int(os.getenv("PORT", "8000"))
 # Deployed commit — Railway injects RAILWAY_GIT_COMMIT_SHA on GitHub deploys; surfaced on
 # the health endpoint so the running version is verifiable.

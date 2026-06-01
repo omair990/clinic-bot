@@ -85,7 +85,8 @@ log.info("LLM providers loaded: %s", [p.NAME for p in _providers])
 
 # --- Per-provider circuit breaker (shared across webhook worker threads) ---
 _breaker_lock = threading.Lock()
-_breaker: dict[str, dict] = {}  # name -> {"fails": int, "open_until": float (monotonic)}
+# name -> {"fails": int, "open_until": float (monotonic), "since": float (monotonic, first fail)}
+_breaker: dict[str, dict] = {}
 
 
 def _breaker_open(name: str, now: float) -> bool:
@@ -96,17 +97,28 @@ def _breaker_open(name: str, now: float) -> bool:
 
 def _record_success(name: str) -> None:
     with _breaker_lock:
-        _breaker.pop(name, None)  # reset on any success
+        _breaker.pop(name, None)  # reset on any success — clears the outage clock too
 
 
 def _record_failure(name: str, now: float) -> None:
     with _breaker_lock:
-        st = _breaker.setdefault(name, {"fails": 0, "open_until": 0.0})
+        st = _breaker.setdefault(name, {"fails": 0, "open_until": 0.0, "since": now})
+        st.setdefault("since", now)   # first failure of this outage
         st["fails"] += 1
         if st["fails"] >= LLM_BREAKER_THRESHOLD:
             st["open_until"] = now + LLM_BREAKER_COOLDOWN_S
             log.warning("[%s] circuit breaker OPEN for %.0fs after %d consecutive failures",
                         name, LLM_BREAKER_COOLDOWN_S, st["fails"])
+
+
+def provider_outage_seconds(name: str) -> float | None:
+    """How long the named provider has been continuously failing, in seconds — or None if it
+    is healthy (no failures since its last success). Used by the provider health monitor."""
+    with _breaker_lock:
+        st = _breaker.get(name)
+        if not st:
+            return None
+        return max(0.0, time.monotonic() - st.get("since", time.monotonic()))
 
 
 def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResult:
