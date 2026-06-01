@@ -39,3 +39,16 @@ def test_failed_rewrite_keeps_original(monkeypatch):
     _replies(monkeypatch, "We are open from 9 to 11.", "Still English, sorry.")
     ctx = agent.run_agent(None, "966500000000", "متى تفتحون؟", history=[])
     assert ctx.reply == "We are open from 9 to 11."
+
+
+def test_urdu_script_patient_english_reply_is_regenerated(monkeypatch):
+    _replies(monkeypatch, "We are open from 9 to 11.", "ہم صبح ٩ سے رات ١١ بجے تک کھلے ہیں۔")
+    ctx = agent.run_agent(None, "966500000000", "آپ کب کھلتے ہیں؟", history=[])
+    assert ctx.reply == "ہم صبح ٩ سے رات ١١ بجے تک کھلے ہیں۔"
+
+
+def test_roman_urdu_patient_arabic_reply_is_regenerated(monkeypatch):
+    # Patient typed romanised Urdu; model drifted to Arabic script → rewrite (here, to roman Urdu).
+    _replies(monkeypatch, "نحن مفتوحون من ٩ إلى ١١.", "Hum subah 9 se raat 11 baje tak khule hain.")
+    ctx = agent.run_agent(None, "966500000000", "aap kab khulte hain?", history=[])
+    assert ctx.reply == "Hum subah 9 se raat 11 baje tak khule hain."

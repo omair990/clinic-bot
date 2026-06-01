@@ -174,3 +174,47 @@ def test_verify_safe_reply_is_localized_for_arabic(monkeypatch):
     c = _ctx("تم الحجز لك الساعة ٥ مساءً")     # false Arabic booking claim
     reply_guard.verify(c, user_text="احجزلي موعد")
     assert c.reply == reply_guard.SAFE_REPLY_AR and c.guard_tripped is True
+
+
+# --- Urdu language guard ------------------------------------------------------
+def test_detect_language_urdu():
+    # Urdu script is distinguished from Arabic by Urdu-specific letters.
+    assert reply_guard.detect_language("مجھے اپائنٹمنٹ چاہیے") == "ur"
+    assert reply_guard.detect_language("احجزلي موعد من فضلك") == "ar"
+    # Romanised Urdu is spotted in Latin script; plain English is not.
+    assert reply_guard.detect_language("mujhe appointment chahiye") == "ur"
+    assert reply_guard.detect_language("appointment book ho gaya hai") == "ur"
+    assert reply_guard.detect_language("Book me an appointment") == "en"
+
+
+def test_language_mismatch_urdu():
+    # Urdu-script patient, English / Arabic-script reply → mismatch.
+    assert reply_guard.language_mismatch("مجھے اپائنٹمنٹ چاہیے", "You are booked.") is True
+    assert reply_guard.language_mismatch("مجھے اپائنٹمنٹ چاہیے", "تم الحجز مع خالد") is True
+    # Arabic patient, Urdu-script reply → mismatch (wrong Perso-Arabic language).
+    assert reply_guard.language_mismatch("احجزلي موعد", "آپ کی اپائنٹمنٹ بک ہو گئی") is True
+    # Romanised-Urdu patient, reply switched to Perso-Arabic script → mismatch.
+    assert reply_guard.language_mismatch("mujhe appointment chahiye", "تم الحجز مع خالد") is True
+
+
+def test_language_mismatch_urdu_allows_matching_and_mixed():
+    # Urdu reply (with an English doctor/service name) to an Urdu patient → fine.
+    assert reply_guard.language_mismatch(
+        "مجھے اپائنٹمنٹ چاہیے",
+        "آپ کی اپائنٹمنٹ Dr. Khalid کے ساتھ Dental Checkup بک ہو گئی ہے") is False
+    # Romanised-Urdu patient getting a Latin reply is left alone (can't tell roman-Urdu apart).
+    assert reply_guard.language_mismatch("mujhe appointment chahiye", "Sure, you're booked.") is False
+
+
+def test_localize_picks_urdu():
+    assert reply_guard.localize("mujhe appointment chahiye", "EN", "AR", ur="UR") == "UR"
+    assert reply_guard.localize("مجھے اپائنٹمنٹ چاہیے", "EN", "AR", ur="UR") == "UR"
+    # No Urdu string given → fall back to English, not Arabic.
+    assert reply_guard.localize("mujhe appointment chahiye", "EN", "AR") == "EN"
+
+
+def test_verify_safe_reply_is_localized_for_urdu(monkeypatch):
+    monkeypatch.setattr(reply_guard.db, "has_confirmed_upcoming", lambda t, u: False)
+    c = _ctx("آپ کی اپائنٹمنٹ بک ہو گئی ہے")   # false Urdu booking claim
+    reply_guard.verify(c, user_text="mujhe appointment chahiye")
+    assert c.reply == reply_guard.SAFE_REPLY_UR and c.guard_tripped is True
