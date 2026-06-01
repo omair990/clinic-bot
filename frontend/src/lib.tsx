@@ -3,12 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import {
   MenuItem, Select, Stack, Typography, Box, Alert, Card, CardContent, Skeleton, Grid,
-  alpha, useTheme, Dialog, DialogTitle, DialogContent, DialogActions,
+  alpha, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, Button,
 } from "@mui/material";
 import { DataGrid, GridColDef, GridToolbar } from "@mui/x-data-grid";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import { useSnackbar } from "notistack";
 import { apiGet } from "./api";
+
+// Time + name formatting is centralized in ./tz so every page renders in the clinic timezone.
+export { fmtDate, fmtTime, dayLabel, displayName, initials } from "./tz";
 
 export function useApiQuery<T = any>(key: any[], path: string) {
   return useQuery<T>({ queryKey: key, queryFn: () => apiGet<T>(path) });
@@ -21,15 +24,6 @@ export function useToast() {
     err: (m: string) => enqueueSnackbar(m, { variant: "error" }),
     info: (m: string) => enqueueSnackbar(m, { variant: "info" }),
   };
-}
-
-export function fmtDate(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString(undefined, {
-    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-  });
 }
 
 export function PageTitle({ title, subtitle, right }: { title: string; subtitle?: string; right?: React.ReactNode }) {
@@ -136,6 +130,27 @@ export function DetailDialog({ open, onClose, title, subtitle, fields, actions }
         </Stack>
       </DialogContent>
       {actions && <DialogActions sx={{ px: 3, py: 2 }}>{actions}</DialogActions>}
+    </Dialog>
+  );
+}
+
+// A small confirm-before-acting dialog for irreversible / patient-visible actions.
+export function ConfirmDialog({ open, title = "Please confirm", message, confirmLabel = "Confirm",
+  confirmColor = "primary", onConfirm, onClose }: {
+  open: boolean; title?: string; message: React.ReactNode; confirmLabel?: string;
+  confirmColor?: "primary" | "success" | "warning" | "error" | "secondary";
+  onConfirm: () => void; onClose: () => void;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 800 }}>{title}</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary">{message}</Typography>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} color="inherit">Cancel</Button>
+        <Button onClick={onConfirm} variant="contained" color={confirmColor} autoFocus>{confirmLabel}</Button>
+      </DialogActions>
     </Dialog>
   );
 }

@@ -100,14 +100,15 @@ async def login(request: Request, body: dict = Body(...)):
     if not username and password == ADMIN_PASSWORD:
         request.session.clear()
         request.session["role"] = "super"
-        return {"role": "super", "tenant_id": None, "tenant_name": None}
+        return {"role": "super", "tenant_id": None, "tenant_name": None, "timezone": str(TZ)}
     if username:
         t = db.get_tenant_by_username(username)
         if t and verify_password(password, t.get("staff_password_hash")):
             request.session.clear()
             request.session.update(
                 {"role": "clinic", "tenant_id": t["id"], "tenant_name": t["name"]})
-            return {"role": "clinic", "tenant_id": t["id"], "tenant_name": t["name"]}
+            return {"role": "clinic", "tenant_id": t["id"], "tenant_name": t["name"],
+                    "timezone": t.get("timezone") or str(TZ)}
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
@@ -119,7 +120,15 @@ async def logout(request: Request):
 
 @router.get("/me")
 async def me(request: Request):
-    return _require(request)
+    p = _require(request)
+    # Timezone the console should render all times in: the clinic's own zone for a clinic
+    # login, the platform default for the super-admin (who sees many clinics at once).
+    tz = str(TZ)
+    if p["role"] == "clinic" and p.get("tenant_id"):
+        t = db.get_tenant(p["tenant_id"])
+        if t and t.get("timezone"):
+            tz = t["timezone"]
+    return {**p, "timezone": tz}
 
 
 # --------------------------------------------------------------------------- dashboards

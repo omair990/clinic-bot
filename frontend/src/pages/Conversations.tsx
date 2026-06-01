@@ -10,7 +10,7 @@ import WarningIcon from "@mui/icons-material/WarningAmberOutlined";
 import EventIcon from "@mui/icons-material/EventAvailableOutlined";
 import SouthWestIcon from "@mui/icons-material/SouthWest";
 import NorthEastIcon from "@mui/icons-material/NorthEast";
-import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, TableSkeleton, QueryError, KpiCard, EmptyState } from "../lib";
+import { useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, displayName, TableSkeleton, QueryError, KpiCard, EmptyState } from "../lib";
 import { useLive } from "../realtime";
 
 const intentColor: Record<string, any> = {
@@ -64,7 +64,7 @@ function ChatRow({ row, showClinic, clinicName, typing, onClick }: {
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography fontWeight={700} noWrap>
-            {row.name || `+${row.wa_user}`}
+            {displayName(row.name, row.wa_user)}
             {showClinic && clinicName && (
               <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>· {clinicName}</Typography>
             )}
