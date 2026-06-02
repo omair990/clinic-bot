@@ -135,9 +135,11 @@ export default function Layout() {
         {drawerBody(open)}
       </Drawer>
 
-      {/* Mobile: overlay drawer (slides from the correct side for LTR/RTL) */}
+      {/* Mobile: overlay drawer. MUI flips left/right anchors by theme.direction, so a constant
+          "left" resolves to the start side automatically — left in LTR, right in RTL (matching the
+          edge="start" hamburger). Passing "right" for RTL would double-flip back to the left. */}
       <Drawer variant="temporary" open={mobileOpen} onClose={() => setMobileOpen(false)}
-        anchor={dir === "rtl" ? "right" : "left"} ModalProps={{ keepMounted: true }}
+        anchor="left" ModalProps={{ keepMounted: true }}
         sx={{
           display: { xs: "block", md: "none" },
           "& .MuiDrawer-paper": { width: MOBILE_W, boxSizing: "border-box", border: 0,
