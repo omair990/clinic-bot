@@ -20,23 +20,20 @@ import LightModeIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeIcon from "@mui/icons-material/DarkModeOutlined";
 import LogoutIcon from "@mui/icons-material/Logout";
 import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
+import TranslateIcon from "@mui/icons-material/TranslateOutlined";
 import { useAuth } from "./auth";
 import { useColorMode } from "./ColorMode";
+import { useI18n, useT } from "./i18n";
 import NotificationBell from "./NotificationBell";
 
 const FULL = 248;
 const MINI = 76;
 
-const LABELS: Record<string, string> = {
-  "": "Overview", conversations: "Patient Chats", patients: "Patient Chats",
-  appointments: "Appointments", "no-shows": "Missed Visits", insights: "Insights",
-  reviews: "Reviews", usage: "Usage", plans: "Plans & Usage", issues: "Issues",
-  settings: "Settings", tenants: "Clinic",
-};
-
 export default function Layout() {
   const { me, logout } = useAuth();
   const { mode, toggle } = useColorMode();
+  const { lang, setLang } = useI18n();
+  const t = useT();
   const nav = useNavigate();
   const loc = useLocation();
   const [open, setOpen] = useState(true);
@@ -45,22 +42,24 @@ export default function Layout() {
   const W = open ? FULL : MINI;
 
   const items = [
-    { label: isSuper ? "Overview" : "Dashboard", to: "/", icon: <DashboardIcon /> },
-    { label: "Patient Chats", to: "/conversations", icon: <ChatIcon /> },
-    { label: "Appointments", to: "/appointments", icon: <EventIcon /> },
-    { label: "Missed Visits", to: "/no-shows", icon: <EventBusyIcon /> },
-    { label: "Insights", to: "/insights", icon: <InsightsIcon /> },
-    { label: "Reviews", to: "/reviews", icon: <StarIcon /> },
-    ...(!isSuper ? [{ label: "Usage", to: "/usage", icon: <SpeedIcon /> }] : []),
+    { label: t(isSuper ? "nav.overview" : "nav.dashboard"), to: "/", icon: <DashboardIcon /> },
+    { label: t("nav.conversations"), to: "/conversations", icon: <ChatIcon /> },
+    { label: t("nav.appointments"), to: "/appointments", icon: <EventIcon /> },
+    { label: t("nav.no-shows"), to: "/no-shows", icon: <EventBusyIcon /> },
+    { label: t("nav.insights"), to: "/insights", icon: <InsightsIcon /> },
+    { label: t("nav.reviews"), to: "/reviews", icon: <StarIcon /> },
+    ...(!isSuper ? [{ label: t("nav.usage"), to: "/usage", icon: <SpeedIcon /> }] : []),
     ...(isSuper ? [
-      { label: "Issues", to: "/issues", icon: <ReportProblemIcon /> },
-      { label: "Plans & Usage", to: "/plans", icon: <LayersIcon /> },
-      { label: "Settings", to: "/settings", icon: <SettingsIcon /> },
+      { label: t("nav.issues"), to: "/issues", icon: <ReportProblemIcon /> },
+      { label: t("nav.plans"), to: "/plans", icon: <LayersIcon /> },
+      { label: t("nav.settings"), to: "/settings", icon: <SettingsIcon /> },
     ] : []),
   ];
   const active = (to: string) => (to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(to));
   const seg = loc.pathname.split("/").filter(Boolean);
-  const crumbLabel = LABELS[seg[0] ?? ""] ?? (seg[0] ?? "Overview");
+  const crumbKey = seg[0] ?? "";
+  const crumbLabel = crumbKey === "" ? t(isSuper ? "nav.overview" : "nav.dashboard")
+    : t(`nav.${crumbKey}`);
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
@@ -84,10 +83,10 @@ export default function Layout() {
           {open && (
             <Box sx={{ overflow: "hidden" }}>
               <Typography noWrap sx={{ fontWeight: 800, color: "#fff", fontSize: 15 }}>
-                {me?.tenant_name || "Clinic Platform"}
+                {me?.tenant_name || t("common.clinicPlatform")}
               </Typography>
               <Typography noWrap variant="caption" sx={{ color: "#5eead4" }}>
-                {isSuper ? "Platform admin" : "Clinic console"}
+                {isSuper ? t("common.platformAdmin") : t("common.clinicConsole")}
               </Typography>
             </Box>
           )}
@@ -124,14 +123,20 @@ export default function Layout() {
           <Toolbar sx={{ gap: 1 }}>
             <IconButton onClick={() => setOpen((o) => !o)} edge="start"><MenuIcon /></IconButton>
             <Breadcrumbs sx={{ flexGrow: 1 }}>
-              <Link underline="hover" color="inherit" sx={{ cursor: "pointer" }} onClick={() => nav("/")}>Home</Link>
+              <Link underline="hover" color="inherit" sx={{ cursor: "pointer" }} onClick={() => nav("/")}>{t("common.home")}</Link>
               <Typography color="text.primary" sx={{ fontWeight: 700 }}>{crumbLabel}</Typography>
             </Breadcrumbs>
             <NotificationBell />
-            <Tooltip title={mode === "dark" ? "Light mode" : "Dark mode"}>
+            <Tooltip title={lang === "ar" ? "English" : "العربية"}>
+              <IconButton onClick={() => setLang(lang === "ar" ? "en" : "ar")} sx={{ gap: 0.5 }}>
+                <TranslateIcon fontSize="small" />
+                <Typography variant="caption" fontWeight={800}>{lang === "ar" ? "EN" : "ع"}</Typography>
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={mode === "dark" ? t("common.lightMode") : t("common.darkMode")}>
               <IconButton onClick={toggle}>{mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}</IconButton>
             </Tooltip>
-            <Tooltip title="Account">
+            <Tooltip title={t("common.account")}>
               <IconButton onClick={(e) => setAnchor(e.currentTarget)}>
                 <Avatar sx={{ width: 32, height: 32, background: "linear-gradient(135deg,#14b8a6,#6366f1)", fontSize: 14 }}>
                   {(me?.tenant_name || "PA").slice(0, 2).toUpperCase()}
@@ -141,12 +146,12 @@ export default function Layout() {
             <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
               <MenuItem disabled sx={{ opacity: "1 !important" }}>
                 <Box>
-                  <Typography variant="body2" fontWeight={700}>{me?.tenant_name || "Platform admin"}</Typography>
-                  <Typography variant="caption" color="text.secondary">{isSuper ? "Super admin" : "Clinic staff"}</Typography>
+                  <Typography variant="body2" fontWeight={700}>{me?.tenant_name || t("common.platformAdmin")}</Typography>
+                  <Typography variant="caption" color="text.secondary">{isSuper ? t("common.superAdmin") : t("common.clinicStaff")}</Typography>
                 </Box>
               </MenuItem>
               <Divider />
-              <MenuItem onClick={logout}><LogoutIcon fontSize="small" style={{ marginRight: 10 }} /> Sign out</MenuItem>
+              <MenuItem onClick={logout}><LogoutIcon fontSize="small" style={{ marginInlineEnd: 10 }} /> {t("common.signOut")}</MenuItem>
             </Menu>
           </Toolbar>
         </AppBar>

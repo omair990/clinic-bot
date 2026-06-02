@@ -1,13 +1,15 @@
 import { createTheme, alpha, Theme } from "@mui/material/styles";
 
 export type Mode = "light" | "dark";
+export type Dir = "ltr" | "rtl";
 
 // Refined teal (primary) + indigo (secondary) on a slate canvas. Two cohesive palettes.
-export function makeTheme(mode: Mode): Theme {
+export function makeTheme(mode: Mode, dir: Dir = "ltr"): Theme {
   const dark = mode === "dark";
   const teal = "#14b8a6";
   const indigo = "#6366f1";
   return createTheme({
+    direction: dir,
     palette: {
       mode,
       primary: { main: teal, light: "#5eead4", dark: "#0f766e" },
@@ -26,7 +28,7 @@ export function makeTheme(mode: Mode): Theme {
     },
     shape: { borderRadius: 14 },
     typography: {
-      fontFamily: `"Inter", "Segoe UI", system-ui, -apple-system, sans-serif`,
+      fontFamily: `"Inter", "Segoe UI", "Tahoma", "Geeza Pro", "Noto Sans Arabic", system-ui, -apple-system, sans-serif`,
       h4: { fontWeight: 800, letterSpacing: -0.5 },
       h5: { fontWeight: 800, letterSpacing: -0.4 },
       h6: { fontWeight: 700 },

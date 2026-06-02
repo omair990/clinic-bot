@@ -7,10 +7,12 @@ import LightModeIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeIcon from "@mui/icons-material/DarkModeOutlined";
 import { useAuth } from "../auth";
 import { useColorMode } from "../ColorMode";
+import { useT } from "../i18n";
 
 export default function Login() {
   const { login } = useAuth();
   const { mode, toggle } = useColorMode();
+  const t = useT();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +22,7 @@ export default function Login() {
     e.preventDefault();
     setError(null); setBusy(true);
     try { await login(username, password); }
-    catch { setError("Invalid credentials"); }
+    catch { setError(t("login.invalid")); }
     finally { setBusy(false); }
   };
 
@@ -39,19 +41,19 @@ export default function Login() {
               background: "linear-gradient(135deg,#14b8a6,#6366f1)", color: "#fff" }}>
               <LocalHospitalIcon />
             </Box>
-            <Typography variant="h5">Clinic Console</Typography>
-            <Typography variant="body2" color="text.secondary">Sign in to your workspace</Typography>
+            <Typography variant="h5">{t("login.title")}</Typography>
+            <Typography variant="body2" color="text.secondary">{t("login.subtitle")}</Typography>
           </Stack>
           <Stack spacing={2}>
             {error && <Alert severity="error" variant="outlined">{error}</Alert>}
-            <TextField label="Username" size="small" fullWidth autoFocus
-              helperText="Leave blank for platform admin"
+            <TextField label={t("login.username")} size="small" fullWidth autoFocus
+              helperText={t("login.usernameHelp")}
               value={username} onChange={(e) => setUsername(e.target.value)} />
-            <TextField label="Password" type="password" size="small" fullWidth
+            <TextField label={t("login.password")} type="password" size="small" fullWidth
               value={password} onChange={(e) => setPassword(e.target.value)} />
             <Button type="submit" variant="contained" size="large" disabled={busy}
               sx={{ background: "linear-gradient(135deg,#14b8a6,#6366f1)", py: 1.2 }}>
-              {busy ? "Signing in…" : "Sign in"}
+              {busy ? t("login.signingIn") : t("login.signIn")}
             </Button>
           </Stack>
         </CardContent>

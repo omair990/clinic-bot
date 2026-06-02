@@ -16,11 +16,16 @@ import {
   TableSkeleton, QueryError, KpiCard, EmptyState,
 } from "../lib";
 import { useLive } from "../realtime";
+import { useT } from "../i18n";
 
 const intentColor: Record<string, any> = {
   appointment: "success", emergency: "error", handover: "warning", complaint: "warning",
 };
 const leadColor: Record<string, "error" | "warning" | "info"> = { hot: "error", warm: "warning", cold: "info" };
+const INTENT_KEY: Record<string, string> = {
+  appointment: "chats.intentAppointment", emergency: "chats.intentEmergency",
+  handover: "chats.intentHandover", complaint: "chats.intentComplaint",
+};
 const pulse = keyframes`0%{opacity:1}50%{opacity:.3}100%{opacity:1}`;
 
 function initials(name: string | null, wa: string) {
@@ -41,19 +46,24 @@ function ago(iso?: string | null) {
   return fmtDate(iso);
 }
 
+const LEAD_KEY: Record<string, string> = { hot: "chats.leadHot", warm: "chats.leadWarm", cold: "chats.leadCold" };
+
 function LeadChip({ band }: { band: string }) {
+  const t = useT();
   const c = leadColor[band] || "default";
+  const bandLabel = LEAD_KEY[band] ? t(LEAD_KEY[band]) : band;
   if (band === "hot") {
     return <Chip size="small" color="error" icon={<FireIcon sx={{ fontSize: "14px !important" }} />}
-      label="hot" sx={{ height: 22, fontWeight: 700, display: { xs: "none", md: "flex" } }} />;
+      label={bandLabel} sx={{ height: 22, fontWeight: 700, display: { xs: "none", md: "flex" } }} />;
   }
-  return <Chip size="small" variant="outlined" color={c as any} label={band}
+  return <Chip size="small" variant="outlined" color={c as any} label={bandLabel}
     sx={{ height: 22, textTransform: "capitalize", display: { xs: "none", md: "flex" } }} />;
 }
 
 function ChatRow({ row, showClinic, clinicName, typing, onClick }: {
   row: any; showClinic: boolean; clinicName?: string; typing: boolean; onClick: () => void;
 }) {
+  const t = useT();
   const inbound = row.last_direction === "in";
   const hue = avatarHue(row.wa_user);
   // Left accent: red for needs-human, else amber/sky tint by lead temperature.
@@ -93,7 +103,7 @@ function ChatRow({ row, showClinic, clinicName, typing, onClick }: {
         <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 0.25 }}>
           {typing ? (
             <Typography variant="body2" color="success.main" fontWeight={600}
-              sx={{ animation: `${pulse} 1.3s ease-in-out infinite` }}>typing…</Typography>
+              sx={{ animation: `${pulse} 1.3s ease-in-out infinite` }}>{t("chats.typing")}</Typography>
           ) : (
             <>
               {inbound
@@ -107,11 +117,11 @@ function ChatRow({ row, showClinic, clinicName, typing, onClick }: {
 
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0 }}>
         {row.lead_band && <LeadChip band={row.lead_band} />}
-        {row.last_intent && <Chip size="small" variant="outlined" label={row.last_intent}
+        {row.last_intent && <Chip size="small" variant="outlined" label={INTENT_KEY[row.last_intent] ? t(INTENT_KEY[row.last_intent]) : row.last_intent}
           color={intentColor[row.last_intent] || "default"} sx={{ height: 22, textTransform: "capitalize", display: { xs: "none", sm: "flex" } }} />}
         {row.needs_human
-          ? <Chip size="small" color="error" label="needs human" sx={{ height: 22 }} />
-          : <Tooltip title="Messages"><Chip size="small" variant="outlined" icon={<ForumIcon sx={{ fontSize: "14px !important" }} />}
+          ? <Chip size="small" color="error" label={t("chats.needsHumanChip")} sx={{ height: 22 }} />
+          : <Tooltip title={t("chats.messages")}><Chip size="small" variant="outlined" icon={<ForumIcon sx={{ fontSize: "14px !important" }} />}
               label={row.msg_count} sx={{ height: 22 }} /></Tooltip>}
       </Stack>
     </Box>
@@ -119,13 +129,14 @@ function ChatRow({ row, showClinic, clinicName, typing, onClick }: {
 }
 
 const FILTERS = [
-  { value: "", label: "All" },
-  { value: "needs_human", label: "Needs human" },
-  { value: "appointment", label: "Booking" },
-  { value: "hot", label: "Hot leads" },
+  { value: "", labelKey: "chats.filterAll" },
+  { value: "needs_human", labelKey: "chats.filterNeedsHuman" },
+  { value: "appointment", labelKey: "chats.filterBooking" },
+  { value: "hot", labelKey: "chats.filterHotLeads" },
 ];
 
 export default function Conversations() {
+  const t = useT();
   const nav = useNavigate();
   const [clinic] = useClinic();
   const { typing } = useLive();
@@ -145,7 +156,7 @@ export default function Conversations() {
     });
   }, [rows, search, filter]);
 
-  if (q.isLoading) return <><PageTitle title="Patient Chats" /><TableSkeleton /></>;
+  if (q.isLoading) return <><PageTitle title={t("chats.title")} /><TableSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
   const { is_super, tenant_names = {}, selected_clinic } = q.data;
   const showClinic = is_super && !selected_clinic;
@@ -155,33 +166,33 @@ export default function Conversations() {
 
   return (
     <>
-      <PageTitle title="Patient Chats"
-        subtitle={`${rows.length} active conversation${rows.length === 1 ? "" : "s"}`}
+      <PageTitle title={t("chats.title")}
+        subtitle={t(rows.length === 1 ? "chats.subtitle_one" : "chats.subtitle_other", { n: rows.length })}
         right={<ClinicFilter meta={q.data} />} />
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} md={3}><KpiCard label="Active chats" value={rows.length} icon={<ForumIcon fontSize="small" />} color="primary" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Needs human" value={needsHuman} icon={<WarningIcon fontSize="small" />} color="error" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Booking intent" value={appts} icon={<EventIcon fontSize="small" />} color="success" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Hot leads" value={hotLeads} icon={<FireIcon fontSize="small" />} color="warning" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("chats.activeChats")} value={rows.length} icon={<ForumIcon fontSize="small" />} color="primary" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("chats.needsHuman")} value={needsHuman} icon={<WarningIcon fontSize="small" />} color="error" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("chats.bookingIntent")} value={appts} icon={<EventIcon fontSize="small" />} color="success" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("chats.hotLeads")} value={hotLeads} icon={<FireIcon fontSize="small" />} color="warning" /></Grid>
       </Grid>
 
       <Card sx={{ p: 0, overflow: "hidden" }}>
         <Box sx={{ px: 2, py: 1.5, borderBottom: (t) => `1px solid ${t.palette.divider}`,
           background: (t) => alpha(t.palette.primary.main, 0.04) }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
-            <TextField fullWidth size="small" placeholder="Search by name, number, message or class…"
+            <TextField fullWidth size="small" placeholder={t("chats.searchPlaceholder")}
               value={search} onChange={(e) => setSearch(e.target.value)}
               InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
               sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }} />
             <ToggleButtonGroup size="small" exclusive value={filter} onChange={(_e, v) => setFilter(v ?? "")} sx={{ flexShrink: 0 }}>
-              {FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{f.label}</ToggleButton>)}
+              {FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{t(f.labelKey)}</ToggleButton>)}
             </ToggleButtonGroup>
           </Stack>
         </Box>
 
         {filtered.length === 0 ? (
-          <EmptyState text={search || filter ? "No chats match your filters." : "No conversations yet."} />
+          <EmptyState text={search || filter ? t("chats.emptyNoMatch") : t("chats.emptyNone")} />
         ) : (
           <Box sx={{ maxHeight: "calc(100vh - 420px)", minHeight: 240, overflow: "auto" }}>
             {filtered.map((r, i) => {

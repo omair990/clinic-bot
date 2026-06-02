@@ -1,0 +1,93 @@
+// Home page: super-admin Overview + clinic-staff Dashboard. Terms follow the glossary.
+export default {
+  en: {
+    // Hero
+    platformOverview: "Platform overview",
+    overviewSubtitle: "{n} clinic{s} · last 14 days of activity",
+    welcome: "Welcome, {name}",
+    dashboard: "Dashboard",
+    dashboardSubtitle: "Your clinic at a glance · last 14 days",
+    liveRealtime: "Live · real-time",
+    // KPI / stat labels
+    clinics: "Clinics",
+    active: "Active",
+    openIssues: "Open issues",
+    upcomingAppts: "Upcoming appts",
+    inbound14d: "Inbound (14d)",
+    messages: "Messages",
+    users: "Users",
+    appointments: "Appointments",
+    upcoming: "Upcoming",
+    needHuman: "Need human",
+    missedVisitsMo: "Missed visits (mo)",
+    // Trend chart
+    inboundMessages: "Inbound messages",
+    last14Days: "Last 14 days",
+    total: "Total",
+    avgDay: "Avg/day",
+    peak: "Peak",
+    noTrendData: "No trend data yet",
+    // Clinics section
+    clinicsHeader: "Clinics",
+    clinicsTotalActive: "{n} total · {m} active",
+    // Clinic card
+    noPlan: "no plan",
+    issues: "Issues",
+    reviews: "{n} reviews",
+    missed: "Missed",
+    text: "Text",
+    voice: "Voice",
+    off: "off",
+    openProfile: "Open profile",
+    insights: "Insights",
+    manage: "Manage",
+    // Loading / alerts
+    clinicsOverview: "Clinics overview",
+    waSendFailing: "WhatsApp message sending is currently failing — replies may not be delivered. Please check the WhatsApp connection.",
+  },
+  ar: {
+    // Hero
+    platformOverview: "نظرة عامة على المنصة",
+    overviewSubtitle: "{n} عيادة · آخر 14 يومًا من النشاط",
+    welcome: "مرحبًا، {name}",
+    dashboard: "لوحة التحكم",
+    dashboardSubtitle: "عيادتك في لمحة · آخر 14 يومًا",
+    liveRealtime: "مباشر · لحظي",
+    // KPI / stat labels
+    clinics: "العيادات",
+    active: "نشط",
+    openIssues: "المشكلات المفتوحة",
+    upcomingAppts: "المواعيد القادمة",
+    inbound14d: "الواردة (14 يومًا)",
+    messages: "الرسائل",
+    users: "المستخدمون",
+    appointments: "المواعيد",
+    upcoming: "القادمة",
+    needHuman: "بحاجة لموظف",
+    missedVisitsMo: "الزيارات الفائتة (الشهر)",
+    // Trend chart
+    inboundMessages: "الرسائل الواردة",
+    last14Days: "آخر 14 يومًا",
+    total: "الإجمالي",
+    avgDay: "المتوسط/يوم",
+    peak: "الذروة",
+    noTrendData: "لا توجد بيانات اتجاه بعد",
+    // Clinics section
+    clinicsHeader: "العيادات",
+    clinicsTotalActive: "{n} الإجمالي · {m} نشط",
+    // Clinic card
+    noPlan: "بدون باقة",
+    issues: "المشكلات",
+    reviews: "{n} تقييم",
+    missed: "فائت",
+    text: "نص",
+    voice: "صوت",
+    off: "إيقاف",
+    openProfile: "فتح الملف",
+    insights: "التحليلات",
+    manage: "إدارة",
+    // Loading / alerts
+    clinicsOverview: "نظرة عامة على العيادات",
+    waSendFailing: "إرسال رسائل واتساب يتعذّر حاليًا — قد لا يتم تسليم الردود. يرجى التحقق من اتصال واتساب.",
+  },
+};

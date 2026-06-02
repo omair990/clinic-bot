@@ -18,6 +18,7 @@ import ScheduleIcon from "@mui/icons-material/ScheduleOutlined";
 import PersonIcon from "@mui/icons-material/PersonOutline";
 import NotesIcon from "@mui/icons-material/NotesOutlined";
 import { apiPost, ApiError } from "../api";
+import { useT } from "../i18n";
 import {
   useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, dayLabel,
   TableSkeleton, QueryError, KpiCard, EmptyState, useToast,
@@ -66,6 +67,7 @@ function IssueRow({ row, showClinic, clinicName, busy, onResolve, onOpen }: {
   row: any; showClinic: boolean; clinicName?: string; busy: boolean;
   onResolve: (id: number) => void; onOpen: () => void;
 }) {
+  const t = useT();
   const meta = lvl(row.level);
   return (
     <Box onClick={onOpen} sx={{
@@ -97,9 +99,9 @@ function IssueRow({ row, showClinic, clinicName, busy, onResolve, onOpen }: {
           {fmtDate(row.created_at)}
         </Typography>
         {row.resolved ? (
-          <Chip size="small" color="success" variant="outlined" icon={<DoneIcon sx={{ fontSize: 15 }} />} label="Resolved" sx={{ height: 24 }} />
+          <Chip size="small" color="success" variant="outlined" icon={<DoneIcon sx={{ fontSize: 15 }} />} label={t("issues.chipResolved")} sx={{ height: 24 }} />
         ) : (
-          <Tooltip title="Mark resolved"><span>
+          <Tooltip title={t("issues.tipMarkResolved")}><span>
             <IconButton size="small" color="success" disabled={busy}
               onClick={(e) => { e.stopPropagation(); onResolve(row.id); }}><CheckCircleIcon fontSize="small" /></IconButton>
           </span></Tooltip>
@@ -113,6 +115,7 @@ function IssueDetail({ row, showClinic, clinicName, busy, onClose, onResolve }: 
   row: any; showClinic: boolean; clinicName?: string; busy: boolean;
   onClose: () => void; onResolve: () => void;
 }) {
+  const t = useT();
   const meta = lvl(row.level);
   const Row = ({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) => (
     <Stack direction="row" spacing={1.5} alignItems="flex-start">
@@ -135,38 +138,39 @@ function IssueDetail({ row, showClinic, clinicName, busy, onClose, onResolve }: 
             <Typography variant="h6" sx={{ color: "#fff", lineHeight: 1.25 }}>{row.message}</Typography>
           </Box>
           <Box sx={{ flex: 1 }} />
-          <Chip label={row.resolved ? "Resolved" : "Open"}
+          <Chip label={row.resolved ? t("issues.chipResolved") : t("issues.chipOpen")}
             sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700, flexShrink: 0 }} />
         </Stack>
       </Box>
       <DialogContent dividers>
         <Stack spacing={2}>
-          {showClinic && <Row icon={<PersonIcon fontSize="small" />} label="Clinic">{clinicName || "—"}</Row>}
-          <Row icon={<ScheduleIcon fontSize="small" />} label="When"><b>{fmtDate(row.created_at)}</b></Row>
-          {row.wa_user && <Row icon={<PersonIcon fontSize="small" />} label="Patient">+{row.wa_user}</Row>}
-          <Row icon={<NotesIcon fontSize="small" />} label="Detail">
+          {showClinic && <Row icon={<PersonIcon fontSize="small" />} label={t("issues.detailClinic")}>{clinicName || "—"}</Row>}
+          <Row icon={<ScheduleIcon fontSize="small" />} label={t("issues.detailWhen")}><b>{fmtDate(row.created_at)}</b></Row>
+          {row.wa_user && <Row icon={<PersonIcon fontSize="small" />} label={t("issues.detailPatient")}>+{row.wa_user}</Row>}
+          <Row icon={<NotesIcon fontSize="small" />} label={t("issues.detailDetail")}>
             <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}
-              color={row.detail ? "text.primary" : "text.disabled"}>{row.detail || "No additional detail."}</Typography>
+              color={row.detail ? "text.primary" : "text.disabled"}>{row.detail || t("issues.noDetail")}</Typography>
           </Row>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onClose} color="inherit">Close</Button>
+        <Button onClick={onClose} color="inherit">{t("common.close")}</Button>
         <Box sx={{ flex: 1 }} />
-        {!row.resolved && <Button variant="contained" color="success" disabled={busy} onClick={onResolve}>Mark resolved</Button>}
+        {!row.resolved && <Button variant="contained" color="success" disabled={busy} onClick={onResolve}>{t("issues.markResolved")}</Button>}
       </DialogActions>
     </Dialog>
   );
 }
 
 const LEVEL_FILTERS = [
-  { value: "", label: "All" },
-  { value: "error", label: "Errors" },
-  { value: "warning", label: "Warnings" },
-  { value: "info", label: "Info" },
+  { value: "", labelKey: "issues.filterAll" },
+  { value: "error", labelKey: "issues.filterErrors" },
+  { value: "warning", labelKey: "issues.filterWarnings" },
+  { value: "info", labelKey: "issues.filterInfo" },
 ];
 
 export default function Issues() {
+  const t = useT();
   const [clinic] = useClinic();
   const [params, setParams] = useSearchParams();
   const show = params.get("show") || "open";
@@ -178,8 +182,8 @@ export default function Issues() {
   const q = useApiQuery<any>(["logs", clinic, show], `/logs?clinic=${clinic}&show=${show}`);
   const resolve = useMutation({
     mutationFn: (id: number) => apiPost(`/logs/${id}/resolve`),
-    onSuccess: () => { toast.ok("Issue resolved"); qc.invalidateQueries({ queryKey: ["logs"] }); },
-    onError: (e) => toast.err(e instanceof ApiError ? e.message : "Failed"),
+    onSuccess: () => { toast.ok(t("issues.resolved")); qc.invalidateQueries({ queryKey: ["logs"] }); },
+    onError: (e) => toast.err(e instanceof ApiError ? e.message : t("issues.failed")),
   });
   const setShow = (s: string) => { const n = new URLSearchParams(params); n.set("show", s); setParams(n); };
 
@@ -199,7 +203,7 @@ export default function Issues() {
     });
   }, [events, search, level, tenant_names]);
 
-  if (q.isLoading) return <><PageTitle title="Issues" /><TableSkeleton /></>;
+  if (q.isLoading) return <><PageTitle title={t("issues.title")} /><TableSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
   const { open_count, is_super, selected_clinic } = q.data;
   const showClinic = is_super && !selected_clinic;
@@ -211,26 +215,26 @@ export default function Issues() {
 
   return (
     <>
-      <PageTitle title="Issues" subtitle="Operational health & incident log" right={
+      <PageTitle title={t("issues.title")} subtitle={t("issues.subtitle")} right={
         <Stack direction="row" spacing={1.5} alignItems="center">
           <ClinicFilter meta={q.data} />
           <ToggleButtonGroup size="small" exclusive value={show} onChange={(_e, v) => v && setShow(v)}>
-            <ToggleButton value="open">Open ({open_count})</ToggleButton>
-            <ToggleButton value="resolved">Resolved</ToggleButton>
-            <ToggleButton value="all">All</ToggleButton>
+            <ToggleButton value="open">{t("issues.showOpen", { n: open_count })}</ToggleButton>
+            <ToggleButton value="resolved">{t("issues.showResolved")}</ToggleButton>
+            <ToggleButton value="all">{t("issues.showAll")}</ToggleButton>
           </ToggleButtonGroup>
         </Stack>} />
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} md={3}><KpiCard label="Open issues" value={open_count ?? 0} icon={<ReportProblemIcon fontSize="small" />} color="error" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Errors (shown)" value={errors} icon={<ErrorIcon fontSize="small" />} color="error" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Warnings (shown)" value={warnings} icon={<WarningIcon fontSize="small" />} color="warning" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Info (shown)" value={infos} icon={<InfoIcon fontSize="small" />} color="info" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("issues.kpiOpen")} value={open_count ?? 0} icon={<ReportProblemIcon fontSize="small" />} color="error" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("issues.kpiErrors")} value={errors} icon={<ErrorIcon fontSize="small" />} color="error" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("issues.kpiWarnings")} value={warnings} icon={<WarningIcon fontSize="small" />} color="warning" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("issues.kpiInfo")} value={infos} icon={<InfoIcon fontSize="small" />} color="info" /></Grid>
       </Grid>
 
       {catCounts.length > 0 && (
         <Card sx={{ mb: 2 }}><CardContent>
-          <Typography variant="caption" color="text.secondary" fontWeight={700}>Issues by category</Typography>
+          <Typography variant="caption" color="text.secondary" fontWeight={700}>{t("issues.byCategory")}</Typography>
           <Box sx={{ mt: 1.5 }}><CategoryBar counts={catCounts} /></Box>
         </CardContent></Card>
       )}
@@ -239,24 +243,24 @@ export default function Issues() {
         <Box sx={{ px: 2, py: 1.5, borderBottom: (t) => `1px solid ${t.palette.divider}`,
           background: (t) => alpha(t.palette.primary.main, 0.04) }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
-            <TextField fullWidth size="small" placeholder="Search by message, detail, category, patient or clinic…"
+            <TextField fullWidth size="small" placeholder={t("issues.searchPlaceholder")}
               value={search} onChange={(e) => setSearch(e.target.value)}
               InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
               sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }} />
             <ToggleButtonGroup size="small" exclusive value={level} onChange={(_e, v) => setLevel(v ?? "")} sx={{ flexShrink: 0 }}>
-              {LEVEL_FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{f.label}</ToggleButton>)}
+              {LEVEL_FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{t(f.labelKey)}</ToggleButton>)}
             </ToggleButtonGroup>
           </Stack>
         </Box>
 
         {filtered.length === 0 ? (
           (search || level) ? (
-            <EmptyState text="No issues match your filters." />
+            <EmptyState text={t("issues.emptyFiltered")} />
           ) : (
             <Box sx={{ textAlign: "center", py: 8, color: "text.secondary" }}>
               <CheckCircleIcon sx={{ fontSize: 48, color: "success.main", opacity: 0.85 }} />
-              <Typography variant="h6" sx={{ mt: 1 }}>All clear</Typography>
-              <Typography variant="body2">No {show === "open" ? "open " : ""}issues right now.</Typography>
+              <Typography variant="h6" sx={{ mt: 1 }}>{t("issues.allClear")}</Typography>
+              <Typography variant="body2">{show === "open" ? t("issues.emptyNoneOpen") : t("issues.emptyNone")}</Typography>
             </Box>
           )
         ) : (

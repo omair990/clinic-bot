@@ -6,6 +6,7 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/DeleteOutline";
+import { useT } from "./i18n";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -17,6 +18,7 @@ export interface ClinicData {
 export default function ClinicDataEditor({ value, onChange }: {
   value: ClinicData; onChange: (v: ClinicData) => void;
 }) {
+  const t = useT();
   const [tab, setTab] = useState(0);
   const v = value || {};
   const clinic = v.clinic || {};
@@ -42,30 +44,30 @@ export default function ClinicDataEditor({ value, onChange }: {
     <Card>
       <Tabs value={tab} onChange={(_e, t) => setTab(t)} variant="scrollable"
         sx={{ borderBottom: 1, borderColor: "divider", px: 1 }}>
-        <Tab label="Clinic info" />
-        <Tab label={`Services (${services.length})`} />
-        <Tab label={`Doctors (${doctors.length})`} />
-        <Tab label={`FAQs (${faqs.length})`} />
-        <Tab label="Policy" />
-        <Tab label={`Notifications (${recipients.length})`} />
+        <Tab label={t("clinicData.tabClinicInfo")} />
+        <Tab label={t("clinicData.tabServices", { n: services.length })} />
+        <Tab label={t("clinicData.tabDoctors", { n: doctors.length })} />
+        <Tab label={t("clinicData.tabFaqs", { n: faqs.length })} />
+        <Tab label={t("clinicData.tabPolicy")} />
+        <Tab label={t("clinicData.tabNotifications", { n: recipients.length })} />
       </Tabs>
       <CardContent>
         {tab === 0 && (
           <Stack spacing={2} sx={{ maxWidth: 560 }}>
-            <TextField label="Clinic name *" size="small" value={clinic.name || ""}
+            <TextField label={t("clinicData.clinicName")} size="small" value={clinic.name || ""}
               onChange={(e) => setClinic({ name: e.target.value })} required />
-            <TextField label="Address" size="small" value={clinic.address || ""}
+            <TextField label={t("clinicData.address")} size="small" value={clinic.address || ""}
               onChange={(e) => setClinic({ address: e.target.value })} />
-            <TextField label="Phone" size="small" value={clinic.phone || ""}
+            <TextField label={t("clinicData.phone")} size="small" value={clinic.phone || ""}
               onChange={(e) => setClinic({ phone: e.target.value })} />
             <Autocomplete multiple freeSolo options={["Arabic", "English", "Urdu", "Hindi"]}
               value={clinic.languages || []} onChange={(_e, val) => setClinic({ languages: val })}
-              renderInput={(p) => <TextField {...p} size="small" label="Languages" />} />
-            <TextField select size="small" label="Default agent language"
+              renderInput={(p) => <TextField {...p} size="small" label={t("clinicData.languages")} />} />
+            <TextField select size="small" label={t("clinicData.defaultLanguage")}
               value={clinic.default_language || ""}
               onChange={(e) => setClinic({ default_language: e.target.value })}
-              helperText="What the assistant replies in when the patient's language is unclear. It still matches the patient whenever they clearly use a language.">
-              <MenuItem value="">Auto (always match the patient)</MenuItem>
+              helperText={t("clinicData.defaultLanguageHelper")}>
+              <MenuItem value="">{t("clinicData.autoMatch")}</MenuItem>
               {(clinic.languages || []).map((l: string) => <MenuItem key={l} value={l}>{l}</MenuItem>)}
             </TextField>
           </Stack>
@@ -75,8 +77,8 @@ export default function ClinicDataEditor({ value, onChange }: {
           <>
             <Table size="small">
               <TableHead><TableRow>
-                <TableCell>Name *</TableCell><TableCell width={130}>Price (SAR) *</TableCell>
-                <TableCell width={130}>Duration (min) *</TableCell><TableCell width={48} />
+                <TableCell>{t("clinicData.name")}</TableCell><TableCell width={130}>{t("clinicData.priceSar")}</TableCell>
+                <TableCell width={130}>{t("clinicData.durationMin")}</TableCell><TableCell width={48} />
               </TableRow></TableHead>
               <TableBody>
                 {services.map((s, i) => (
@@ -93,7 +95,7 @@ export default function ClinicDataEditor({ value, onChange }: {
               </TableBody>
             </Table>
             <Button startIcon={<AddIcon />} sx={{ mt: 1 }}
-              onClick={() => addRow("services", services, { name: "", price_sar: "", duration_min: "" })}>Add service</Button>
+              onClick={() => addRow("services", services, { name: "", price_sar: "", duration_min: "" })}>{t("clinicData.addService")}</Button>
           </>
         )}
 
@@ -101,9 +103,9 @@ export default function ClinicDataEditor({ value, onChange }: {
           <>
             <Table size="small">
               <TableHead><TableRow>
-                <TableCell>Name *</TableCell><TableCell>Specialty *</TableCell>
-                <TableCell width={220}>Available days *</TableCell>
-                <TableCell width={170}>Hours *</TableCell><TableCell width={48} />
+                <TableCell>{t("clinicData.name")}</TableCell><TableCell>{t("clinicData.specialty")}</TableCell>
+                <TableCell width={220}>{t("clinicData.availableDays")}</TableCell>
+                <TableCell width={170}>{t("clinicData.hours")}</TableCell><TableCell width={48} />
               </TableRow></TableHead>
               <TableBody>
                 {doctors.map((d, i) => (
@@ -131,7 +133,7 @@ export default function ClinicDataEditor({ value, onChange }: {
               </TableBody>
             </Table>
             <Button startIcon={<AddIcon />} sx={{ mt: 1 }}
-              onClick={() => addRow("doctors", doctors, { name: "", specialty: "", available_days: [], available_hours: "" })}>Add doctor</Button>
+              onClick={() => addRow("doctors", doctors, { name: "", specialty: "", available_days: [], available_hours: "" })}>{t("clinicData.addDoctor")}</Button>
           </>
         )}
 
@@ -140,33 +142,33 @@ export default function ClinicDataEditor({ value, onChange }: {
             {faqs.map((f, i) => (
               <Box key={i} sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
                 <Stack spacing={1} sx={{ flex: 1 }}>
-                  <TextField size="small" label="Question" value={f.q || ""}
+                  <TextField size="small" label={t("clinicData.question")} value={f.q || ""}
                     onChange={(e) => updRow("faqs", faqs, i, { q: e.target.value })} />
-                  <TextField size="small" label="Answer" multiline minRows={2} value={f.a || ""}
+                  <TextField size="small" label={t("clinicData.answer")} multiline minRows={2} value={f.a || ""}
                     onChange={(e) => updRow("faqs", faqs, i, { a: e.target.value })} />
                 </Stack>
                 <IconButton size="small" onClick={() => delRow("faqs", faqs, i)}><DeleteIcon fontSize="small" /></IconButton>
               </Box>
             ))}
-            <Button startIcon={<AddIcon />} onClick={() => addRow("faqs", faqs, { q: "", a: "" })} sx={{ alignSelf: "flex-start" }}>Add FAQ</Button>
+            <Button startIcon={<AddIcon />} onClick={() => addRow("faqs", faqs, { q: "", a: "" })} sx={{ alignSelf: "flex-start" }}>{t("clinicData.addFaq")}</Button>
           </Stack>
         )}
 
         {tab === 4 && (
           <Stack spacing={2} sx={{ maxWidth: 560 }}>
             <Stack direction="row" spacing={2}>
-              <TextField type="number" size="small" label="Booking lead time (hours)" value={pol.booking_lead_time_hours ?? ""}
+              <TextField type="number" size="small" label={t("clinicData.bookingLeadTime")} value={pol.booking_lead_time_hours ?? ""}
                 onChange={(e) => setPol({ booking_lead_time_hours: e.target.value })} />
-              <TextField type="number" size="small" label="Cancellation notice (hours)" value={pol.cancellation_notice_hours ?? ""}
+              <TextField type="number" size="small" label={t("clinicData.cancellationNotice")} value={pol.cancellation_notice_hours ?? ""}
                 onChange={(e) => setPol({ cancellation_notice_hours: e.target.value })} />
             </Stack>
             <FormControlLabel control={<Switch checked={!!pol.walk_ins_accepted}
-              onChange={(e) => setPol({ walk_ins_accepted: e.target.checked })} />} label="Walk-ins accepted" />
+              onChange={(e) => setPol({ walk_ins_accepted: e.target.checked })} />} label={t("clinicData.walkInsAccepted")} />
             <Autocomplete multiple freeSolo options={["Cash", "Card", "mada", "Insurance"]}
               value={pol.payment_methods || []} onChange={(_e, val) => setPol({ payment_methods: val })}
-              renderInput={(p) => <TextField {...p} size="small" label="Payment methods" />} />
+              renderInput={(p) => <TextField {...p} size="small" label={t("clinicData.paymentMethods")} />} />
             <Typography variant="caption" color="text.secondary">
-              Other sections (branches, booking fields, connector) are preserved automatically.
+              {t("clinicData.policyNote")}
             </Typography>
           </Stack>
         )}
@@ -174,23 +176,22 @@ export default function ClinicDataEditor({ value, onChange }: {
         {tab === 5 && (
           <>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-              People at this clinic who get WhatsApp notifications. <b>Escalations</b> covers
-              handovers, emergencies and new bookings; <b>Digest</b> is the daily/weekly insights
-              summary. Add as many as you like (e.g. front desk + owner). Use full international
-              numbers, e.g. <code>9665XXXXXXXX</code>.
+              {t("clinicData.notifIntroBefore")}<b>{t("clinicData.notifIntroEscalations")}</b>
+              {t("clinicData.notifIntroMiddle")}<b>{t("clinicData.notifIntroDigest")}</b>
+              {t("clinicData.notifIntroAfter")}<code>9665XXXXXXXX</code>.
             </Typography>
             <Table size="small">
               <TableHead><TableRow>
-                <TableCell>Label</TableCell><TableCell>WhatsApp number</TableCell>
-                <TableCell width={120} align="center">Escalations</TableCell>
-                <TableCell width={100} align="center">Digest</TableCell><TableCell width={48} />
+                <TableCell>{t("clinicData.label")}</TableCell><TableCell>{t("clinicData.whatsappNumber")}</TableCell>
+                <TableCell width={120} align="center">{t("clinicData.escalations")}</TableCell>
+                <TableCell width={100} align="center">{t("clinicData.digest")}</TableCell><TableCell width={48} />
               </TableRow></TableHead>
               <TableBody>
                 {recipients.map((r, i) => (
                   <TableRow key={i}>
-                    <TableCell><TextField fullWidth size="small" variant="standard" placeholder="Owner"
+                    <TableCell><TextField fullWidth size="small" variant="standard" placeholder={t("clinicData.ownerPlaceholder")}
                       value={r.label || ""} onChange={(e) => updRec(i, { label: e.target.value })} /></TableCell>
-                    <TableCell><TextField fullWidth size="small" variant="standard" placeholder="9665XXXXXXXX"
+                    <TableCell><TextField fullWidth size="small" variant="standard" placeholder={t("clinicData.numberPlaceholder")}
                       value={r.number || ""} onChange={(e) => updRec(i, { number: e.target.value })} /></TableCell>
                     <TableCell align="center"><Switch size="small" checked={r.escalation !== false}
                       onChange={(e) => updRec(i, { escalation: e.target.checked })} /></TableCell>
@@ -202,7 +203,7 @@ export default function ClinicDataEditor({ value, onChange }: {
               </TableBody>
             </Table>
             <Button startIcon={<AddIcon />} sx={{ mt: 1 }}
-              onClick={() => setRecipients([...recipients, { label: "", number: "", escalation: true, digest: false }])}>Add recipient</Button>
+              onClick={() => setRecipients([...recipients, { label: "", number: "", escalation: true, digest: false }])}>{t("clinicData.addRecipient")}</Button>
           </>
         )}
       </CardContent>

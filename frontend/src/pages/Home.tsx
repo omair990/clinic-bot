@@ -17,6 +17,7 @@ import ArrowIcon from "@mui/icons-material/ArrowForwardRounded";
 import { useAuth } from "../auth";
 import { useApiQuery, PageTitle, CardsSkeleton, QueryError, KpiCard } from "../lib";
 import { useLive } from "../realtime";
+import { useT } from "../i18n";
 import LiveActivityFeed from "../LiveActivityFeed";
 
 const fmt = (n: number | null | undefined) => (n == null ? "∞" : n.toLocaleString());
@@ -26,6 +27,7 @@ function avatarHue(s: string) { let h = 0; for (const c of s) h = (h * 31 + c.ch
 function UsageBar({ label, icon, used, quota, on }: {
   label: string; icon: React.ReactNode; used: number; quota: number | null; on: boolean;
 }) {
+  const t = useT();
   const unlimited = quota == null;
   const p = quota ? Math.min(100, (used / quota) * 100) : (unlimited ? 100 : 0);
   const over = on && !unlimited && p >= 100;
@@ -39,7 +41,7 @@ function UsageBar({ label, icon, used, quota, on }: {
           <Typography variant="caption" fontWeight={700}>{label}</Typography>
         </Stack>
         <Typography variant="caption" color={on ? "text.primary" : "text.secondary"} fontWeight={700}>
-          {on ? `${fmt(used)} / ${fmt(quota)}` : "off"}
+          {on ? `${fmt(used)} / ${fmt(quota)}` : t("home.off")}
         </Typography>
       </Stack>
       <Box sx={{ height: 7, borderRadius: 4, overflow: "hidden", bgcolor: (t) => alpha(t.palette.text.primary, 0.06) }}>
@@ -51,6 +53,7 @@ function UsageBar({ label, icon, used, quota, on }: {
 
 // Premium gradient banner with a live-connection pill + optional glassy stat strip.
 function Hero({ title, subtitle, stats }: { title: string; subtitle: string; stats?: { label: string; value: React.ReactNode }[] }) {
+  const t = useT();
   const { connected } = useLive();
   return (
     <Box sx={{
@@ -67,7 +70,7 @@ function Hero({ title, subtitle, stats }: { title: string; subtitle: string; sta
         </Box>
         <Chip
           icon={<CircleIcon sx={{ fontSize: "10px !important", color: `${connected ? "#86efac" : "#fca5a5"} !important` }} />}
-          label={connected ? "Live · real-time" : "Reconnecting…"}
+          label={connected ? t("home.liveRealtime") : t("common.reconnecting")}
           sx={{ bgcolor: alpha("#fff", 0.16), color: "#fff", fontWeight: 700, backdropFilter: "blur(6px)" }} />
       </Stack>
       {stats && stats.length > 0 && (
@@ -86,6 +89,7 @@ function Hero({ title, subtitle, stats }: { title: string; subtitle: string; sta
 }
 
 function TrendChart({ data }: { data?: number[] }) {
+  const t = useT();
   const series = data ?? [];
   const total = series.reduce((a, b) => a + b, 0);
   const avg = series.length ? Math.round(total / series.length) : 0;
@@ -95,14 +99,14 @@ function TrendChart({ data }: { data?: number[] }) {
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
           <Box>
-            <Typography fontWeight={800}>Inbound messages</Typography>
-            <Typography variant="caption" color="text.secondary">Last 14 days</Typography>
+            <Typography fontWeight={800}>{t("home.inboundMessages")}</Typography>
+            <Typography variant="caption" color="text.secondary">{t("home.last14Days")}</Typography>
           </Box>
           <Stack direction="row" spacing={2.5}>
-            {[["Total", total], ["Avg/day", avg], ["Peak", peak]].map(([l, v]: any) => (
+            {[["Total", t("home.total"), total], ["Avg/day", t("home.avgDay"), avg], ["Peak", t("home.peak"), peak]].map(([l, label, v]: any) => (
               <Box key={l} sx={{ textAlign: "right" }}>
                 <Typography variant="h6" fontWeight={800} color={l === "Total" ? "primary.main" : "text.primary"}>{v.toLocaleString()}</Typography>
-                <Typography variant="caption" color="text.secondary">{l}</Typography>
+                <Typography variant="caption" color="text.secondary">{label}</Typography>
               </Box>
             ))}
           </Stack>
@@ -119,7 +123,7 @@ function TrendChart({ data }: { data?: number[] }) {
             />
           ) : (
             <Box sx={{ height: "100%", display: "grid", placeItems: "center", color: "text.secondary" }}>
-              <Typography variant="body2">No trend data yet</Typography>
+              <Typography variant="body2">{t("home.noTrendData")}</Typography>
             </Box>
           )}
         </Box>
@@ -129,13 +133,14 @@ function TrendChart({ data }: { data?: number[] }) {
 }
 
 function ClinicCard({ c, nav }: { c: any; nav: (to: string) => void }) {
+  const t = useT();
   const hue = avatarHue(c.slug || c.name || "");
   const sc = c.status === "active" ? "success" : c.status === "suspended" ? "error" : "default";
   const tiles = [
-    { v: c.open_issues, l: "Issues", icon: <WarningIcon sx={{ fontSize: 16 }} />, color: c.open_issues ? "#ef4444" : undefined, to: `/issues?clinic=${c.id}` },
-    { v: c.reviews_avg != null ? c.reviews_avg.toFixed(1) : "—", l: `${c.reviews_count} reviews`, icon: <StarIcon sx={{ fontSize: 16 }} />, color: "#f59e0b", to: `/reviews?clinic=${c.id}` },
-    { v: c.no_shows_month, l: "Missed", icon: <EventBusyIcon sx={{ fontSize: 16 }} />, to: `/no-shows?clinic=${c.id}` },
-    { v: c.upcoming_appts, l: "Upcoming", icon: <UpcomingIcon sx={{ fontSize: 16 }} />, to: `/appointments?clinic=${c.id}` },
+    { v: c.open_issues, l: t("home.issues"), icon: <WarningIcon sx={{ fontSize: 16 }} />, color: c.open_issues ? "#ef4444" : undefined, to: `/issues?clinic=${c.id}` },
+    { v: c.reviews_avg != null ? c.reviews_avg.toFixed(1) : "—", l: t("home.reviews", { n: c.reviews_count }), icon: <StarIcon sx={{ fontSize: 16 }} />, color: "#f59e0b", to: `/reviews?clinic=${c.id}` },
+    { v: c.no_shows_month, l: t("home.missed"), icon: <EventBusyIcon sx={{ fontSize: 16 }} />, to: `/no-shows?clinic=${c.id}` },
+    { v: c.upcoming_appts, l: t("home.upcoming"), icon: <UpcomingIcon sx={{ fontSize: 16 }} />, to: `/appointments?clinic=${c.id}` },
   ];
   return (
     <Card sx={{ height: "100%", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
@@ -151,9 +156,9 @@ function ClinicCard({ c, nav }: { c: any; nav: (to: string) => void }) {
           </Avatar>
           <Box onClick={() => nav(`/clinics/${c.id}`)} sx={{ minWidth: 0, flex: 1, cursor: "pointer", "&:hover .cn": { color: "primary.main" } }}>
             <Typography className="cn" fontWeight={700} noWrap>{c.name}</Typography>
-            <Typography variant="caption" color="text.secondary" noWrap display="block">{c.slug} · {c.plan_name || "no plan"}</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap display="block">{c.slug} · {c.plan_name || t("home.noPlan")}</Typography>
           </Box>
-          <Chip size="small" variant="outlined" color={sc as any} label={c.status} sx={{ textTransform: "capitalize" }} />
+          <Chip size="small" variant="outlined" color={sc as any} label={t(`enums.status.${c.status}`)} />
         </Stack>
 
         <Grid container spacing={1}>
@@ -170,16 +175,16 @@ function ClinicCard({ c, nav }: { c: any; nav: (to: string) => void }) {
         </Grid>
 
         <Stack spacing={1.25}>
-          <UsageBar label="Text" icon={<TextsmsIcon sx={{ fontSize: 15 }} />} used={c.text_count} quota={c.monthly_text_quota} on />
-          <UsageBar label="Voice" icon={<GraphicEqIcon sx={{ fontSize: 15 }} />} used={c.voice_count} quota={c.monthly_voice_quota} on={c.voice_enabled} />
+          <UsageBar label={t("home.text")} icon={<TextsmsIcon sx={{ fontSize: 15 }} />} used={c.text_count} quota={c.monthly_text_quota} on />
+          <UsageBar label={t("home.voice")} icon={<GraphicEqIcon sx={{ fontSize: 15 }} />} used={c.voice_count} quota={c.monthly_voice_quota} on={c.voice_enabled} />
         </Stack>
 
         <Divider sx={{ mt: "auto" }} />
         <Stack direction="row" spacing={1} alignItems="center">
-          <Button size="small" variant="outlined" onClick={() => nav(`/clinics/${c.id}`)}>Open profile</Button>
-          <Button size="small" onClick={() => nav(`/insights?clinic=${c.id}`)}>Insights</Button>
+          <Button size="small" variant="outlined" onClick={() => nav(`/clinics/${c.id}`)}>{t("home.openProfile")}</Button>
+          <Button size="small" onClick={() => nav(`/insights?clinic=${c.id}`)}>{t("home.insights")}</Button>
           <Box sx={{ flex: 1 }} />
-          <Button size="small" color="inherit" endIcon={<ArrowIcon sx={{ fontSize: 16 }} />} onClick={() => nav(`/tenants/${c.id}`)}>Manage</Button>
+          <Button size="small" color="inherit" endIcon={<ArrowIcon sx={{ fontSize: 16 }} />} onClick={() => nav(`/tenants/${c.id}`)}>{t("home.manage")}</Button>
         </Stack>
       </CardContent>
     </Card>
@@ -187,6 +192,7 @@ function ClinicCard({ c, nav }: { c: any; nav: (to: string) => void }) {
 }
 
 function Overview() {
+  const t = useT();
   const nav = useNavigate();
   const q = useApiQuery<{ clinics: any[] }>(["overview"], "/overview");
   const trends = useApiQuery<{ daily_messages: number[] }>(["trends"], "/trends");
@@ -197,7 +203,7 @@ function Overview() {
       || (a.status === "active" ? 1 : 0) - (b.status === "active" ? 1 : 0));
   }, [q.data]);
 
-  if (q.isLoading) return <><PageTitle title="Clinics overview" /><CardsSkeleton /></>;
+  if (q.isLoading) return <><PageTitle title={t("home.clinicsOverview")} /><CardsSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
   const sum = (k: string) => clinics.reduce((a, c) => a + (c[k] || 0), 0);
   const spark = trends.data?.daily_messages;
@@ -205,20 +211,20 @@ function Overview() {
 
   return (
     <>
-      <Hero title="Platform overview"
-        subtitle={`${clinics.length} clinic${clinics.length === 1 ? "" : "s"} · last 14 days of activity`}
+      <Hero title={t("home.platformOverview")}
+        subtitle={t("home.overviewSubtitle", { n: clinics.length, s: clinics.length === 1 ? "" : "s" })}
         stats={[
-          { label: "Clinics", value: clinics.length },
-          { label: "Active", value: active },
-          { label: "Open issues", value: sum("open_issues") },
-          { label: "Upcoming appts", value: sum("upcoming_appts") },
+          { label: t("home.clinics"), value: clinics.length },
+          { label: t("home.active"), value: active },
+          { label: t("home.openIssues"), value: sum("open_issues") },
+          { label: t("home.upcomingAppts"), value: sum("upcoming_appts") },
         ]} />
 
       <Grid container spacing={2} sx={{ mb: 1 }}>
-        <Grid item xs={6} md={3}><KpiCard label="Clinics" value={clinics.length} icon={<BusinessIcon fontSize="small" />} color="secondary" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Open issues" value={sum("open_issues")} icon={<WarningIcon fontSize="small" />} color="error" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Upcoming appts" value={sum("upcoming_appts")} icon={<UpcomingIcon fontSize="small" />} color="info" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Inbound (14d)" value={spark ? spark.reduce((a, b) => a + b, 0) : 0} icon={<ForumIcon fontSize="small" />} color="primary" spark={spark} /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("home.clinics")} value={clinics.length} icon={<BusinessIcon fontSize="small" />} color="secondary" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("home.openIssues")} value={sum("open_issues")} icon={<WarningIcon fontSize="small" />} color="error" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("home.upcomingAppts")} value={sum("upcoming_appts")} icon={<UpcomingIcon fontSize="small" />} color="info" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("home.inbound14d")} value={spark ? spark.reduce((a, b) => a + b, 0) : 0} icon={<ForumIcon fontSize="small" />} color="primary" spark={spark} /></Grid>
       </Grid>
 
       <Grid container spacing={2} sx={{ mt: 0.5 }}>
@@ -227,8 +233,8 @@ function Overview() {
       </Grid>
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 3, mb: 1.5 }}>
-        <Typography variant="subtitle2" fontWeight={800}>Clinics</Typography>
-        <Typography variant="caption" color="text.secondary">{clinics.length} total · {active} active</Typography>
+        <Typography variant="subtitle2" fontWeight={800}>{t("home.clinicsHeader")}</Typography>
+        <Typography variant="caption" color="text.secondary">{t("home.clinicsTotalActive", { n: clinics.length, m: active })}</Typography>
       </Stack>
       <Grid container spacing={2}>
         {clinics.map((c) => (
@@ -240,34 +246,35 @@ function Overview() {
 }
 
 function Dashboard() {
+  const t = useT();
   const { me } = useAuth();
   const q = useApiQuery<any>(["dashboard"], "/dashboard");
   const trends = useApiQuery<{ daily_messages: number[] }>(["trends"], "/trends");
-  if (q.isLoading) return <><PageTitle title="Dashboard" /><CardsSkeleton /></>;
+  if (q.isLoading) return <><PageTitle title={t("home.dashboard")} /><CardsSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
   const s = q.data?.stats ?? {};
   const spark = trends.data?.daily_messages;
   const cards = [
-    { l: "Messages", v: s.messages, icon: <ForumIcon fontSize="small" />, c: "primary", spark },
-    { l: "Users", v: s.users, icon: <PeopleIcon fontSize="small" />, c: "secondary" },
-    { l: "Appointments", v: s.appointments, icon: <EventIcon fontSize="small" />, c: "success" },
-    { l: "Upcoming", v: s.upcoming_appointments, icon: <UpcomingIcon fontSize="small" />, c: "info" },
-    { l: "Need human", v: s.needs_human_users, icon: <WarningIcon fontSize="small" />, c: "warning" },
-    { l: "Missed visits (mo)", v: q.data?.no_shows_month, icon: <EventBusyIcon fontSize="small" />, c: "error" },
+    { l: t("home.messages"), v: s.messages, icon: <ForumIcon fontSize="small" />, c: "primary", spark },
+    { l: t("home.users"), v: s.users, icon: <PeopleIcon fontSize="small" />, c: "secondary" },
+    { l: t("home.appointments"), v: s.appointments, icon: <EventIcon fontSize="small" />, c: "success" },
+    { l: t("home.upcoming"), v: s.upcoming_appointments, icon: <UpcomingIcon fontSize="small" />, c: "info" },
+    { l: t("home.needHuman"), v: s.needs_human_users, icon: <WarningIcon fontSize="small" />, c: "warning" },
+    { l: t("home.missedVisitsMo"), v: q.data?.no_shows_month, icon: <EventBusyIcon fontSize="small" />, c: "error" },
   ];
   return (
     <>
-      <Hero title={me?.tenant_name ? `Welcome, ${me.tenant_name}` : "Dashboard"}
-        subtitle="Your clinic at a glance · last 14 days"
+      <Hero title={me?.tenant_name ? t("home.welcome", { name: me.tenant_name }) : t("home.dashboard")}
+        subtitle={t("home.dashboardSubtitle")}
         stats={[
-          { label: "Appointments", value: (s.appointments ?? 0).toLocaleString() },
-          { label: "Upcoming", value: (s.upcoming_appointments ?? 0).toLocaleString() },
-          { label: "Need human", value: (s.needs_human_users ?? 0).toLocaleString() },
+          { label: t("home.appointments"), value: (s.appointments ?? 0).toLocaleString() },
+          { label: t("home.upcoming"), value: (s.upcoming_appointments ?? 0).toLocaleString() },
+          { label: t("home.needHuman"), value: (s.needs_human_users ?? 0).toLocaleString() },
         ]} />
 
       {q.data?.wa_send_failing && (
         <Alert severity="error" variant="outlined" sx={{ mb: 2 }}>
-          WhatsApp message sending is currently failing — replies may not be delivered. Please check the WhatsApp connection.
+          {t("home.waSendFailing")}
         </Alert>
       )}
 

@@ -13,6 +13,7 @@ import StarIcon from "@mui/icons-material/StarOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import CircleIcon from "@mui/icons-material/Circle";
 import { useLive, Level, Note } from "./realtime";
+import { useT } from "./i18n";
 
 const pulse = keyframes`
   0% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
@@ -67,6 +68,7 @@ function Row({ n, onClick }: { n: Note; onClick: () => void }) {
 
 export default function NotificationBell() {
   const { notes, unread, connected, markAllRead, clear } = useLive();
+  const t = useT();
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const nav = useNavigate();
   const open = Boolean(anchor);
@@ -76,7 +78,7 @@ export default function NotificationBell() {
 
   return (
     <>
-      <Tooltip title={connected ? "Live · connected" : "Reconnecting…"}>
+      <Tooltip title={connected ? t("bell.liveConnected") : t("common.reconnecting")}>
         <IconButton onClick={onOpen} sx={{ position: "relative" }}>
           <Badge badgeContent={unread} color="error" max={99}>
             <NotificationsNoneIcon />
@@ -95,22 +97,22 @@ export default function NotificationBell() {
         slotProps={{ paper: { sx: { width: 392, maxWidth: "92vw", mt: 1, borderRadius: 3, overflow: "hidden" } } }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2, py: 1.5 }}>
           <Box>
-            <Typography fontWeight={800}>Notifications</Typography>
+            <Typography fontWeight={800}>{t("bell.notifications")}</Typography>
             <Stack direction="row" alignItems="center" spacing={0.75}>
               <CircleIcon sx={{ fontSize: 8, color: connected ? "success.main" : "text.disabled" }} />
               <Typography variant="caption" color="text.secondary">
-                {connected ? "Live" : "Reconnecting…"}
+                {connected ? t("common.live") : t("common.reconnecting")}
               </Typography>
             </Stack>
           </Box>
-          {notes.length > 0 && <Button size="small" color="inherit" onClick={clear}>Clear</Button>}
+          {notes.length > 0 && <Button size="small" color="inherit" onClick={clear}>{t("common.clear")}</Button>}
         </Stack>
         <Divider />
         {notes.length === 0 ? (
           <Box sx={{ textAlign: "center", py: 6, px: 2, color: "text.secondary" }}>
             <NotificationsNoneIcon sx={{ fontSize: 36, opacity: 0.4 }} />
-            <Typography variant="body2" sx={{ mt: 1 }}>You're all caught up.</Typography>
-            <Typography variant="caption">New activity will appear here in real time.</Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>{t("bell.emptyTitle")}</Typography>
+            <Typography variant="caption">{t("bell.emptyBody")}</Typography>
           </Box>
         ) : (
           <List sx={{ py: 0, maxHeight: 420, overflow: "auto" }}>

@@ -9,6 +9,7 @@ import { DataGrid, GridColDef, GridToolbar } from "@mui/x-data-grid";
 import { SparkLineChart } from "@mui/x-charts/SparkLineChart";
 import { useSnackbar } from "notistack";
 import { apiGet } from "./api";
+import { useT } from "./i18n";
 
 // Time + name formatting is centralized in ./tz so every page renders in the clinic timezone.
 export { fmtDate, fmtTime, dayLabel, displayName, initials } from "./tz";
@@ -54,11 +55,12 @@ interface Meta { is_super?: boolean; clinics?: { id: number; name: string }[]; s
 
 export function ClinicFilter({ meta }: { meta?: Meta }) {
   const [clinic, setClinic] = useClinic();
+  const t = useT();
   if (!meta?.is_super) return null;
   return (
     <Select size="small" value={clinic} displayEmpty
       onChange={(e) => setClinic(String(e.target.value))} sx={{ minWidth: 200 }}>
-      <MenuItem value="">All clinics</MenuItem>
+      <MenuItem value="">{t("common.allClinics")}</MenuItem>
       {meta.clinics?.map((c) => <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>)}
     </Select>
   );
@@ -98,7 +100,8 @@ export function Loading() {
 }
 
 export function QueryError({ error }: { error: unknown }) {
-  const msg = error instanceof Error ? error.message : "Failed to load";
+  const t = useT();
+  const msg = error instanceof Error ? error.message : t("common.failedToLoad");
   return <Alert severity="error" variant="outlined" sx={{ my: 2 }}>{msg}</Alert>;
 }
 
@@ -135,21 +138,22 @@ export function DetailDialog({ open, onClose, title, subtitle, fields, actions }
 }
 
 // A small confirm-before-acting dialog for irreversible / patient-visible actions.
-export function ConfirmDialog({ open, title = "Please confirm", message, confirmLabel = "Confirm",
+export function ConfirmDialog({ open, title, message, confirmLabel,
   confirmColor = "primary", onConfirm, onClose }: {
   open: boolean; title?: string; message: React.ReactNode; confirmLabel?: string;
   confirmColor?: "primary" | "success" | "warning" | "error" | "secondary";
   onConfirm: () => void; onClose: () => void;
 }) {
+  const t = useT();
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 800 }}>{title}</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 800 }}>{title ?? t("common.pleaseConfirm")}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary">{message}</Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} color="inherit">Cancel</Button>
-        <Button onClick={onConfirm} variant="contained" color={confirmColor} autoFocus>{confirmLabel}</Button>
+        <Button onClick={onClose} color="inherit">{t("common.cancel")}</Button>
+        <Button onClick={onConfirm} variant="contained" color={confirmColor} autoFocus>{confirmLabel ?? t("common.confirm")}</Button>
       </DialogActions>
     </Dialog>
   );

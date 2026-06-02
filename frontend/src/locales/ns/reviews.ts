@@ -1,0 +1,58 @@
+// Patient reviews page. Keep terms consistent with the glossary.
+export default {
+  en: {
+    title: "Patient reviews",
+    subtitle: "Feedback collected after visits",
+    // overall rating card
+    overallRating: "OVERALL RATING",
+    basedOn: "Based on {n} review(s)",
+    ratingDistribution: "Rating distribution",
+    noReviewsYet: "No reviews yet.",
+    // KPIs
+    kpiReceived: "Reviews received",
+    kpiAwaiting: "Awaiting response",
+    kpiResponseRate: "Response rate ({n}/{m})",
+    // search + filter toggles
+    searchPlaceholder: "Search by patient, visit, doctor or comment…",
+    filterAll: "All",
+    filterReceived: "Received",
+    filterAwaiting: "Awaiting",
+    // card / detail labels
+    awaitingResponse: "Awaiting response",
+    noResponseYet: "No response yet.",
+    noCommentLeft: "No comment left.",
+    visit: "Visit",
+    rating: "Rating",
+    comment: "Comment",
+    requested: "Requested",
+    responded: "Responded",
+    // empty states
+    emptyNone: "No reviews yet.",
+    emptyNoMatch: "No reviews match your filters.",
+  },
+  ar: {
+    title: "تقييمات المرضى",
+    subtitle: "الملاحظات المجمَّعة بعد الزيارات",
+    overallRating: "التقييم العام",
+    basedOn: "استنادًا إلى {n} تقييم",
+    ratingDistribution: "توزيع التقييمات",
+    noReviewsYet: "لا توجد تقييمات بعد.",
+    kpiReceived: "التقييمات المستلمة",
+    kpiAwaiting: "بانتظار الرد",
+    kpiResponseRate: "معدل الاستجابة ({n}/{m})",
+    searchPlaceholder: "ابحث بالمريض أو الزيارة أو الطبيب أو التعليق…",
+    filterAll: "الكل",
+    filterReceived: "مستلَم",
+    filterAwaiting: "بانتظار",
+    awaitingResponse: "بانتظار الرد",
+    noResponseYet: "لا يوجد رد بعد.",
+    noCommentLeft: "لم يُترك تعليق.",
+    visit: "الزيارة",
+    rating: "التقييم",
+    comment: "تعليق",
+    requested: "طُلب",
+    responded: "تم الرد",
+    emptyNone: "لا توجد تقييمات بعد.",
+    emptyNoMatch: "لا توجد تقييمات مطابقة للتصفية.",
+  },
+};
