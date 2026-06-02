@@ -35,6 +35,7 @@ export default function ClinicDataEditor({ value, onChange }: {
   const setPol = (p: any) => patch({ appointment_policy: { ...pol, ...p } });
   const setRecipients = (list: any[]) => patch({ notifications: { ...notif, recipients: list } });
   const updRec = (i: number, p: any) => setRecipients(recipients.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  const setDigestFreq = (f: string) => patch({ notifications: { ...notif, digest_frequency: f } });
   const updRow = (key: string, list: any[], i: number, p: any) =>
     patch({ [key]: list.map((r, j) => (j === i ? { ...r, ...p } : r)) });
   const addRow = (key: string, list: any[], blank: any) => patch({ [key]: [...list, blank] });
@@ -204,6 +205,17 @@ export default function ClinicDataEditor({ value, onChange }: {
             </Table>
             <Button startIcon={<AddIcon />} sx={{ mt: 1 }}
               onClick={() => setRecipients([...recipients, { label: "", number: "", escalation: true, digest: false }])}>{t("clinicData.addRecipient")}</Button>
+
+            <Box sx={{ mt: 3, maxWidth: 360 }}>
+              <TextField select fullWidth size="small" label={t("clinicData.digestSchedule")}
+                value={notif.digest_frequency || "off"} onChange={(e) => setDigestFreq(e.target.value)}
+                helperText={t("clinicData.digestScheduleHelp")}>
+                <MenuItem value="off">{t("clinicData.digestOff")}</MenuItem>
+                <MenuItem value="daily">{t("clinicData.digestDaily")}</MenuItem>
+                <MenuItem value="weekly">{t("clinicData.digestWeekly")}</MenuItem>
+                <MenuItem value="both">{t("clinicData.digestBoth")}</MenuItem>
+              </TextField>
+            </Box>
           </>
         )}
       </CardContent>

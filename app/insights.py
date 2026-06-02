@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 
 from app import db
 from app.config import (
-    INSIGHTS_DIGEST_ENABLED,
     INSIGHTS_DIGEST_HOUR,
     INSIGHTS_WEEKLY_DOW,
     TIMEZONE,
@@ -248,16 +247,33 @@ def _digest_recipients(tenant: dict) -> list[str]:
     return notify.clinic_numbers(tenant, "digest")
 
 
+def _digest_master_enabled() -> bool:
+    """Global on/off for the scheduled digest, toggleable from Settings (DB) or env."""
+    from app import settings as settings_mod
+    v = (settings_mod.get("INSIGHTS_DIGEST_ENABLED", "true") or "true").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
+
+def _digest_frequency(tenant: dict) -> str:
+    """Per-clinic digest cadence: 'off' (default), 'daily', 'weekly', or 'both'."""
+    notif = (tenant.get("clinic_data") or {}).get("notifications") or {}
+    f = str(notif.get("digest_frequency") or "off").strip().lower()
+    return f if f in ("daily", "weekly", "both") else "off"
+
+
 async def run_digests(now: datetime | None = None) -> int:
-    """Send due daily/weekly insight digests to each active clinic's recipients. Idempotent
-    per day via db.claim_digest. Returns the number of digests sent."""
-    if not INSIGHTS_DIGEST_ENABLED:
+    """Send due insight digests to each clinic that opted in (per-clinic frequency, default
+    off). Idempotent per day via db.claim_digest. Returns the number of digests sent."""
+    if not _digest_master_enabled():
         return 0
     from app import notify
     now = now or datetime.now(TZ)
     tenants = await asyncio.to_thread(db.all_active_tenants)
     sent = 0
     for t in tenants:
+        freq = _digest_frequency(t)
+        if freq == "off":
+            continue  # this clinic hasn't enabled the digest
         recipients = _digest_recipients(t)
         if not recipients:
             continue
@@ -272,7 +288,9 @@ async def run_digests(now: datetime | None = None) -> int:
                  "access_token": t.get("wa_access_token")}
         lang = _clinic_lang(t)
         for kind in ("day", "week"):
-            if kind == "week" and local.weekday() != INSIGHTS_WEEKLY_DOW:
+            if kind == "day" and freq not in ("daily", "both"):
+                continue
+            if kind == "week" and (freq not in ("weekly", "both") or local.weekday() != INSIGHTS_WEEKLY_DOW):
                 continue
             # Claim BEFORE sending so a flapping send never spams recipients twice.
             if not await asyncio.to_thread(db.claim_digest, t["id"], kind, local.date()):

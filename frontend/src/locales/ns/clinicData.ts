@@ -56,6 +56,12 @@ export default {
     addRecipient: "Add recipient",
     ownerPlaceholder: "Owner",
     numberPlaceholder: "9665XXXXXXXX",
+    digestSchedule: "Insights digest",
+    digestScheduleHelp: "Send a WhatsApp insights summary to the digest recipients above. Off by default.",
+    digestOff: "Off",
+    digestDaily: "Daily",
+    digestWeekly: "Weekly",
+    digestBoth: "Daily + Weekly",
   },
   ar: {
     // Tabs
@@ -110,5 +116,11 @@ export default {
     addRecipient: "إضافة مستلِم",
     ownerPlaceholder: "المالك",
     numberPlaceholder: "9665XXXXXXXX",
+    digestSchedule: "ملخص التحليلات",
+    digestScheduleHelp: "إرسال ملخص تحليلات عبر واتساب إلى مستلِمي الملخص أعلاه. مُعطّل افتراضيًا.",
+    digestOff: "مُعطّل",
+    digestDaily: "يومي",
+    digestWeekly: "أسبوعي",
+    digestBoth: "يومي + أسبوعي",
   },
 };
