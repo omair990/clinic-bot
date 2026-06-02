@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   Box, Drawer, AppBar, Toolbar, Typography, List, ListItemButton, ListItemIcon,
@@ -46,11 +46,11 @@ export default function Layout() {
   const isSuper = me?.role === "super";
   const W = open ? FULL : MINI;
 
-  const items = [
-    { label: t(isSuper ? "nav.overview" : "nav.dashboard"), to: "/", icon: <DashboardIcon /> },
-    { label: t("nav.conversations"), to: "/conversations", icon: <ChatIcon /> },
-    { label: t("nav.appointments"), to: "/appointments", icon: <EventIcon /> },
-    { label: t("nav.no-shows"), to: "/no-shows", icon: <EventBusyIcon /> },
+  const items: { label: string; short?: string; to: string; icon: ReactNode }[] = [
+    { label: t(isSuper ? "nav.overview" : "nav.dashboard"), short: t("nav.shortOverview"), to: "/", icon: <DashboardIcon /> },
+    { label: t("nav.conversations"), short: t("nav.shortChats"), to: "/conversations", icon: <ChatIcon /> },
+    { label: t("nav.appointments"), short: t("nav.shortAppointments"), to: "/appointments", icon: <EventIcon /> },
+    { label: t("nav.no-shows"), short: t("nav.shortMissed"), to: "/no-shows", icon: <EventBusyIcon /> },
     { label: t("nav.insights"), to: "/insights", icon: <InsightsIcon /> },
     { label: t("nav.reviews"), to: "/reviews", icon: <StarIcon /> },
     ...(!isSuper ? [{ label: t("nav.usage"), to: "/usage", icon: <SpeedIcon /> }] : []),
@@ -205,11 +205,25 @@ export default function Layout() {
         display: { xs: "block", md: "none" }, position: "fixed", left: 0, right: 0, bottom: 0,
         zIndex: (t) => t.zIndex.appBar + 1, borderTop: (t) => `1px solid ${t.palette.divider}`,
         bgcolor: (t) => alpha(t.palette.background.paper, 0.96), backdropFilter: "blur(10px)",
+        pb: "env(safe-area-inset-bottom)",   // clear the iOS home indicator
       }}>
         <BottomNavigation showLabels value={activeIdx === -1 ? false : activeIdx}
-          sx={{ bgcolor: "transparent", "& .MuiBottomNavigationAction-root": { minWidth: 0 } }}>
+          sx={{
+            bgcolor: "transparent", height: 62,
+            "& .MuiBottomNavigationAction-root": {
+              minWidth: 0, maxWidth: "none", px: 0.5, py: 0.75, gap: 0.25,
+            },
+            // Keep every label one line at a fixed size (default BottomNav grows the selected
+            // label, which overflowed the cramped tabs). Ellipsis only as a last resort.
+            "& .MuiBottomNavigationAction-label": {
+              fontSize: 11, fontWeight: 600, lineHeight: 1.25, mt: 0.25, maxWidth: "100%",
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "none",
+              "&.Mui-selected": { fontSize: 11 },
+            },
+            "& .MuiSvgIcon-root": { fontSize: 22 },
+          }}>
           {primary.map((it, i) => (
-            <BottomNavigationAction key={it.to} label={it.label} icon={it.icon}
+            <BottomNavigationAction key={it.to} label={it.short ?? it.label} icon={it.icon}
               onClick={() => go(it.to)} value={i} />
           ))}
           <BottomNavigationAction label={t("common.more")} icon={<MoreHorizIcon />}

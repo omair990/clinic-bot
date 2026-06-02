@@ -15,6 +15,11 @@ export default {
     settings: "Settings",
     tenants: "Clinic",
     clinics: "Clinic",
+    // Short labels for the mobile bottom tab bar (must stay one line).
+    shortOverview: "Overview",
+    shortChats: "Chats",
+    shortAppointments: "Appts",
+    shortMissed: "Missed",
   },
   ar: {
     overview: "نظرة عامة",
@@ -31,5 +36,10 @@ export default {
     settings: "الإعدادات",
     tenants: "العيادة",
     clinics: "العيادة",
+    // Short labels for the mobile bottom tab bar (must stay one line).
+    shortOverview: "نظرة عامة",
+    shortChats: "المحادثات",
+    shortAppointments: "المواعيد",
+    shortMissed: "الفائتة",
   },
 };
