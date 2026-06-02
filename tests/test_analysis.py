@@ -58,6 +58,7 @@ def test_analyze_conversation_uses_llm(monkeypatch):
                "appointment_preference": "tomorrow evening", "insurance": "Bupa",
                "urgency": "high", "sentiment": "positive", "next_action": "Offer the 6pm slot",
                "lead_band": "hot", "lead_score": 90, "lead_rationale": "ready to book"}
+    monkeypatch.setattr(analysis, "_ai_analysis_enabled", lambda: True)
     monkeypatch.setattr(analysis, "generate",
                         lambda s, m, t: LLMResult(text=json.dumps(payload)))
     thread = [{"direction": "in", "message": "cleaning tmrw evening?", "intent": None}]
@@ -66,6 +67,17 @@ def test_analyze_conversation_uses_llm(monkeypatch):
     assert data["lead_band"] == "hot" and data["requested_service"] == "Dental Cleaning"
     assert data["urgency"] == "high" and data["sentiment"] == "positive"
     assert data["insurance"] == "Bupa"
+
+
+def test_analyze_conversation_off_uses_heuristic_without_llm(monkeypatch):
+    # Default (PATIENT_AI_ANALYSIS off) → free heuristic, never calls the LLM.
+    monkeypatch.setattr(analysis, "_ai_analysis_enabled", lambda: False)
+    def must_not_call(*a, **k):
+        raise AssertionError("LLM must not be called when AI analysis is off")
+    monkeypatch.setattr(analysis, "generate", must_not_call)
+    thread = [{"direction": "in", "message": "book me tomorrow", "intent": None}]
+    _data, src = analysis.analyze_conversation(thread, "Sara", True, 2)
+    assert src == "heuristic"
 
 
 def test_staff_summary_line_formats_and_skips_empties():
@@ -81,6 +93,7 @@ def test_staff_summary_line_formats_and_skips_empties():
 def test_analyze_conversation_falls_back_when_llm_down(monkeypatch):
     def boom(s, m, t):
         raise LLMUnavailable("all providers down", transient=False)
+    monkeypatch.setattr(analysis, "_ai_analysis_enabled", lambda: True)
     monkeypatch.setattr(analysis, "generate", boom)
     thread = [{"direction": "in", "message": "hi", "intent": None}]
     _data, src = analysis.analyze_conversation(thread, None, False, 1)
@@ -96,6 +109,7 @@ def test_analyze_conversation_skips_llm_on_empty_thread(monkeypatch):
 
 
 def test_analyze_conversation_falls_back_on_unparseable_json(monkeypatch):
+    monkeypatch.setattr(analysis, "_ai_analysis_enabled", lambda: True)
     monkeypatch.setattr(analysis, "generate",
                         lambda s, m, t: LLMResult(text="I think this lead is hot!"))
     thread = [{"direction": "in", "message": "book me", "intent": None}]

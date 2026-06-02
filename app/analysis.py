@@ -127,6 +127,14 @@ def _normalize(data: dict, fallback: dict) -> dict:
     return out
 
 
+def _ai_analysis_enabled() -> bool:
+    """Whether to spend an LLM call analyzing a conversation. Off by default (uses the free
+    heuristic instead); turn on from Settings via PATIENT_AI_ANALYSIS to get the richer AI."""
+    from app import settings as settings_mod
+    v = (settings_mod.get("PATIENT_AI_ANALYSIS", "false") or "false").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
 def analyze_conversation(thread: list[dict], patient_name: str | None,
                          has_booking: bool, inbound_count: int) -> tuple[dict, str]:
     """Return (analysis dict, source) where source is 'ai' or 'heuristic'."""
@@ -134,6 +142,8 @@ def analyze_conversation(thread: list[dict], patient_name: str | None,
     transcript = _transcript(thread)
     if not transcript:
         return fallback, "heuristic"
+    if not _ai_analysis_enabled():
+        return fallback, "heuristic"   # AI analysis off → free heuristic, no Claude call
     try:
         res = generate(_SYSTEM, [Msg(role="user", content=transcript)], [])
     except LLMUnavailable:

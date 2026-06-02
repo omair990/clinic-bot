@@ -15,6 +15,7 @@ from app import crypto, db
 EDITABLE = {
     "ADMIN_WA_NUMBER": ("Platform admin WhatsApp — technical alerts only (comma-separated for several)", "WhatsApp"),
     "INSIGHTS_AI_NARRATIVE": ("AI business-insights narrative — true/false (set false to stop the Claude usage)", "LLM"),
+    "PATIENT_AI_ANALYSIS": ("Patient-chat AI analysis — true/false (off = free heuristic, no Claude)", "LLM"),
     "INSIGHTS_DIGEST_ENABLED": ("Scheduled WhatsApp digest master switch — true/false (each clinic also opts in under its Notifications)", "WhatsApp"),
 }
 

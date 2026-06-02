@@ -33,6 +33,7 @@ def _user():
 
 
 def _stub_llm(monkeypatch, payload: dict):
+    monkeypatch.setattr(analysis, "_ai_analysis_enabled", lambda: True)  # AI analysis is off by default now
     monkeypatch.setattr(analysis, "generate", lambda s, m, t: LLMResult(text=json.dumps(payload)))
 
 
@@ -492,6 +493,7 @@ def test_handover_notifies_staff_with_ai_summary(monkeypatch):
         c.escalation_reason = "complaint"
         return c
     monkeypatch.setattr(webhook, "run_agent", run)
+    monkeypatch.setattr(analysis, "_ai_analysis_enabled", lambda: True)  # AI analysis off by default
     monkeypatch.setattr(analysis, "generate", lambda s, m, t: LLMResult(text=json.dumps(
         {"customer_name": "Sara", "requested_service": "Dermatology",
          "appointment_preference": "Thursday evening", "insurance": "Bupa",
