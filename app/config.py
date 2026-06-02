@@ -193,6 +193,25 @@ PORT = int(os.getenv("PORT", "8000"))
 COMMIT_SHA = (os.environ.get("RAILWAY_GIT_COMMIT_SHA")
               or os.environ.get("GIT_COMMIT") or "unknown").strip()[:12]
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme")
+
+
+def _parse_admin_accounts(raw: str) -> dict[str, str]:
+    """Named platform-admin logins from ADMIN_ACCOUNTS="user=pass,user2=pass2".
+
+    These grant the same super-admin access as the blank-username + ADMIN_PASSWORD login,
+    but with a shareable username + password (so several people can have their own login)."""
+    out: dict[str, str] = {}
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if "=" in part:
+            u, p = part.split("=", 1)
+            u, p = u.strip(), p.strip()
+            if u and p:
+                out[u] = p
+    return out
+
+
+ADMIN_ACCOUNTS = _parse_admin_accounts(os.environ.get("ADMIN_ACCOUNTS", ""))
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-please-rotate")
 # Encryption key for secrets at rest (WhatsApp token, connector credentials). A Fernet key;
 # if unset it's derived from SECRET_KEY. Set a stable dedicated value in production — changing
