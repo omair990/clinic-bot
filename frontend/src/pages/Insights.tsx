@@ -20,7 +20,7 @@ import StarIcon from "@mui/icons-material/StarRounded";
 import StarBorderIcon from "@mui/icons-material/StarBorderRounded";
 import FilterFunnelIcon from "@mui/icons-material/FilterAltOutlined";
 import { useApiQuery, PageTitle, ClinicFilter, useClinic, TableSkeleton, QueryError, KpiCard } from "../lib";
-import { useT } from "../i18n";
+import { useT, useI18n } from "../i18n";
 
 // Brand palette — keeps every chart and accent on the same teal→indigo→amber language.
 const C = {
@@ -140,10 +140,11 @@ const SHARED_BAR_SX = {
 
 export default function Insights() {
   const t = useT();
+  const { lang } = useI18n();
   const [clinic] = useClinic();
   const [params, setParams] = useSearchParams();
   const period = params.get("period") || "day";
-  const q = useApiQuery<any>(["insights", clinic, period], `/insights?clinic=${clinic}&period=${period}`);
+  const q = useApiQuery<any>(["insights", clinic, period, lang], `/insights?clinic=${clinic}&period=${period}&lang=${lang}`);
   const setPeriod = (p: string) => { const n = new URLSearchParams(params); n.set("period", p); setParams(n); };
 
   if (q.isLoading) return <><PageTitle title={t("insights.title")} /><TableSkeleton rows={4} /></>;

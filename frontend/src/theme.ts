@@ -28,7 +28,7 @@ export function makeTheme(mode: Mode, dir: Dir = "ltr"): Theme {
     },
     shape: { borderRadius: 14 },
     typography: {
-      fontFamily: `"Inter", "Segoe UI", "Tahoma", "Geeza Pro", "Noto Sans Arabic", system-ui, -apple-system, sans-serif`,
+      fontFamily: `"Cairo", "Inter", "Segoe UI", "Tahoma", "Geeza Pro", "Noto Sans Arabic", system-ui, -apple-system, sans-serif`,
       h4: { fontWeight: 800, letterSpacing: -0.5 },
       h5: { fontWeight: 800, letterSpacing: -0.4 },
       h6: { fontWeight: 700 },

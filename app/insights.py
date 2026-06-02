@@ -86,14 +86,47 @@ def _metrics_brief(m: dict, label: str) -> str:
     )
 
 
-_NARRATIVE_SYSTEM = (
-    "You are an analyst briefing a clinic owner. Given the metrics, write 3-5 short sentences: "
-    "what's happening, the biggest opportunity or risk, and 1-2 concrete actions. "
-    "Plain text, no markdown, no preamble. Be specific and use the numbers given.")
+# Output language for the AI narrative + digest. "ar" = Arabic, anything else = English.
+_NARRATIVE_SYSTEM = {
+    "en": (
+        "You are an analyst briefing a clinic owner. Given the metrics, write 3-5 short sentences: "
+        "what's happening, the biggest opportunity or risk, and 1-2 concrete actions. "
+        "Plain text, no markdown, no preamble. Be specific and use the numbers given."),
+    "ar": (
+        "أنت محلل تقدّم إحاطة لمالك عيادة. استنادًا إلى المقاييس، اكتب من 3 إلى 5 جُمل قصيرة "
+        "بالعربية الفصحى: ما الذي يحدث، وأكبر فرصة أو خطر، وإجراء أو إجراءان محدّدان. نص عادي "
+        "بدون تنسيق وبدون مقدمات. كن دقيقًا واستخدم الأرقام المُعطاة."),
+}
+# Period label per language (window() returns the English one; report() localizes it).
+_PERIOD_LABEL = {
+    "en": {"day": "Today", "week": "Last 7 days"},
+    "ar": {"day": "اليوم", "week": "آخر 7 أيام"},
+}
 
 
-def _fallback_narrative(m: dict, label: str) -> str:
+def _label(period: str, lang: str) -> str:
+    return _PERIOD_LABEL.get(lang, _PERIOD_LABEL["en"]).get(period, period)
+
+
+def _fallback_narrative(m: dict, label: str, lang: str = "en") -> str:
     conv = m["conversion"]
+    if lang == "ar":
+        parts = [
+            f"{label}: {m['inbound']} رسالة واردة من {m['users']} مريضًا، مع "
+            f"{conv['users_booked']} حجزًا ({conv['conversion_pct']}% نسبة تحويل)."
+        ]
+        if m["top_inquiries"]:
+            top = m["top_inquiries"][0]
+            parts.append(f"أكثر الاستفسارات شيوعًا: {top['intent']} ({top['n']}).")
+        if m["peak_hours"]:
+            ph = m["peak_hours"][0]
+            parts.append(f"أكثر الساعات ازدحامًا: {ph['hour']:02d}:00 — تأكّد من تجاوب الموظفين حينها.")
+        if m["missed_opportunities"]:
+            parts.append(f"{m['missed_opportunities']} محادثة بحاجة إلى متابعة من الموظفين — "
+                         "راجعها حتى لا تُفقد الفرص.")
+        if m["no_shows"]:
+            parts.append(f"{m['no_shows']} زيارة فائتة هذه الفترة؛ أُرسلت رسائل الاسترجاع تلقائيًا.")
+        return " ".join(parts)
     parts = [
         f"{label}: {m['inbound']} inbound messages from {m['users']} patients, "
         f"{conv['users_booked']} booked ({conv['conversion_pct']}% conversion)."
@@ -112,11 +145,12 @@ def _fallback_narrative(m: dict, label: str) -> str:
     return " ".join(parts)
 
 
-def narrative(metrics: dict, label: str) -> tuple[str, str]:
-    """(text, source) where source is 'ai' or 'heuristic'."""
+def narrative(metrics: dict, label: str, lang: str = "en") -> tuple[str, str]:
+    """(text, source) where source is 'ai' or 'heuristic'. `lang` selects the output language."""
+    system = _NARRATIVE_SYSTEM.get(lang, _NARRATIVE_SYSTEM["en"])
     brief = _metrics_brief(metrics, label)
     try:
-        res = generate(_NARRATIVE_SYSTEM, [Msg(role="user", content=brief)], [])
+        res = generate(system, [Msg(role="user", content=brief)], [])
         text = (res.text or "").strip()
         if text:
             return text, "ai"
@@ -124,26 +158,47 @@ def narrative(metrics: dict, label: str) -> tuple[str, str]:
         pass
     except Exception:  # noqa: BLE001
         log.exception("insights narrative LLM call failed")
-    return _fallback_narrative(metrics, label), "heuristic"
+    return _fallback_narrative(metrics, label, lang), "heuristic"
 
 
 def report(tenant_id: int | None, period: str = "day", tz: str = TIMEZONE,
-           now: datetime | None = None) -> dict:
-    """Full insights report: window + deterministic metrics + narrative."""
+           now: datetime | None = None, lang: str = "en") -> dict:
+    """Full insights report: window + deterministic metrics + narrative (in `lang`)."""
     period = period if period in PERIODS else "day"
-    since, until, label = window(period, now)
+    since, until, _ = window(period, now)
+    label = _label(period, lang)
     metrics = compute_metrics(tenant_id, since, until, tz)
-    text, source = narrative(metrics, label)
-    return {"period": period, "label": label, "since": since, "until": until,
+    text, source = narrative(metrics, label, lang)
+    return {"period": period, "label": label, "since": since, "until": until, "lang": lang,
             "metrics": metrics, "narrative": text, "narrative_source": source}
 
 
 # --- Scheduled digest delivery (Phase 5) ---
 
-def digest_text(rep: dict, clinic_name: str) -> str:
-    """A compact WhatsApp digest of a report for the clinic owner."""
+def digest_text(rep: dict, clinic_name: str, lang: str = "en") -> str:
+    """A compact WhatsApp digest of a report for the clinic owner, in `lang`."""
     m = rep["metrics"]
     c = m["conversion"]
+    lm = m["lead_mix"]
+    if lang == "ar":
+        lines = [
+            f"📊 {clinic_name} — رؤى {rep['label']}",
+            "",
+            rep["narrative"],
+            "",
+            f"• الواردة: {m['inbound']} من {m['users']} مريضًا ({m['voice_share_pct']}% صوت)",
+            f"• الحجوزات: {c['users_booked']} ({c['conversion_pct']}% تحويل)",
+            f"• الزيارات الفائتة: {m['no_shows']}",
+            f"• العملاء — 🔥{lm['hot']} 🌤{lm['warm']} ❄️{lm['cold']}",
+        ]
+        if m["peak_hours"]:
+            lines.append(f"• ساعة الذروة: {m['peak_hours'][0]['hour']:02d}:00")
+        if m["missed_opportunities"]:
+            lines.append(f"• بحاجة لمتابعة الموظفين: {m['missed_opportunities']}")
+        rv = m.get("reviews") or {}
+        if rv.get("avg_rating") is not None:
+            lines.append(f"• متوسط التقييم: {rv['avg_rating']}★ ({rv['responded']} تقييم)")
+        return "\n".join(lines)
     lines = [
         f"📊 {clinic_name} — {rep['label']} insights",
         "",
@@ -152,7 +207,7 @@ def digest_text(rep: dict, clinic_name: str) -> str:
         f"• Inbound: {m['inbound']} from {m['users']} patients ({m['voice_share_pct']}% voice)",
         f"• Bookings: {c['users_booked']} ({c['conversion_pct']}% conversion)",
         f"• No-shows: {m['no_shows']}",
-        f"• Leads — 🔥{m['lead_mix']['hot']} 🌤{m['lead_mix']['warm']} ❄️{m['lead_mix']['cold']}",
+        f"• Leads — 🔥{lm['hot']} 🌤{lm['warm']} ❄️{lm['cold']}",
     ]
     if m["peak_hours"]:
         lines.append(f"• Peak hour: {m['peak_hours'][0]['hour']:02d}:00")
@@ -162,6 +217,14 @@ def digest_text(rep: dict, clinic_name: str) -> str:
     if rv.get("avg_rating") is not None:
         lines.append(f"• Avg review: {rv['avg_rating']}★ ({rv['responded']} reviews)")
     return "\n".join(lines)
+
+
+def _clinic_lang(tenant: dict) -> str:
+    """Digest/narrative language for a clinic — Arabic when its default agent language is
+    Arabic, else English."""
+    dl = ((tenant.get("clinic_data") or {}).get("clinic") or {}).get("default_language") or ""
+    s = str(dl).strip().lower()
+    return "ar" if (s in ("ar", "arabic") or "عرب" in str(dl)) else "en"
 
 
 def _digest_recipients(tenant: dict) -> list[str]:
@@ -194,14 +257,15 @@ async def run_digests(now: datetime | None = None) -> int:
             continue  # before the morning send time in this clinic's zone
         creds = {"phone_number_id": t.get("wa_phone_number_id"),
                  "access_token": t.get("wa_access_token")}
+        lang = _clinic_lang(t)
         for kind in ("day", "week"):
             if kind == "week" and local.weekday() != INSIGHTS_WEEKLY_DOW:
                 continue
             # Claim BEFORE sending so a flapping send never spams recipients twice.
             if not await asyncio.to_thread(db.claim_digest, t["id"], kind, local.date()):
                 continue
-            rep = await asyncio.to_thread(report, t["id"], kind, tzname, now)
-            text = digest_text(rep, t.get("name") or "Clinic")
+            rep = await asyncio.to_thread(report, t["id"], kind, tzname, now, lang)
+            text = digest_text(rep, t.get("name") or "Clinic", lang)
             n = await notify.send_many(recipients, text, creds=creds, what="digest")
             sent += 1
             log.info("insights %s digest sent to %d recipient(s) (tenant %s)", kind, n, t["id"])
