@@ -22,9 +22,12 @@ const intentColor: Record<string, any> = {
   appointment: "success", emergency: "error", handover: "warning", complaint: "warning",
 };
 const leadColor: Record<string, "error" | "warning" | "info"> = { hot: "error", warm: "warning", cold: "info" };
-const INTENT_KEY: Record<string, string> = {
-  appointment: "chats.intentAppointment", emergency: "chats.intentEmergency",
-  handover: "chats.intentHandover", complaint: "chats.intentComplaint",
+// Friendly, localized intent label (shared with Insights via the enums namespace), falling
+// back to the humanized raw value for any intent without a label.
+const intentLabel = (t: (k: string) => string, v: string) => {
+  const k = `enums.intent.${v}`;
+  const r = t(k);
+  return r === k ? v.replace(/_/g, " ") : r;
 };
 const pulse = keyframes`0%{opacity:1}50%{opacity:.3}100%{opacity:1}`;
 
@@ -117,8 +120,8 @@ function ChatRow({ row, showClinic, clinicName, typing, onClick }: {
 
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0 }}>
         {row.lead_band && <LeadChip band={row.lead_band} />}
-        {row.last_intent && <Chip size="small" variant="outlined" label={INTENT_KEY[row.last_intent] ? t(INTENT_KEY[row.last_intent]) : row.last_intent}
-          color={intentColor[row.last_intent] || "default"} sx={{ height: 22, textTransform: "capitalize", display: { xs: "none", sm: "flex" } }} />}
+        {row.last_intent && <Chip size="small" variant="outlined" label={intentLabel(t, row.last_intent)}
+          color={intentColor[row.last_intent] || "default"} sx={{ height: 22, display: { xs: "none", sm: "flex" } }} />}
         {row.needs_human
           ? <Chip size="small" color="error" label={t("chats.needsHumanChip")} sx={{ height: 22 }} />
           : <Tooltip title={t("chats.messages")}><Chip size="small" variant="outlined" icon={<ForumIcon sx={{ fontSize: "14px !important" }} />}

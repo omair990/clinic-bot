@@ -11,6 +11,11 @@ import { useT } from "./i18n";
 
 const pulse = keyframes`0%{opacity:1}50%{opacity:.35}100%{opacity:1}`;
 const slideIn = keyframes`from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}`;
+const intentLabel = (t: (k: string) => string, v: string) => {
+  const k = `enums.intent.${v}`;
+  const r = t(k);
+  return r === k ? v.replace(/_/g, " ") : r;
+};
 
 export default function LiveActivityFeed() {
   const { activity, typing, connected } = useLive();
@@ -79,7 +84,7 @@ export default function LiveActivityFeed() {
                       <Typography variant="caption" fontWeight={700} noWrap>+{a.wa_user}</Typography>
                       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
                         {a.needs_human && <Chip size="small" color="warning" label={t("feed.needsHuman")} sx={{ height: 18, fontSize: 10 }} />}
-                        {a.intent && <Chip size="small" variant="outlined" label={a.intent} sx={{ height: 18, fontSize: 10 }} />}
+                        {a.intent && <Chip size="small" variant="outlined" label={intentLabel(t, a.intent)} sx={{ height: 18, fontSize: 10 }} />}
                         <Typography variant="caption" color="text.secondary">{ago(a.ts)}</Typography>
                       </Stack>
                     </Stack>

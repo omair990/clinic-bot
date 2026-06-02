@@ -152,7 +152,10 @@ export default function Insights() {
   const r = q.data.report || {}; const m = r.metrics || {};
   const conv = m.conversion || { users_messaged: 0, users_booked: 0, conversion_pct: 0 };
   const reviews = m.reviews || {};
-  const inquiries = (m.top_inquiries || []).map((t: any) => ({ label: titleCase(t.intent), n: t.n }));
+  // Friendly, localized inquiry labels (e.g. no_show → "Missed visit"/"زيارة فائتة"),
+  // falling back to a title-cased version for any intent we don't have a label for.
+  const intentLabel = (v: string) => { const k = `enums.intent.${v}`; const r = t(k); return r === k ? titleCase(v) : r; };
+  const inquiries = (m.top_inquiries || []).map((x: any) => ({ label: intentLabel(x.intent), n: x.n }));
   const doctors = (m.top_doctors || []).map((t: any) => ({ label: t.doctor, n: t.n }));
   const peaks = (m.peak_hours || []).map((p: any) => ({ label: `${String(p.hour).padStart(2, "0")}:00`, n: p.n }));
 
