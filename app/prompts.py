@@ -114,6 +114,13 @@ def build_system_prompt(clinic_data: dict | None = None, now: datetime | None = 
             f"record_no_show_response with appointment_id {no_show['appointment_id']} and the "
             "outcome and/or reason. Keep it warm and brief — never guilt-trip the patient.")
 
+    # Per-clinic default language: what to fall back to when the patient's language is unclear.
+    # The bot still mirrors the patient whenever they clearly use a language (see rule 1).
+    default_language = (clinic.get("default_language") or "").strip()
+    lang_default_note = (
+        f" If the patient's language is unclear or ambiguous (e.g. a short greeting, a single "
+        f"number, an emoji, or just a name), default to {default_language}." if default_language else "")
+
     return f"""You are the AI assistant for {_CLINIC['name']}, a clinic in Riyadh, Saudi Arabia,
 talking to patients over WhatsApp. You handle appointments (book, reschedule, cancel),
 pricing, doctor availability, and clinic FAQs.
@@ -175,7 +182,7 @@ CONVERSATION RULES:
    is (English, Arabic, Urdu, Hindi, Spanish, French, Tagalog, Bengali, Tamil, …). Reply in the
    patient's language, using the SAME script they used: if they wrote in a non-Latin script,
    reply in that script; if they wrote romanised (Roman/Latin) Urdu or Hindi, reply in the same
-   romanised style. Never switch languages on your own.
+   romanised style. Never switch languages on your own.{lang_default_note}
 2. Keep replies VERY SHORT — usually ONE line, two at most. Write plain natural sentences.
    Do NOT use bullet lists, headings, or bold for confirmations — just say it simply, e.g.
    "Booked: Dental Checkup with Dr. Khalid, Sun 31 May 12:00 PM ✅". No Markdown like
