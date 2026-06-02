@@ -96,7 +96,7 @@ export default function Layout() {
               sx={{
                 borderRadius: 2, mb: 0.5, minHeight: 44, px: expanded ? 1.5 : 0,
                 justifyContent: expanded ? "flex-start" : "center", color: "#cbd5e1",
-                "& .MuiListItemIcon-root": { color: "inherit", minWidth: 0, marginInlineEnd: expanded ? 12 : 0 },
+                "& .MuiListItemIcon-root": { color: "inherit", minWidth: 0, marginInlineEnd: expanded ? 1.5 : 0 },
                 "&.Mui-selected": {
                   color: "#fff",
                   background: "linear-gradient(90deg, rgba(20,184,166,.25), rgba(99,102,241,.18))",
