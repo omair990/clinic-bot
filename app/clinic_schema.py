@@ -98,6 +98,8 @@ def normalize(data) -> dict:
         c = {k: (_s(v) if isinstance(v, str) else v) for k, v in clinic.items()}
         if "languages" in c:
             c["languages"] = _str_list(c["languages"])
+        if "default_language" in c:
+            c["default_language"] = _s(c.get("default_language"))
         out["clinic"] = c
     elif clinic is not None:
         out["clinic"] = clinic  # wrong type; validate() will flag it
@@ -186,8 +188,14 @@ def validate(data) -> tuple[list[str], list[str]]:
     clinic = data.get("clinic", {})
     if not isinstance(clinic, dict):
         errors.append("clinic: must be an object.")
-    elif not _s(clinic.get("name")):
-        errors.append("clinic.name: required (the clinic's display name).")
+    else:
+        if not _s(clinic.get("name")):
+            errors.append("clinic.name: required (the clinic's display name).")
+        dl = _s(clinic.get("default_language"))
+        langs = clinic.get("languages") or []
+        if dl and isinstance(langs, list) and langs and dl not in langs:
+            warnings.append(f"clinic.default_language: \"{dl}\" is not in the clinic's "
+                            "languages list — add it there so staff see it as supported.")
 
     # services -------------------------------------------------------------
     services = data.get("services", [])
@@ -303,7 +311,8 @@ def validate_and_normalize(data) -> tuple[dict, list[str], list[str]]:
 def blank_template() -> dict:
     """A minimal valid skeleton for a brand-new clinic (used by the editor's reset)."""
     return {
-        "clinic": {"name": "", "address": "", "phone": "", "languages": ["Arabic", "English"]},
+        "clinic": {"name": "", "address": "", "phone": "", "languages": ["Arabic", "English"],
+                   "default_language": "Arabic"},
         "services": [],
         "doctors": [],
         "appointment_policy": {

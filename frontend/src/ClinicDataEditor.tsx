@@ -61,6 +61,13 @@ export default function ClinicDataEditor({ value, onChange }: {
             <Autocomplete multiple freeSolo options={["Arabic", "English", "Urdu", "Hindi"]}
               value={clinic.languages || []} onChange={(_e, val) => setClinic({ languages: val })}
               renderInput={(p) => <TextField {...p} size="small" label="Languages" />} />
+            <TextField select size="small" label="Default agent language"
+              value={clinic.default_language || ""}
+              onChange={(e) => setClinic({ default_language: e.target.value })}
+              helperText="What the assistant replies in when the patient's language is unclear. It still matches the patient whenever they clearly use a language.">
+              <MenuItem value="">Auto (always match the patient)</MenuItem>
+              {(clinic.languages || []).map((l: string) => <MenuItem key={l} value={l}>{l}</MenuItem>)}
+            </TextField>
           </Stack>
         )}
 
