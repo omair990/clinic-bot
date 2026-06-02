@@ -237,9 +237,11 @@ export default function Insights() {
               <Box sx={{ position: "relative" }}>
                 <PieChart height={180}
                   series={[{ data: sentiment, innerRadius: 58, outerRadius: 84, paddingAngle: 2, cornerRadius: 5 }]}
-                  colors={sentiment.map((s) => s.color)} margin={{ top: 6, bottom: 6 }}
+                  colors={sentiment.map((s) => s.color)} margin={{ top: 6, bottom: 6, left: 0, right: 0 }}
                   slotProps={{ legend: { hidden: true } }} />
-                <Box sx={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+                {/* Overlay covers only the chart area (not the legend below) so the center
+                    readout sits exactly in the ring's hole. */}
+                <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, height: 180, display: "grid", placeItems: "center", pointerEvents: "none" }}>
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1 }}>{sentTotal}</Typography>
                     <Typography variant="caption" color="text.secondary">{t("insights.sentimentChats")}</Typography>
