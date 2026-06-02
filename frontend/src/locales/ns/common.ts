@@ -32,6 +32,8 @@ export default {
     darkMode: "Dark mode",
     language: "Language",
     allClinics: "All clinics",
+    more: "More",
+    menu: "Menu",
   },
   ar: {
     save: "حفظ",
@@ -65,5 +67,7 @@ export default {
     darkMode: "الوضع الداكن",
     language: "اللغة",
     allClinics: "كل العيادات",
+    more: "المزيد",
+    menu: "القائمة",
   },
 };
