@@ -15,6 +15,7 @@ from app import crypto, db
 EDITABLE = {
     "ADMIN_WA_NUMBER": ("Platform admin WhatsApp — technical alerts only (comma-separated for several)", "WhatsApp"),
     "INSIGHTS_AI_NARRATIVE": ("AI business-insights narrative — true/false (set false to stop the Claude usage)", "LLM"),
+    "INSIGHTS_DIGEST_ENABLED": ("Scheduled WhatsApp digest master switch — true/false (each clinic also opts in under its Notifications)", "WhatsApp"),
 }
 
 # Read-only inventory for the admin page: (key, group, secret?, where_managed).

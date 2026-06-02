@@ -12,7 +12,6 @@ from app.config import (
     BASE_DIR,
     COMMIT_SHA,
     EVENT_RETENTION_DAYS,
-    INSIGHTS_DIGEST_ENABLED,
     INSIGHTS_DIGEST_INTERVAL_MIN,
     MAINTENANCE_INTERVAL_HOURS,
     NO_SHOW_ENABLED,
@@ -93,8 +92,9 @@ async def lifespan(app: FastAPI):
     tasks = [asyncio.create_task(_maintenance_loop())]
     if NO_SHOW_ENABLED:
         tasks.append(asyncio.create_task(_no_show_loop()))
-    if INSIGHTS_DIGEST_ENABLED:
-        tasks.append(asyncio.create_task(_insights_digest_loop()))
+    # Always run the digest loop; it self-gates on the runtime master toggle + per-clinic
+    # frequency (both controllable from the admin), so enabling needs no redeploy.
+    tasks.append(asyncio.create_task(_insights_digest_loop()))
     if PROVIDER_MONITOR_ENABLED:
         tasks.append(asyncio.create_task(_provider_monitor_loop()))
     yield

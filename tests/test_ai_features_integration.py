@@ -322,8 +322,10 @@ def test_claim_digest_is_idempotent_per_day():
 
 def _digest_tenant(owner: str):
     sfx = uuid.uuid4().hex[:8]
+    # digest_frequency "both" opts this clinic into daily + weekly (default is off).
     return db.create_tenant(f"Dig {sfx}", f"dig-{sfx}", f"PNDG{sfx}", None, "Asia/Riyadh",
-                            None, {"clinic": {"name": "Dig"}, "owner_wa_number": owner})
+                            None, {"clinic": {"name": "Dig"}, "owner_wa_number": owner,
+                                   "notifications": {"digest_frequency": "both"}})
 
 
 def test_run_digests_sends_daily_once(monkeypatch):
@@ -347,6 +349,22 @@ def test_run_digests_sends_daily_once(monkeypatch):
     assert len(mine) == 1 and "insights" in mine[0]
     asyncio.run(insights.run_digests(tuesday))               # same day -> no resend
     assert len([b for to, b in sent if to == owner]) == 1
+
+
+def test_run_digests_skips_clinic_with_digest_off(monkeypatch):
+    import asyncio
+    import app.wa_client as wa
+    # A clinic with a digest recipient but no digest_frequency (default "off") gets nothing.
+    owner = "owner-" + uuid.uuid4().hex[:8]
+    sfx = uuid.uuid4().hex[:8]
+    db.create_tenant(f"Off {sfx}", f"off-{sfx}", f"PNOFF{sfx}", None, "Asia/Riyadh", None,
+                     {"clinic": {"name": "Off"}, "owner_wa_number": owner})  # no notifications.digest_frequency
+    sent = []
+    monkeypatch.setattr(wa, "send_text", lambda to, body, **k: sent.append(to))
+    monkeypatch.setattr(insights, "generate", lambda s, m, t: LLMResult(text="ok"))
+    monkeypatch.setattr(insights, "INSIGHTS_DIGEST_HOUR", 0)
+    asyncio.run(insights.run_digests(datetime(2026, 6, 2, 10, 0, tzinfo=TZ)))
+    assert owner not in sent
 
 
 def test_run_digests_includes_weekly_on_dow(monkeypatch):
