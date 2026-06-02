@@ -8,6 +8,7 @@ own tenant; the super-admin sees everything, or one clinic via the `clinic` quer
 """
 import json
 import logging
+import secrets
 from datetime import datetime
 
 import psycopg
@@ -20,6 +21,7 @@ from app import insights as insights_mod
 from app import no_show as no_show_mod
 from app.auth import hash_password, verify_password
 from app.config import (
+    ADMIN_ACCOUNTS,
     ADMIN_PASSWORD,
     NO_SHOW_AUTO_SEND,
     NO_SHOW_PREDICTOR,
@@ -101,6 +103,11 @@ async def login(request: Request, body: dict = Body(...)):
         request.session.clear()
         request.session["role"] = "super"
         return {"role": "super", "tenant_id": None, "tenant_name": None, "timezone": str(TZ)}
+    # Named platform-admin accounts (ADMIN_ACCOUNTS) — same super access, shareable login.
+    if username and username in ADMIN_ACCOUNTS and secrets.compare_digest(ADMIN_ACCOUNTS[username], password):
+        request.session.clear()
+        request.session.update({"role": "super", "tenant_name": username})
+        return {"role": "super", "tenant_id": None, "tenant_name": username, "timezone": str(TZ)}
     if username:
         t = db.get_tenant_by_username(username)
         if t and verify_password(password, t.get("staff_password_hash")):
