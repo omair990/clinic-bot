@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
   Box, Card, CardContent, Grid, Chip, Button, Typography, Stack, Avatar, IconButton, Tooltip,
-  TextField, InputAdornment, alpha, Dialog, DialogContent, DialogActions,
+  TextField, InputAdornment, alpha, useTheme, ToggleButton, ToggleButtonGroup,
+  Dialog, DialogContent, DialogActions,
 } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import EventBusyIcon from "@mui/icons-material/EventBusyOutlined";
@@ -22,14 +23,45 @@ import WarningIcon from "@mui/icons-material/WarningAmberOutlined";
 import { apiPost, ApiError } from "../api";
 import {
   useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, fmtTime, dayLabel, displayName,
-  initials, TableSkeleton, QueryError, KpiCard, EmptyState, useToast,
+  initials, TableSkeleton, QueryError, KpiCard, EmptyState, useToast, ConfirmDialog,
 } from "../lib";
 
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
-const ACTIVE_STAGES = ["detected", "notified", "followed_up"];
+
+// Per-action confirmation + success copy. `send`/`resend` reach the patient on WhatsApp,
+// `resolve`/`inactive` only change internal state — the dialog spells out which is which.
+const ACTION_META: Record<string, {
+  label: string; color: "primary" | "success" | "error"; done: string;
+  message: (name: string) => React.ReactNode;
+}> = {
+  send: {
+    label: "Send message", color: "primary", done: "Recovery message sent",
+    message: (n) => <>Send the recovery message to <b>{n}</b> on WhatsApp now?</>,
+  },
+  resend: {
+    label: "Resend message", color: "primary", done: "Recovery message resent",
+    message: (n) => <>Resend the recovery message to <b>{n}</b> on WhatsApp?</>,
+  },
+  resolve: {
+    label: "Mark resolved", color: "success", done: "Marked resolved",
+    message: (n) => <>Mark <b>{n}</b>'s missed visit as <b>resolved</b>? This closes the recovery — no message is sent.</>,
+  },
+  inactive: {
+    label: "Mark inactive", color: "error", done: "Marked inactive",
+    message: (n) => <>Mark <b>{n}</b> as <b>inactive</b>? This stops all recovery outreach for this missed visit.</>,
+  },
+};
 
 function avatarHue(s: string) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 function stageLabel(s?: string) { return (s || "").replace(/_/g, " "); }
+
+// Which list bucket a follow-up belongs to, used by the stage filter chips.
+function bucketOf(stage: string): "outreach" | "recovery" | "resolved" | "inactive" {
+  if (stage === "detected") return "outreach";
+  if (stage === "notified" || stage === "followed_up") return "recovery";
+  if (stage === "resolved") return "resolved";
+  return "inactive";
+}
 
 function ActionBtns({ row, busy, onAct }: { row: any; busy: boolean; onAct: (id: number, action: string) => void }) {
   return (
@@ -47,6 +79,35 @@ function ActionBtns({ row, busy, onAct }: { row: any; busy: boolean; onAct: (id:
           onClick={() => onAct(row.id, "inactive")}><BlockIcon fontSize="small" /></IconButton></span></Tooltip>
       </>}
     </Stack>
+  );
+}
+
+// A compact segmented bar showing where missed visits sit in the recovery journey.
+function RecoveryFunnel({ steps }: { steps: { label: string; n: number; color: string }[] }) {
+  const t = useTheme();
+  const total = steps.reduce((s, x) => s + x.n, 0);
+  return (
+    <Box>
+      <Box sx={{ display: "flex", gap: 0.5, height: 12, borderRadius: 6, overflow: "hidden",
+        bgcolor: (th) => alpha(th.palette.text.primary, 0.06) }}>
+        {total > 0 && steps.map((s) => s.n > 0 && (
+          <Box key={s.label} sx={{ flex: s.n, bgcolor: s.color, transition: "flex .4s ease" }} />
+        ))}
+      </Box>
+      <Grid container spacing={1} sx={{ mt: 0.5 }}>
+        {steps.map((s) => (
+          <Grid item xs={6} key={s.label}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: s.color, flexShrink: 0 }} />
+              <Typography variant="body2" noWrap>
+                <Box component="span" sx={{ fontWeight: 800 }}>{s.n}</Box>{" "}
+                <Box component="span" sx={{ color: t.palette.text.secondary }}>{s.label}</Box>
+              </Typography>
+            </Stack>
+          </Grid>
+        ))}
+      </Grid>
+    </Box>
   );
 }
 
@@ -94,9 +155,9 @@ function MissedRow({ row, showClinic, clinicName, reasonLabels, busy, onAct, onO
   );
 }
 
-function MissedDetail({ row, showClinic, clinicName, reasonLabels, onClose, onAct, onView }: {
+function MissedDetail({ row, showClinic, clinicName, reasonLabels, busy, onClose, onAct, onView }: {
   row: any; showClinic: boolean; clinicName?: string; reasonLabels: Record<string, string>;
-  onClose: () => void; onAct: (id: number, action: string) => void; onView: () => void;
+  busy: boolean; onClose: () => void; onAct: (id: number, action: string) => void; onView: () => void;
 }) {
   const hue = avatarHue(row.wa_user || "");
   const Row = ({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) => (
@@ -144,44 +205,64 @@ function MissedDetail({ row, showClinic, clinicName, reasonLabels, onClose, onAc
       <DialogActions sx={{ px: 3, py: 2 }}>
         <Button onClick={onView}>View patient</Button>
         <Box sx={{ flex: 1 }} />
-        {row.stage === "detected" && <Button variant="contained" onClick={() => onAct(row.id, "send")}>Send</Button>}
-        {["notified", "followed_up"].includes(row.stage) && <Button onClick={() => onAct(row.id, "resend")}>Resend</Button>}
+        {row.stage === "detected" && <Button variant="contained" disabled={busy} onClick={() => onAct(row.id, "send")}>Send</Button>}
+        {["notified", "followed_up"].includes(row.stage) && <Button disabled={busy} onClick={() => onAct(row.id, "resend")}>Resend</Button>}
         {!["resolved", "inactive"].includes(row.stage) && <>
-          <Button color="success" onClick={() => onAct(row.id, "resolve")}>Resolve</Button>
-          <Button color="error" onClick={() => onAct(row.id, "inactive")}>Inactive</Button>
+          <Button color="success" disabled={busy} onClick={() => onAct(row.id, "resolve")}>Resolve</Button>
+          <Button color="error" disabled={busy} onClick={() => onAct(row.id, "inactive")}>Inactive</Button>
         </>}
       </DialogActions>
     </Dialog>
   );
 }
 
+const FILTERS = [
+  { value: "", label: "All" },
+  { value: "outreach", label: "Needs outreach" },
+  { value: "recovery", label: "In recovery" },
+  { value: "resolved", label: "Recovered" },
+  { value: "inactive", label: "Inactive" },
+];
+
 export default function NoShows() {
   const nav = useNavigate();
+  const theme = useTheme();
   const [clinic] = useClinic();
   const qc = useQueryClient();
   const toast = useToast();
   const [sel, setSel] = useState<any | null>(null);
   const [search, setSearch] = useState("");
+  const [bucket, setBucket] = useState("");
+  const [confirm, setConfirm] = useState<{ id: number; action: string; name: string } | null>(null);
   const q = useApiQuery<any>(["no-shows", clinic], `/no-shows?clinic=${clinic}`);
   const act = useMutation({
     mutationFn: (v: { id: number; action: string }) => apiPost(`/no-shows/${v.id}/action`, { action: v.action }),
-    onSuccess: (_d, v) => { toast.ok(`Done: ${v.action}`); qc.invalidateQueries({ queryKey: ["no-shows"] }); },
+    onSuccess: (_d, v) => { toast.ok(ACTION_META[v.action]?.done || "Done"); qc.invalidateQueries({ queryKey: ["no-shows"] }); },
     onError: (e) => toast.err(e instanceof ApiError ? e.message : "Action failed"),
   });
-  const onAct = (id: number, action: string) => { act.mutate({ id, action }); setSel(null); };
 
   const rows: any[] = q.data?.rows ?? [];
   const reasonLabels: Record<string, string> = q.data?.reason_labels ?? {};
+  const byId = (id: number) => rows.find((r) => r.id === id);
+  // Every action either messages the patient or closes their recovery, so confirm first.
+  const requestAct = (id: number, action: string) => {
+    const r = byId(id);
+    setConfirm({ id, action, name: displayName(r?.patient_name, r?.wa_user) });
+  };
+  const doConfirm = () => { if (confirm) act.mutate({ id: confirm.id, action: confirm.action }); setConfirm(null); setSel(null); };
+
   const ordered = useMemo(() => {
     const t = (r: any) => new Date(r.start_at).getTime();
     return [...rows].sort((a, b) => t(b) - t(a)); // most recent misses first
   }, [rows]);
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    if (!s) return ordered;
-    return ordered.filter((r) =>
-      `${r.patient_name || ""} ${r.wa_user} ${r.service || ""} ${r.doctor || ""} ${reasonLabels[r.reason] || r.reason || ""}`.toLowerCase().includes(s));
-  }, [ordered, search, reasonLabels]);
+    return ordered.filter((r) => {
+      if (bucket && bucketOf(r.stage) !== bucket) return false;
+      if (!s) return true;
+      return `${r.patient_name || ""} ${r.wa_user} ${r.service || ""} ${r.doctor || ""} ${reasonLabels[r.reason] || r.reason || ""}`.toLowerCase().includes(s);
+    });
+  }, [ordered, search, bucket, reasonLabels]);
 
   if (q.isLoading) return <><PageTitle title="Missed Visits" /><TableSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
@@ -190,7 +271,15 @@ export default function NoShows() {
   const needsOutreach = rows.filter((r) => r.stage === "detected").length;
   const inRecovery = rows.filter((r) => ["notified", "followed_up"].includes(r.stage)).length;
   const recovered = rows.filter((r) => r.stage === "resolved").length;
+  const inactive = rows.filter((r) => r.stage === "inactive").length;
   const reasonData = reasons.map((r: any) => ({ label: reasonLabels[r.reason] || r.reason || "—", n: r.n }));
+  const funnelSteps = [
+    { label: "Needs outreach", n: needsOutreach, color: theme.palette.info.main },
+    { label: "In recovery", n: inRecovery, color: theme.palette.warning.main },
+    { label: "Recovered", n: recovered, color: theme.palette.success.main },
+    { label: "Inactive", n: inactive, color: theme.palette.text.disabled },
+  ];
+  const cm = confirm ? ACTION_META[confirm.action] : null;
 
   return (
     <>
@@ -206,7 +295,13 @@ export default function NoShows() {
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={5}>
           <Card sx={{ height: "100%" }}><CardContent>
-            <Typography variant="caption" color="text.secondary" fontWeight={700}>Upcoming missed-visit risk</Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>Recovery funnel</Typography>
+            <Box sx={{ mt: 1.5 }}><RecoveryFunnel steps={funnelSteps} /></Box>
+          </CardContent></Card>
+        </Grid>
+        <Grid item xs={12} md={3}>
+          <Card sx={{ height: "100%" }}><CardContent>
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>Upcoming risk</Typography>
             <Stack direction="row" spacing={3} sx={{ mt: 1.5 }}>
               {[["Low", risk.low, "success.main"], ["Medium", risk.medium, "warning.main"], ["High", risk.high, "error.main"]].map(([l, v, c]: any) => (
                 <Box key={l}><Typography variant="h5" sx={{ color: c }}>{v ?? 0}</Typography><Typography variant="caption" color="text.secondary">{l}</Typography></Box>
@@ -214,7 +309,7 @@ export default function NoShows() {
             </Stack>
           </CardContent></Card>
         </Grid>
-        <Grid item xs={12} md={7}>
+        <Grid item xs={12} md={4}>
           <Card sx={{ height: "100%" }}><CardContent sx={{ pb: 0 }}>
             <Typography variant="caption" color="text.secondary" fontWeight={700}>Why patients missed</Typography>
             {reasonData.length ? (
@@ -230,13 +325,19 @@ export default function NoShows() {
       <Card sx={{ p: 0, overflow: "hidden" }}>
         <Box sx={{ px: 2, py: 1.5, borderBottom: (t) => `1px solid ${t.palette.divider}`,
           background: (t) => alpha(t.palette.primary.main, 0.04) }}>
-          <TextField fullWidth size="small" placeholder="Search by patient, phone, service, doctor or reason…"
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
-            sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }} />
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
+            <TextField fullWidth size="small" placeholder="Search by patient, phone, service, doctor or reason…"
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
+              sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }} />
+            <ToggleButtonGroup size="small" exclusive value={bucket} onChange={(_e, v) => setBucket(v ?? "")}
+              sx={{ flexShrink: 0, flexWrap: "wrap" }}>
+              {FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{f.label}</ToggleButton>)}
+            </ToggleButtonGroup>
+          </Stack>
         </Box>
         {filtered.length === 0 ? (
-          <EmptyState text={search ? "No missed visits match your search." : "No missed visits — nice."} />
+          <EmptyState text={search || bucket ? "No missed visits match your filters." : "No missed visits — nice."} />
         ) : (
           <Box sx={{ maxHeight: "calc(100vh - 470px)", minHeight: 240, overflow: "auto" }}>
             {filtered.map((r, i) => {
@@ -253,7 +354,7 @@ export default function NoShows() {
                     </Box>
                   )}
                   <MissedRow row={r} showClinic={showClinic} clinicName={tenant_names[r.tenant_id]}
-                    reasonLabels={reasonLabels} busy={act.isPending} onAct={onAct} onOpen={() => setSel(r)} />
+                    reasonLabels={reasonLabels} busy={act.isPending} onAct={requestAct} onOpen={() => setSel(r)} />
                 </Box>
               );
             })}
@@ -262,8 +363,14 @@ export default function NoShows() {
       </Card>
 
       {sel && <MissedDetail row={sel} showClinic={showClinic} clinicName={tenant_names[sel.tenant_id]}
-        reasonLabels={reasonLabels} onClose={() => setSel(null)} onAct={onAct}
+        reasonLabels={reasonLabels} busy={act.isPending} onClose={() => setSel(null)} onAct={requestAct}
         onView={() => nav(`/patients/${sel.wa_user}`)} />}
+
+      <ConfirmDialog open={!!confirm}
+        title="Confirm action"
+        confirmLabel={cm?.label} confirmColor={cm?.color}
+        message={confirm && cm ? cm.message(confirm.name) : ""}
+        onConfirm={doConfirm} onClose={() => setConfirm(null)} />
     </>
   );
 }
