@@ -66,8 +66,10 @@ def test_all_clear_on_recovery(monkeypatch):
 
 
 def test_no_alert_without_admin_number(monkeypatch):
-    # _notify_admin is a no-op without ADMIN_WA_NUMBER, but an incident is still recorded.
-    monkeypatch.setattr(provider_monitor, "ADMIN_WA_NUMBER", "")
+    # The WhatsApp alert is a no-op when no platform admin number is configured, but an
+    # incident is still recorded.
+    from app import notify
+    monkeypatch.setattr(notify, "tech_numbers", lambda: [])
     inc = []
     monkeypatch.setattr(provider_monitor.incidents, "record",
                         lambda *a, **k: inc.append((a, k)))

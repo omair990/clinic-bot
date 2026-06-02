@@ -70,14 +70,22 @@ def test_digest_text_has_headline_and_numbers():
     assert "Peak hour: 18:00" in t
 
 
-def test_owner_number_prefers_clinic_data():
+def test_digest_recipients_use_clinic_recipients():
+    # Only recipients opted into the digest are returned (front desk excluded here).
+    t = {"clinic_data": {"notifications": {"recipients": [
+        {"label": "Owner", "number": "966111", "digest": True},
+        {"label": "Front desk", "number": "966222", "digest": False}]}}, "slug": "whatever"}
+    assert insights._digest_recipients(t) == ["966111"]
+
+
+def test_digest_recipients_honor_legacy_owner_number():
     t = {"clinic_data": {"owner_wa_number": "966111"}, "slug": "whatever"}
-    assert insights._owner_number(t) == "966111"
+    assert insights._digest_recipients(t) == ["966111"]
 
 
-def test_owner_number_falls_back_to_admin_for_default_only(monkeypatch):
+def test_digest_recipients_fall_back_to_admin_for_default_only(monkeypatch):
     from app import settings
-    monkeypatch.setattr(settings, "get", lambda key, default=None: default)  # ignore DB override
-    monkeypatch.setattr(insights, "ADMIN_WA_NUMBER", "966999")
-    assert insights._owner_number({"clinic_data": {}, "slug": "default"}) == "966999"
-    assert insights._owner_number({"clinic_data": {}, "slug": "other"}) is None
+    monkeypatch.setattr(settings, "get",
+                        lambda key, default=None: "966999" if key == "ADMIN_WA_NUMBER" else default)
+    assert insights._digest_recipients({"clinic_data": {}, "slug": "default"}) == ["966999"]
+    assert insights._digest_recipients({"clinic_data": {}, "slug": "other"}) == []

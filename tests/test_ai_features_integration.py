@@ -458,12 +458,12 @@ def test_handover_notifies_staff_with_ai_summary(monkeypatch):
     async def fake_mark(*a, **k):
         return None
 
-    from app import settings
+    from app import settings, wa_client
     monkeypatch.setattr(settings, "get",
                         lambda key, default=None: "999admin" if key == "ADMIN_WA_NUMBER" else default)
-    monkeypatch.setattr(webhook, "send_text", fake_send)
+    monkeypatch.setattr(webhook, "send_text", fake_send)       # patient reply
+    monkeypatch.setattr(wa_client, "send_text", fake_send)     # escalation via app.notify
     monkeypatch.setattr(webhook, "mark_read", fake_mark)
-    monkeypatch.setattr(webhook, "ADMIN_WA_NUMBER", "999admin")
 
     def run(tenant, sender, text, hist):
         c = AgentContext(wa_user=sender, reply="A staff member will follow up.")

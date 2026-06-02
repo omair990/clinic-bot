@@ -11,7 +11,6 @@ import logging
 
 from app import incidents, llm
 from app.config import (
-    ADMIN_WA_NUMBER,
     AI_PROVIDERS,
     LLM_OUTAGE_ALERT_MIN,
 )
@@ -23,12 +22,10 @@ _alerted: set[str] = set()
 
 
 async def _notify_admin(text: str) -> None:
-    """Best-effort WhatsApp ping to the platform admin. Never raises."""
-    if not ADMIN_WA_NUMBER:
-        return
+    """Best-effort WhatsApp ping to the platform admin number(s). Never raises."""
     try:
-        from app.wa_client import send_text  # default creds (WA_PHONE_NUMBER_ID/TOKEN)
-        await send_text(ADMIN_WA_NUMBER, text)
+        from app import notify  # routes to ADMIN_WA_NUMBER (comma-separated supported)
+        await notify.notify_tech(text)
     except Exception:  # noqa: BLE001 — an alert failure must not break the monitor loop
         log.warning("admin alert send failed", exc_info=True)
 

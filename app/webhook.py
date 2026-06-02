@@ -8,8 +8,8 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
 from app.agent import run_agent
-from app import incidents
-from app.config import ADMIN_WA_NUMBER, USAGE_ENFORCEMENT, WA_APP_SECRET, WA_VERIFY_TOKEN
+from app import incidents, notify
+from app.config import USAGE_ENFORCEMENT, WA_APP_SECRET, WA_VERIFY_TOKEN
 from app import connectors
 from app.db import (
     claim_message_id,
@@ -18,7 +18,9 @@ from app.db import (
     recent_history,
     set_message_intent,
 )
-from app.events import notify, publish
+# `notify` here is the routing module (app.notify); the dashboard-bell helper from
+# app.events is aliased to publish_notify to avoid the name clash.
+from app.events import notify as publish_notify, publish
 from app.llm import LLMUnavailable
 from app import voice_reply
 from app.tenancy import check_quota, record_usage, resolve_tenant
@@ -193,7 +195,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
             await asyncio.to_thread(log_message, tid, sender, "out", "[llm unavailable]", "error", True)
             await asyncio.to_thread(incidents.record, "llm", "All LLM providers unavailable",
                                     detail=str(e), tenant_id=tid, wa_user=sender)
-            await _notify_admin(f"[LLM DOWN] +{sender}\nUser: {user_text}\nDetail: {e}")
+            await notify.notify_tech(f"[LLM DOWN] +{sender}\nUser: {user_text}\nDetail: {e}")
         publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
         return
     except Exception as ex:
@@ -205,7 +207,7 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
                                 "error", True)
         await asyncio.to_thread(incidents.record, "agent", "Agent crashed handling a message",
                                 detail=repr(ex), tenant_id=tid, wa_user=sender)
-        await _notify_admin(f"[AGENT ERROR] +{sender}\nUser: {user_text}")
+        await notify.notify_tech(f"[AGENT ERROR] +{sender}\nUser: {user_text}")
         publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
         return
 
@@ -215,9 +217,11 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
                                 "Blocked an unbacked booking confirmation before it reached the patient",
                                 detail=f"User: {user_text}", level="warning",
                                 tenant_id=tid, wa_user=sender)
-        await _notify_admin(f"[BOOKING UNCONFIRMED] +{sender}\nUser: {user_text}\n"
-                            "The assistant tried to confirm a booking with no matching "
-                            "appointment in the system. Please follow up.")
+        guard_msg = (f"[BOOKING UNCONFIRMED] +{sender}\nUser: {user_text}\n"
+                     "The assistant tried to confirm a booking with no matching "
+                     "appointment in the system. Please follow up.")
+        await notify.notify_clinic(tenant, guard_msg, kind="escalation")
+        await notify.notify_tech(guard_msg)
 
     # Mirror modality: if the patient sent a voice note, reply with one (gated; falls
     # back to text on any TTS/send failure so the answer is never dropped).
@@ -250,16 +254,20 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
                f"User: {user_text}\nAI: {ctx.reply}")
         if summary:
             msg += f"\n--- AI summary ---\n{summary}"
-        await _notify_admin(msg)
-        notify(f"{'Emergency' if ctx.emergency else 'Handover'} · +{sender}",
-               ctx.escalation_reason or summary or user_text,
-               level="error" if ctx.emergency else "warning", category="handover",
-               tenant_id=tid, wa_user=sender, link=f"/conversations/{sender}")
+        # Patient escalation → the clinic's own staff/owner, plus the platform admin.
+        await notify.notify_clinic(tenant, msg, kind="escalation")
+        await notify.notify_tech(msg)
+        publish_notify(f"{'Emergency' if ctx.emergency else 'Handover'} · +{sender}",
+                       ctx.escalation_reason or summary or user_text,
+                       level="error" if ctx.emergency else "warning", category="handover",
+                       tenant_id=tid, wa_user=sender, link=f"/conversations/{sender}")
     elif ctx.booked_ids or ctx.changed_ids:
-        await _notify_admin(f"[BOOKING] +{sender}\n" + "\n".join(ctx.actions))
-        notify(f"New booking · +{sender}", "\n".join(ctx.actions),
-               level="success", category="booking", tenant_id=tid, wa_user=sender,
-               link=f"/conversations/{sender}")
+        # New booking → the clinic's own staff/owner (not the platform admin).
+        await notify.notify_clinic(tenant, f"[BOOKING] +{sender}\n" + "\n".join(ctx.actions),
+                                   kind="escalation")
+        publish_notify(f"New booking · +{sender}", "\n".join(ctx.actions),
+                       level="success", category="booking", tenant_id=tid, wa_user=sender,
+                       link=f"/conversations/{sender}")
 
 
 @router.post("/connector/{tenant_id}/webhook")
@@ -287,18 +295,3 @@ async def connector_webhook(request: Request, tenant_id: int):
     log.info("connector webhook tenant=%s event=%s -> %s", tenant_id,
              payload.get("event"), result)
     return {"status": result}
-
-
-async def _notify_admin(text: str) -> None:
-    from app import settings
-    number = settings.get("ADMIN_WA_NUMBER", ADMIN_WA_NUMBER)
-    if not number:
-        return
-    try:
-        await send_text(number, text)
-    except Exception as e:  # noqa: BLE001
-        # Common in dev mode (#131030: admin number not on the WhatsApp allowed list).
-        # Doesn't affect the patient reply — log concisely instead of a full traceback.
-        log.warning("Could not notify admin (%s): %s", number, str(e)[:160])
-        await asyncio.to_thread(incidents.record, "whatsapp", "Could not notify staff number",
-                                level="warning", detail=str(e)[:300])

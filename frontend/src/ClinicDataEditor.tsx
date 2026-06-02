@@ -25,9 +25,14 @@ export default function ClinicDataEditor({ value, onChange }: {
   const faqs = v.faqs || [];
   const pol = v.appointment_policy || {};
 
+  const notif = v.notifications || {};
+  const recipients: any[] = notif.recipients || [];
+
   const patch = (p: Partial<ClinicData>) => onChange({ ...v, ...p });
   const setClinic = (p: any) => patch({ clinic: { ...clinic, ...p } });
   const setPol = (p: any) => patch({ appointment_policy: { ...pol, ...p } });
+  const setRecipients = (list: any[]) => patch({ notifications: { ...notif, recipients: list } });
+  const updRec = (i: number, p: any) => setRecipients(recipients.map((r, j) => (j === i ? { ...r, ...p } : r)));
   const updRow = (key: string, list: any[], i: number, p: any) =>
     patch({ [key]: list.map((r, j) => (j === i ? { ...r, ...p } : r)) });
   const addRow = (key: string, list: any[], blank: any) => patch({ [key]: [...list, blank] });
@@ -42,6 +47,7 @@ export default function ClinicDataEditor({ value, onChange }: {
         <Tab label={`Doctors (${doctors.length})`} />
         <Tab label={`FAQs (${faqs.length})`} />
         <Tab label="Policy" />
+        <Tab label={`Notifications (${recipients.length})`} />
       </Tabs>
       <CardContent>
         {tab === 0 && (
@@ -156,6 +162,41 @@ export default function ClinicDataEditor({ value, onChange }: {
               Other sections (branches, booking fields, connector) are preserved automatically.
             </Typography>
           </Stack>
+        )}
+
+        {tab === 5 && (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              People at this clinic who get WhatsApp notifications. <b>Escalations</b> covers
+              handovers, emergencies and new bookings; <b>Digest</b> is the daily/weekly insights
+              summary. Add as many as you like (e.g. front desk + owner). Use full international
+              numbers, e.g. <code>9665XXXXXXXX</code>.
+            </Typography>
+            <Table size="small">
+              <TableHead><TableRow>
+                <TableCell>Label</TableCell><TableCell>WhatsApp number</TableCell>
+                <TableCell width={120} align="center">Escalations</TableCell>
+                <TableCell width={100} align="center">Digest</TableCell><TableCell width={48} />
+              </TableRow></TableHead>
+              <TableBody>
+                {recipients.map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell><TextField fullWidth size="small" variant="standard" placeholder="Owner"
+                      value={r.label || ""} onChange={(e) => updRec(i, { label: e.target.value })} /></TableCell>
+                    <TableCell><TextField fullWidth size="small" variant="standard" placeholder="9665XXXXXXXX"
+                      value={r.number || ""} onChange={(e) => updRec(i, { number: e.target.value })} /></TableCell>
+                    <TableCell align="center"><Switch size="small" checked={r.escalation !== false}
+                      onChange={(e) => updRec(i, { escalation: e.target.checked })} /></TableCell>
+                    <TableCell align="center"><Switch size="small" checked={!!r.digest}
+                      onChange={(e) => updRec(i, { digest: e.target.checked })} /></TableCell>
+                    <TableCell><IconButton size="small" onClick={() => setRecipients(recipients.filter((_, j) => j !== i))}><DeleteIcon fontSize="small" /></IconButton></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <Button startIcon={<AddIcon />} sx={{ mt: 1 }}
+              onClick={() => setRecipients([...recipients, { label: "", number: "", escalation: true, digest: false }])}>Add recipient</Button>
+          </>
         )}
       </CardContent>
     </Card>
