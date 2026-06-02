@@ -401,9 +401,10 @@ async def reviews(request: Request):
 
 # --------------------------------------------------------------------------- insights
 @router.get("/insights")
-async def insights(request: Request, period: str = Query("day")):
+async def insights(request: Request, period: str = Query("day"), lang: str = Query("en")):
     scope = _view_scope(request)
-    report = await _to_thread(insights_mod.report, scope, period, str(TZ))
+    lang = "ar" if lang == "ar" else "en"
+    report = await _to_thread(insights_mod.report, scope, period, str(TZ), None, lang)
     return {"report": report, "period": period, **_filter_meta(request)}
 
 

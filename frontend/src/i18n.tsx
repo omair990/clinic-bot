@@ -18,7 +18,8 @@ const KEY = "clinic.lang";
 
 export function initialLang(): Lang {
   const saved = localStorage.getItem(KEY);
-  return saved === "ar" || saved === "en" ? saved : "en";
+  if (saved === "ar" || saved === "en") return saved;
+  return "ar";  // the console defaults to Arabic (RTL); switch to English from the header
 }
 
 interface I18nCtx {
