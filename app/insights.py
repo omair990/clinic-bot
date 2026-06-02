@@ -165,15 +165,11 @@ def digest_text(rep: dict, clinic_name: str) -> str:
 
 
 def _digest_recipients(tenant: dict) -> list[str]:
-    """Where to send a tenant's digest: the clinic's own digest recipients (multiple
-    supported, see app.notify), falling back to the platform admin for the default clinic."""
+    """Where to send a tenant's digest: the clinic's own digest recipients only (multiple
+    supported, see app.notify). The platform admin number is reserved for technical alerts,
+    so digests are NEVER sent there — not even for the default/platform clinic."""
     from app import notify
-    recips = notify.clinic_numbers(tenant, "digest")
-    if recips:
-        return recips
-    if tenant.get("slug") == "default":
-        return notify.tech_numbers()
-    return []
+    return notify.clinic_numbers(tenant, "digest")
 
 
 async def run_digests(now: datetime | None = None) -> int:

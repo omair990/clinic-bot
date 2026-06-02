@@ -83,9 +83,15 @@ def test_digest_recipients_honor_legacy_owner_number():
     assert insights._digest_recipients(t) == ["966111"]
 
 
-def test_digest_recipients_fall_back_to_admin_for_default_only(monkeypatch):
+def test_digest_recipients_never_use_platform_admin(monkeypatch):
+    # The platform admin number is technical-alerts only — digests never go there, not even
+    # for the default/platform clinic. A clinic must set its own digest recipients.
     from app import settings
     monkeypatch.setattr(settings, "get",
                         lambda key, default=None: "966999" if key == "ADMIN_WA_NUMBER" else default)
-    assert insights._digest_recipients({"clinic_data": {}, "slug": "default"}) == ["966999"]
+    assert insights._digest_recipients({"clinic_data": {}, "slug": "default"}) == []
     assert insights._digest_recipients({"clinic_data": {}, "slug": "other"}) == []
+    # An explicit digest recipient still works for the default clinic.
+    t = {"clinic_data": {"notifications": {"recipients": [{"number": "966abc", "digest": True}]}},
+         "slug": "default"}
+    assert insights._digest_recipients(t) == ["966abc"]
