@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 
 from app import db
 from app.config import (
-    ADMIN_WA_NUMBER,
     INSIGHTS_DIGEST_ENABLED,
     INSIGHTS_DIGEST_HOUR,
     INSIGHTS_WEEKLY_DOW,
@@ -165,31 +164,30 @@ def digest_text(rep: dict, clinic_name: str) -> str:
     return "\n".join(lines)
 
 
-def _owner_number(tenant: dict) -> str | None:
-    """Where to send a tenant's digest: its clinic_data.owner_wa_number, else (for the
-    platform's own clinic) the configured ADMIN_WA_NUMBER."""
-    owner = ((tenant.get("clinic_data") or {}).get("owner_wa_number") or "").strip()
-    if owner:
-        return owner
+def _digest_recipients(tenant: dict) -> list[str]:
+    """Where to send a tenant's digest: the clinic's own digest recipients (multiple
+    supported, see app.notify), falling back to the platform admin for the default clinic."""
+    from app import notify
+    recips = notify.clinic_numbers(tenant, "digest")
+    if recips:
+        return recips
     if tenant.get("slug") == "default":
-        from app import settings
-        return settings.get("ADMIN_WA_NUMBER", ADMIN_WA_NUMBER) or None
-    return None
+        return notify.tech_numbers()
+    return []
 
 
 async def run_digests(now: datetime | None = None) -> int:
-    """Send due daily/weekly insight digests to each active clinic's owner. Idempotent
+    """Send due daily/weekly insight digests to each active clinic's recipients. Idempotent
     per day via db.claim_digest. Returns the number of digests sent."""
     if not INSIGHTS_DIGEST_ENABLED:
         return 0
-    from app import incidents
-    from app.wa_client import send_text
+    from app import notify
     now = now or datetime.now(TZ)
     tenants = await asyncio.to_thread(db.all_active_tenants)
     sent = 0
     for t in tenants:
-        owner = _owner_number(t)
-        if not owner:
+        recipients = _digest_recipients(t)
+        if not recipients:
             continue
         tzname = t.get("timezone") or TIMEZONE
         try:
@@ -203,16 +201,12 @@ async def run_digests(now: datetime | None = None) -> int:
         for kind in ("day", "week"):
             if kind == "week" and local.weekday() != INSIGHTS_WEEKLY_DOW:
                 continue
-            # Claim BEFORE sending so a flapping send never spams the owner twice.
+            # Claim BEFORE sending so a flapping send never spams recipients twice.
             if not await asyncio.to_thread(db.claim_digest, t["id"], kind, local.date()):
                 continue
-            try:
-                rep = await asyncio.to_thread(report, t["id"], kind, tzname, now)
-                await send_text(owner, digest_text(rep, t.get("name") or "Clinic"), **creds)
-                sent += 1
-                log.info("insights %s digest sent to %s (tenant %s)", kind, owner, t["id"])
-            except Exception as ex:  # noqa: BLE001
-                log.exception("insights %s digest failed for tenant %s", kind, t["id"])
-                incidents.record("whatsapp", f"Insights {kind} digest failed",
-                                 detail=repr(ex), tenant_id=t["id"])
+            rep = await asyncio.to_thread(report, t["id"], kind, tzname, now)
+            text = digest_text(rep, t.get("name") or "Clinic")
+            n = await notify.send_many(recipients, text, creds=creds, what="digest")
+            sent += 1
+            log.info("insights %s digest sent to %d recipient(s) (tenant %s)", kind, n, t["id"])
     return sent
