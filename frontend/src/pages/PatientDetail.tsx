@@ -9,11 +9,23 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
+import FireIcon from "@mui/icons-material/LocalFireDepartmentRounded";
+import MedicalServicesIcon from "@mui/icons-material/MedicalServicesOutlined";
+import ScheduleIcon from "@mui/icons-material/ScheduleOutlined";
+import ShieldIcon from "@mui/icons-material/HealthAndSafetyOutlined";
+import BoltIcon from "@mui/icons-material/BoltOutlined";
+import MoodIcon from "@mui/icons-material/SentimentSatisfiedAltOutlined";
+import TipsIcon from "@mui/icons-material/TipsAndUpdatesOutlined";
 import { apiPost } from "../api";
 import { useApiQuery, Loading, QueryError, fmtDate, fmtTime, dayLabel, displayName, initials as initialsOf, EmptyState, useToast } from "../lib";
 import { useLive } from "../realtime";
 
 const statusColor: Record<string, any> = { confirmed: "success", completed: "info", cancelled: "default", no_show: "warning" };
+const leadMeta: Record<string, { c: string; label: string }> = {
+  hot: { c: "#ef4444", label: "Hot lead" }, warm: { c: "#f59e0b", label: "Warm lead" }, cold: { c: "#38bdf8", label: "Cold lead" },
+};
+const urgencyColor: Record<string, any> = { high: "error", medium: "warning", low: "default" };
+const sentimentColor: Record<string, any> = { positive: "success", negative: "error", neutral: "default" };
 // Apple system typeface for that native-chat feel; falls back to the app font elsewhere.
 const APPLE_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", system-ui, sans-serif';
 const GROUP_GAP_MS = 5 * 60 * 1000;
@@ -103,6 +115,68 @@ function Bubble({ m, isFirst, isLast }: { m: Msg; isFirst: boolean; isLast: bool
   );
 }
 
+// Premium AI analysis panel: lead temperature + score bar, icon'd fields, rationale.
+function AIPanel({ a, busy, onRefresh }: { a: any; busy: boolean; onRefresh: () => void }) {
+  const lead = a?.lead_band ? leadMeta[a.lead_band] : null;
+  const score = a?.lead_score;
+  return (
+    <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, height: "100%",
+      background: (t) => `linear-gradient(180deg, ${alpha(t.palette.secondary.main, 0.06)}, transparent)` }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <AutoAwesomeIcon fontSize="small" color="secondary" />
+          <Typography fontWeight={800}>AI analysis</Typography>
+        </Stack>
+        <Tooltip title="Re-run analysis">
+          <span><IconButton size="small" disabled={busy} onClick={onRefresh}><RefreshIcon fontSize="small" /></IconButton></span>
+        </Tooltip>
+      </Stack>
+
+      {!a ? <Typography variant="body2" color="text.secondary">No analysis yet.</Typography> : (
+        <Stack spacing={1.75}>
+          {lead && (
+            <Box sx={{ p: 1.5, borderRadius: 2.5, border: (t) => `1px solid ${alpha(lead.c, 0.4)}`,
+              bgcolor: alpha(lead.c, 0.1) }}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between">
+                <Stack direction="row" spacing={0.75} alignItems="center">
+                  {a.lead_band === "hot" && <FireIcon sx={{ color: lead.c, fontSize: 18 }} />}
+                  <Typography fontWeight={800} sx={{ color: lead.c }}>{lead.label}</Typography>
+                </Stack>
+                {score != null && <Typography fontWeight={800} sx={{ color: lead.c }}>{score}<Typography component="span" variant="caption" color="text.secondary"> / 100</Typography></Typography>}
+              </Stack>
+              {score != null && (
+                <Box sx={{ mt: 1, height: 7, borderRadius: 4, overflow: "hidden", bgcolor: (t) => alpha(t.palette.text.primary, 0.08) }}>
+                  <Box sx={{ width: `${Math.max(0, Math.min(100, score))}%`, height: "100%", bgcolor: lead.c, transition: "width .4s ease" }} />
+                </Box>
+              )}
+            </Box>
+          )}
+
+          <Stack spacing={1.25}>
+            {a.requested_service && <FieldRow icon={<MedicalServicesIcon fontSize="small" />} label="Service" value={a.requested_service} />}
+            {a.appointment_preference && <FieldRow icon={<ScheduleIcon fontSize="small" />} label="Preference" value={a.appointment_preference} />}
+            {a.insurance && <FieldRow icon={<ShieldIcon fontSize="small" />} label="Insurance" value={a.insurance} />}
+            {a.urgency && <FieldRow icon={<BoltIcon fontSize="small" />} label="Urgency"
+              value={<Chip size="small" color={urgencyColor[a.urgency] || "default"} variant="outlined" label={a.urgency} sx={{ textTransform: "capitalize", height: 22 }} />} />}
+            {a.sentiment && <FieldRow icon={<MoodIcon fontSize="small" />} label="Sentiment"
+              value={<Chip size="small" color={sentimentColor[a.sentiment] || "default"} variant="outlined" label={a.sentiment} sx={{ textTransform: "capitalize", height: 22 }} />} />}
+            {a.next_action && <FieldRow icon={<BoltIcon fontSize="small" />} label="Next" value={a.next_action} />}
+          </Stack>
+
+          {a.lead_rationale && (
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: (t) => alpha(t.palette.text.primary, 0.04) }}>
+              <Stack direction="row" spacing={1} alignItems="flex-start">
+                <TipsIcon fontSize="small" color="secondary" sx={{ mt: 0.1 }} />
+                <Typography variant="body2" color="text.secondary">{a.lead_rationale}</Typography>
+              </Stack>
+            </Box>
+          )}
+        </Stack>
+      )}
+    </Paper>
+  );
+}
+
 export default function PatientDetail() {
   const { wa } = useParams();
   const nav = useNavigate();
@@ -172,16 +246,17 @@ export default function PatientDetail() {
               )}
             </Stack>
             <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
-              {a?.lead_band && <Chip size="small" label={`Lead: ${a.lead_band}${a.lead_score != null ? ` (${a.lead_score})` : ""}`}
-                sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700 }} />}
-              {a?.urgency && <Chip size="small" label={`Urgency: ${a.urgency}`} sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700 }} />}
+              {a?.lead_band && <Chip size="small" icon={a.lead_band === "hot" ? <FireIcon sx={{ fontSize: "15px !important", color: "#fff !important" }} /> : undefined}
+                label={`Lead: ${a.lead_band}${a.lead_score != null ? ` (${a.lead_score})` : ""}`}
+                sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700, textTransform: "capitalize" }} />}
+              {a?.urgency && <Chip size="small" label={`Urgency: ${a.urgency}`} sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700, textTransform: "capitalize" }} />}
             </Stack>
           </Box>
           <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
-            <Stat label="Messages" value={p.message_count} />
-            <Stat label="Appointments" value={p.appointments?.length ?? 0} />
-            <Stat label="Reviews" value={p.reviews?.length ?? 0} />
-            <Stat label="Missed" value={p.no_shows?.length ?? 0} />
+            <Stat label="Messages" value={p.message_count} active={tab === 0} onClick={() => setTab(0)} />
+            <Stat label="Appointments" value={p.appointments?.length ?? 0} active={tab === 1} onClick={() => setTab(1)} />
+            <Stat label="Reviews" value={p.reviews?.length ?? 0} active={tab === 2} onClick={() => setTab(2)} />
+            <Stat label="Missed" value={p.no_shows?.length ?? 0} active={tab === 3} onClick={() => setTab(3)} />
           </Stack>
         </Stack>
       </Box>
@@ -222,30 +297,7 @@ export default function PatientDetail() {
                 </Box>
               </Grid>
               <Grid item xs={12} md={4}>
-                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3,
-                  background: (t) => `linear-gradient(180deg, ${alpha(t.palette.secondary.main, 0.06)}, transparent)` }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <AutoAwesomeIcon fontSize="small" color="secondary" />
-                      <Typography fontWeight={800}>AI analysis</Typography>
-                    </Stack>
-                    <Tooltip title="Re-run analysis">
-                      <span><IconButton size="small" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-                        <RefreshIcon fontSize="small" />
-                      </IconButton></span>
-                    </Tooltip>
-                  </Stack>
-                  {!a && <Typography variant="body2" color="text.secondary">No analysis yet.</Typography>}
-                  {a && <Stack spacing={1}>
-                    {a.requested_service && <Field k="Service" v={a.requested_service} />}
-                    {a.next_action && <Field k="Next" v={a.next_action} />}
-                    {a.urgency && <Field k="Urgency" v={a.urgency} />}
-                    {a.sentiment && <Field k="Sentiment" v={a.sentiment} />}
-                    {a.summary && <Box sx={{ mt: 1, p: 1.5, borderRadius: 2, bgcolor: (t) => alpha(t.palette.text.primary, 0.04) }}>
-                      <Typography variant="body2" color="text.secondary">{a.summary}</Typography>
-                    </Box>}
-                  </Stack>}
-                </Paper>
+                <AIPanel a={a} busy={refresh.isPending} onRefresh={() => refresh.mutate()} />
               </Grid>
             </Grid>
           )}
@@ -268,28 +320,41 @@ export default function PatientDetail() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: any }) {
+function Stat({ label, value, active, onClick }: { label: string; value: any; active?: boolean; onClick?: () => void }) {
   return (
-    <Box sx={{ textAlign: "center", px: 1.5, py: 0.5, borderRadius: 2, bgcolor: alpha("#fff", 0.14), minWidth: 64 }}>
+    <Box onClick={onClick} sx={{ textAlign: "center", px: 1.5, py: 0.5, borderRadius: 2, minWidth: 64, cursor: onClick ? "pointer" : "default",
+      bgcolor: alpha("#fff", active ? 0.28 : 0.14), border: `1px solid ${alpha("#fff", active ? 0.5 : 0)}`,
+      transition: "background .15s ease", "&:hover": onClick ? { bgcolor: alpha("#fff", 0.24) } : undefined }}>
       <Typography variant="h6" sx={{ color: "#fff", lineHeight: 1.2 }}>{value ?? 0}</Typography>
       <Typography variant="caption" sx={{ color: alpha("#fff", 0.85) }}>{label}</Typography>
     </Box>
   );
 }
-function Field({ k, v }: { k: string; v: any }) {
+function FieldRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
-    <Box sx={{ display: "flex", gap: 1 }}>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 72 }}>{k}</Typography>
-      <Typography variant="body2" sx={{ fontWeight: 600 }}>{String(v)}</Typography>
-    </Box>
+    <Stack direction="row" spacing={1.25} alignItems="flex-start">
+      <Box sx={{ color: "text.secondary", mt: 0.1 }}>{icon}</Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" color="text.secondary" fontWeight={700}>{label}</Typography>
+        <Box sx={{ fontSize: 14, fontWeight: 600 }}>{value}</Box>
+      </Box>
+    </Stack>
   );
 }
 function MiniTable({ cols, rows, empty }: { cols: string[]; rows: any[][]; empty: string }) {
   if (!rows.length) return <EmptyState text={empty} />;
   return (
-    <Table size="small">
-      <TableHead><TableRow>{cols.map((c) => <TableCell key={c} sx={{ fontWeight: 700 }}>{c}</TableCell>)}</TableRow></TableHead>
-      <TableBody>{rows.map((r, i) => <TableRow key={i} hover>{r.map((cell, j) => <TableCell key={j}>{cell}</TableCell>)}</TableRow>)}</TableBody>
-    </Table>
+    <Box sx={{ borderRadius: 2.5, overflow: "hidden", border: (t) => `1px solid ${t.palette.divider}` }}>
+      <Table size="small">
+        <TableHead><TableRow sx={{ "& th": { bgcolor: (t) => alpha(t.palette.text.primary, 0.04), borderBottom: "none" } }}>
+          {cols.map((c) => <TableCell key={c} sx={{ fontWeight: 800 }}>{c}</TableCell>)}
+        </TableRow></TableHead>
+        <TableBody>{rows.map((r, i) => (
+          <TableRow key={i} hover sx={{ "&:last-child td": { border: 0 } }}>
+            {r.map((cell, j) => <TableCell key={j}>{cell}</TableCell>)}
+          </TableRow>
+        ))}</TableBody>
+      </Table>
+    </Box>
   );
 }
