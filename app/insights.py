@@ -145,8 +145,20 @@ def _fallback_narrative(m: dict, label: str, lang: str = "en") -> str:
     return " ".join(parts)
 
 
+def _ai_narrative_enabled() -> bool:
+    """Whether to spend an LLM call on the insights narrative. Toggle at runtime via the
+    INSIGHTS_AI_NARRATIVE setting ("false" to turn it off and stop the Claude usage)."""
+    from app import settings as settings_mod
+    val = (settings_mod.get("INSIGHTS_AI_NARRATIVE", "true") or "true").strip().lower()
+    return val not in ("0", "false", "no", "off")
+
+
 def narrative(metrics: dict, label: str, lang: str = "en") -> tuple[str, str]:
-    """(text, source) where source is 'ai' or 'heuristic'. `lang` selects the output language."""
+    """(text, source): source is 'ai', 'heuristic', or 'disabled'. `lang` sets the language.
+    When the AI narrative is turned off, returns an empty string (the card hides) and makes
+    no LLM call — so viewing Insights costs nothing."""
+    if not _ai_narrative_enabled():
+        return "", "disabled"
     system = _NARRATIVE_SYSTEM.get(lang, _NARRATIVE_SYSTEM["en"])
     brief = _metrics_brief(metrics, label)
     try:
@@ -180,11 +192,12 @@ def digest_text(rep: dict, clinic_name: str, lang: str = "en") -> str:
     m = rep["metrics"]
     c = m["conversion"]
     lm = m["lead_mix"]
+    narr = (rep.get("narrative") or "").strip()
     if lang == "ar":
-        lines = [
-            f"📊 {clinic_name} — رؤى {rep['label']}",
-            "",
-            rep["narrative"],
+        lines = [f"📊 {clinic_name} — رؤى {rep['label']}"]
+        if narr:
+            lines += ["", narr]
+        lines += [
             "",
             f"• الواردة: {m['inbound']} من {m['users']} مريضًا ({m['voice_share_pct']}% صوت)",
             f"• الحجوزات: {c['users_booked']} ({c['conversion_pct']}% تحويل)",
@@ -199,10 +212,10 @@ def digest_text(rep: dict, clinic_name: str, lang: str = "en") -> str:
         if rv.get("avg_rating") is not None:
             lines.append(f"• متوسط التقييم: {rv['avg_rating']}★ ({rv['responded']} تقييم)")
         return "\n".join(lines)
-    lines = [
-        f"📊 {clinic_name} — {rep['label']} insights",
-        "",
-        rep["narrative"],
+    lines = [f"📊 {clinic_name} — {rep['label']} insights"]
+    if narr:
+        lines += ["", narr]
+    lines += [
         "",
         f"• Inbound: {m['inbound']} from {m['users']} patients ({m['voice_share_pct']}% voice)",
         f"• Bookings: {c['users_booked']} ({c['conversion_pct']}% conversion)",

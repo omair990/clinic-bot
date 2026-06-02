@@ -14,6 +14,7 @@ from app import crypto, db
 # key -> (label, group). These are safe to manage at runtime and are read via get().
 EDITABLE = {
     "ADMIN_WA_NUMBER": ("Platform admin WhatsApp — technical alerts only (comma-separated for several)", "WhatsApp"),
+    "INSIGHTS_AI_NARRATIVE": ("AI business-insights narrative — true/false (set false to stop the Claude usage)", "LLM"),
 }
 
 # Read-only inventory for the admin page: (key, group, secret?, where_managed).
