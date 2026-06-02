@@ -41,7 +41,7 @@ from app.config import (
     WA_TEMPLATE_NO_SHOW,
     WA_TEMPLATE_REMINDER,
 )
-from app.events import publish
+from app.events import notify, publish
 from app.wa_client import send_template, send_text
 
 log = logging.getLogger(__name__)
@@ -215,6 +215,12 @@ async def _detect_no_shows(now: datetime, tenants: dict[int, dict]) -> int:
         if not fu:
             continue  # raced with another sweep
         count += 1
+        # Surface the missed visit in the staff notification bell.
+        subject = a.get("service") or "appointment"
+        if a.get("doctor"):
+            subject += f" with {a['doctor']}"
+        notify(f"Missed visit · +{a['wa_user']}", subject, level="warning", category="no_show",
+               tenant_id=tid, wa_user=a["wa_user"], link="/no-shows")
         tenant = tenants.get(tid)
         if NO_SHOW_AUTO_SEND and tenant:
             try:

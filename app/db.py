@@ -214,6 +214,30 @@ CREATE INDEX IF NOT EXISTS idx_conv_tenant ON conversations(tenant_id, created_a
 -- A patient phone is unique per clinic, not globally (two clinics may share a patient).
 ALTER TABLE patients DROP CONSTRAINT IF EXISTS patients_wa_user_key;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_patients_tenant_wa ON patients(tenant_id, wa_user);
+
+-- Staff notification feed for the bell (durable, so history + the unread badge survive
+-- restarts/refresh). One row per notify() across major flows: booking, handover/emergency,
+-- review, missed visit, technical incident.
+CREATE TABLE IF NOT EXISTS notifications (
+    id         BIGSERIAL PRIMARY KEY,
+    tenant_id  BIGINT,                              -- NULL = platform-wide (all viewers)
+    level      TEXT NOT NULL DEFAULT 'info',        -- info | success | warning | error
+    category   TEXT NOT NULL DEFAULT 'general',     -- booking | handover | review | no_show | <incident>
+    title      TEXT NOT NULL,
+    body       TEXT,
+    wa_user    TEXT,
+    link       TEXT,                                -- in-app SPA path the entry deep-links to
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_feed ON notifications(tenant_id, id DESC);
+
+-- Per-viewer "last seen" marker so the unread count is durable per audience.
+-- viewer = 'super' (platform admin) or 'clinic:<tenant_id>'.
+CREATE TABLE IF NOT EXISTS notification_seen (
+    viewer       TEXT PRIMARY KEY,
+    last_seen_id BIGINT NOT NULL DEFAULT 0,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 # (name, text_quota, voice_enabled, voice_quota, is_trial, trial_days, price_sar)
@@ -688,6 +712,72 @@ def unresolved_event_count(tenant_id: int | None = None) -> int:
     with get_conn() as conn:
         return conn.execute(
             f"SELECT COUNT(*) AS n FROM system_events {where}", params).fetchone()["n"]
+
+
+# --- Staff notification feed (the bell) ---
+
+def _notif_scope(scope: int | None) -> tuple[str, tuple]:
+    """WHERE clause for a viewer's visible notifications: a clinic sees its own + platform-wide
+    (tenant_id NULL); the super-admin (scope None) sees everything."""
+    if scope is None:
+        return "", ()
+    return "WHERE (tenant_id = %s OR tenant_id IS NULL)", (scope,)
+
+
+def viewer_key(scope: int | None) -> str:
+    """Stable key for a notification audience: 'super' or 'clinic:<tenant_id>'."""
+    return "super" if scope is None else f"clinic:{scope}"
+
+
+def record_notification(level: str, category: str, title: str, body: str | None,
+                        tenant_id: int | None, wa_user: str | None, link: str | None) -> dict:
+    """Persist a staff notification and return its row (id + created_at)."""
+    with get_conn() as conn:
+        return conn.execute(
+            "INSERT INTO notifications (tenant_id, level, category, title, body, wa_user, link) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, created_at",
+            (tenant_id, level, category, title, (body or "")[:500], wa_user, link),
+        ).fetchone()
+
+
+def list_notifications(scope: int | None = None, limit: int = 50) -> list[dict]:
+    """Newest-first notifications visible to a viewer, shaped for the bell."""
+    where, params = _notif_scope(scope)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT id, tenant_id, level, category, title, body, wa_user, link, "
+            f"       created_at AS ts FROM notifications {where} ORDER BY id DESC LIMIT %s",
+            (*params, limit),
+        ).fetchall()
+    return rows
+
+
+def notifications_unread(scope: int | None = None) -> int:
+    """How many notifications the viewer hasn't seen yet (id beyond their last-seen marker)."""
+    where, params = _notif_scope(scope)
+    glue = " AND" if where else "WHERE"
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT COUNT(*) AS n FROM notifications {where}{glue} id > "
+            "COALESCE((SELECT last_seen_id FROM notification_seen WHERE viewer = %s), 0)",
+            (*params, viewer_key(scope)),
+        ).fetchone()["n"]
+
+
+def mark_notifications_seen(scope: int | None = None) -> None:
+    """Mark everything currently visible to the viewer as seen (badge → 0)."""
+    where, params = _notif_scope(scope)
+    with get_conn() as conn:
+        top = conn.execute(
+            f"SELECT COALESCE(MAX(id), 0) AS m FROM notifications {where}", params
+        ).fetchone()["m"]
+        conn.execute(
+            "INSERT INTO notification_seen (viewer, last_seen_id, updated_at) "
+            "VALUES (%s, %s, now()) ON CONFLICT (viewer) DO UPDATE SET "
+            "last_seen_id = GREATEST(notification_seen.last_seen_id, EXCLUDED.last_seen_id), "
+            "updated_at = now()",
+            (viewer_key(scope), top),
+        )
 
 
 def admin_set_appointment_status(appointment_id: int, status: str) -> None:

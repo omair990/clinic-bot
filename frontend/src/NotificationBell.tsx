@@ -8,6 +8,7 @@ import {
 import NotificationsNoneIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import HandshakeIcon from "@mui/icons-material/HandshakeOutlined";
 import EventAvailableIcon from "@mui/icons-material/EventAvailableOutlined";
+import EventBusyIcon from "@mui/icons-material/EventBusyOutlined";
 import StarIcon from "@mui/icons-material/StarOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import CircleIcon from "@mui/icons-material/Circle";
@@ -28,6 +29,7 @@ function iconFor(c?: string) {
   if (c === "handover") return <HandshakeIcon sx={sx} />;
   if (c === "booking") return <EventAvailableIcon sx={sx} />;
   if (c === "review") return <StarIcon sx={sx} />;
+  if (c === "no_show") return <EventBusyIcon sx={sx} />;
   return <ReportProblemIcon sx={sx} />;
 }
 

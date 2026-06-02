@@ -221,15 +221,23 @@ async def stream(request: Request):
 
 @router.get("/notifications")
 async def notifications(request: Request):
-    """Recent staff notifications (newest first) + the open-issue count, for the bell.
+    """Recent staff notifications (newest first) + the durable unread count, for the bell.
 
-    The list is the in-memory ring buffer the bus keeps; `unresolved` is the durable
-    open-issue count so the badge survives restarts even when the buffer is empty."""
-    from app import events
-
+    Both are DB-backed (the `notifications` table + the per-viewer `notification_seen`
+    marker), so history and the unread badge survive a page refresh and a server restart."""
     p = _require(request)
     scope = p["tenant_id"] if p["role"] == "clinic" else None
-    return {"notifications": events.recent(scope), "unresolved": db.unresolved_event_count(scope)}
+    return {"notifications": db.list_notifications(scope),
+            "unread": db.notifications_unread(scope)}
+
+
+@router.post("/notifications/seen")
+async def notifications_seen(request: Request):
+    """Mark all currently-visible notifications as seen for this viewer (badge → 0)."""
+    p = _require(request)
+    scope = p["tenant_id"] if p["role"] == "clinic" else None
+    db.mark_notifications_seen(scope)
+    return {"ok": True, "unread": 0}
 
 
 @router.get("/clinics")
