@@ -10,6 +10,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircleRounded";
 import WarningIcon from "@mui/icons-material/WarningAmberRounded";
 import { apiPost, ApiError } from "../api";
 import { useApiQuery, PageTitle, Loading, QueryError, useToast } from "../lib";
+import { useT } from "../i18n";
 
 const isSecret = (k: string) => /TOKEN|KEY|SECRET|PASSWORD/i.test(k);
 
@@ -34,6 +35,7 @@ function GroupHeader({ group }: { group: string }) {
 
 // Final "configured or not" status for one group — no values, sources, or masked secrets.
 function GroupStatusCard({ group, total, set }: { group: string; total: number; set: number }) {
+  const t = useT();
   const g = groupOf(group);
   const complete = set >= total;
   const pct = total ? (set / total) * 100 : 0;
@@ -54,7 +56,7 @@ function GroupStatusCard({ group, total, set }: { group: string; total: number; 
             : <WarningIcon sx={{ color: "#f59e0b" }} />}
         </Stack>
         <Typography variant="h5" fontWeight={800}>{set}<Typography component="span" variant="body2" color="text.secondary"> / {total}</Typography></Typography>
-        <Typography variant="caption" color="text.secondary">{complete ? "All configured" : `${total - set} not set`}</Typography>
+        <Typography variant="caption" color="text.secondary">{complete ? t("settings.groupAllConfigured") : t("settings.groupNotSet", { n: total - set })}</Typography>
         <Box sx={{ mt: 1.25, height: 7, borderRadius: 4, overflow: "hidden", bgcolor: (t) => alpha(t.palette.text.primary, 0.06) }}>
           <Box sx={{ width: `${pct}%`, height: "100%", bgcolor: color, transition: "width .4s ease" }} />
         </Box>
@@ -64,6 +66,7 @@ function GroupStatusCard({ group, total, set }: { group: string; total: number; 
 }
 
 export default function Settings() {
+  const t = useT();
   const q = useApiQuery<any>(["settings"], "/settings");
   const toast = useToast();
   const [values, setValues] = useState<Record<string, string>>({});
@@ -106,16 +109,16 @@ export default function Settings() {
       const changed: Record<string, string> = {};
       Object.keys(values).forEach((k) => { if (values[k] !== (editable[k].value || "")) changed[k] = values[k]; });
       await apiPost("/settings", { values: changed });
-      toast.ok("Settings saved");
+      toast.ok(t("settings.saved"));
       q.refetch();
-    } catch (e) { toast.err(e instanceof ApiError ? e.message : "Save failed"); }
+    } catch (e) { toast.err(e instanceof ApiError ? e.message : t("settings.saveFailed")); }
     finally { setBusy(false); }
   };
 
   return (
     <>
-      <PageTitle title="Platform settings" subtitle="Database overrides take precedence over environment variables"
-        right={<Button variant="contained" disabled={busy} onClick={save}>Save settings</Button>} />
+      <PageTitle title={t("settings.title")} subtitle={t("settings.subtitle")}
+        right={<Button variant="contained" disabled={busy} onClick={save}>{t("settings.saveSettings")}</Button>} />
 
       {/* Configuration health — final configured/not status, grouped (no values exposed). */}
       <Card sx={{ mb: 2, position: "relative", overflow: "hidden", color: "#fff",
@@ -129,13 +132,13 @@ export default function Settings() {
               {summary.complete ? <CheckCircleIcon /> : <WarningIcon />}
             </Box>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="overline" sx={{ color: alpha("#fff", 0.85), letterSpacing: 1 }}>Configuration status</Typography>
+              <Typography variant="overline" sx={{ color: alpha("#fff", 0.85), letterSpacing: 1 }}>{t("settings.configStatus")}</Typography>
               <Typography variant="h6" sx={{ color: "#fff", lineHeight: 1.15 }}>
-                {summary.complete ? "All systems configured" : "Some settings need attention"}
+                {summary.complete ? t("settings.allConfigured") : t("settings.needsAttention")}
               </Typography>
             </Box>
             <Box sx={{ flex: 1 }} />
-            <Chip label={`${summary.set} / ${summary.total} configured`}
+            <Chip label={t("settings.chipConfigured", { set: summary.set, total: summary.total })}
               sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700, flexShrink: 0 }} />
           </Stack>
         </CardContent>
@@ -162,7 +165,7 @@ export default function Settings() {
                   <TextField fullWidth size="small" label={editable[k].label}
                     type={isSecret(k) ? "password" : "text"}
                     value={values[k] ?? ""} onChange={(e) => setValues({ ...values, [k]: e.target.value })}
-                    helperText={isSecret(k) ? "Stored encrypted; leave blank to keep" : k} />
+                    helperText={isSecret(k) ? t("settings.secretHelper") : k} />
                 </Grid>
               ))}
             </Grid>

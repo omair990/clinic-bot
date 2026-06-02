@@ -25,32 +25,14 @@ import {
   useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, fmtTime, dayLabel, displayName,
   initials, TableSkeleton, QueryError, KpiCard, EmptyState, useToast, ConfirmDialog,
 } from "../lib";
+import { useT } from "../i18n";
 
 const riskColor: Record<string, any> = { low: "success", medium: "warning", high: "error" };
 
-// Per-action confirmation + success copy. `send`/`resend` reach the patient on WhatsApp,
-// `resolve`/`inactive` only change internal state — the dialog spells out which is which.
-const ACTION_META: Record<string, {
+type ActionMeta = Record<string, {
   label: string; color: "primary" | "success" | "error"; done: string;
   message: (name: string) => React.ReactNode;
-}> = {
-  send: {
-    label: "Send message", color: "primary", done: "Recovery message sent",
-    message: (n) => <>Send the recovery message to <b>{n}</b> on WhatsApp now?</>,
-  },
-  resend: {
-    label: "Resend message", color: "primary", done: "Recovery message resent",
-    message: (n) => <>Resend the recovery message to <b>{n}</b> on WhatsApp?</>,
-  },
-  resolve: {
-    label: "Mark resolved", color: "success", done: "Marked resolved",
-    message: (n) => <>Mark <b>{n}</b>'s missed visit as <b>resolved</b>? This closes the recovery — no message is sent.</>,
-  },
-  inactive: {
-    label: "Mark inactive", color: "error", done: "Marked inactive",
-    message: (n) => <>Mark <b>{n}</b> as <b>inactive</b>? This stops all recovery outreach for this missed visit.</>,
-  },
-};
+}>;
 
 function avatarHue(s: string) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
 function stageLabel(s?: string) { return (s || "").replace(/_/g, " "); }
@@ -64,18 +46,19 @@ function bucketOf(stage: string): "outreach" | "recovery" | "resolved" | "inacti
 }
 
 function ActionBtns({ row, busy, onAct }: { row: any; busy: boolean; onAct: (id: number, action: string) => void }) {
+  const t = useT();
   return (
     <Stack direction="row" spacing={0.5} onClick={(e) => e.stopPropagation()}>
       {row.stage === "detected" && (
-        <Tooltip title="Send recovery message"><span><IconButton size="small" color="primary" disabled={busy}
+        <Tooltip title={t("missed.tipSend")}><span><IconButton size="small" color="primary" disabled={busy}
           onClick={() => onAct(row.id, "send")}><SendIcon fontSize="small" /></IconButton></span></Tooltip>)}
       {["notified", "followed_up"].includes(row.stage) && (
-        <Tooltip title="Resend"><span><IconButton size="small" color="primary" disabled={busy}
+        <Tooltip title={t("missed.tipResend")}><span><IconButton size="small" color="primary" disabled={busy}
           onClick={() => onAct(row.id, "resend")}><ReplayIcon fontSize="small" /></IconButton></span></Tooltip>)}
       {!["resolved", "inactive"].includes(row.stage) && <>
-        <Tooltip title="Mark resolved"><span><IconButton size="small" color="success" disabled={busy}
+        <Tooltip title={t("missed.tipResolve")}><span><IconButton size="small" color="success" disabled={busy}
           onClick={() => onAct(row.id, "resolve")}><CheckIcon fontSize="small" /></IconButton></span></Tooltip>
-        <Tooltip title="Mark inactive"><span><IconButton size="small" color="error" disabled={busy}
+        <Tooltip title={t("missed.tipInactive")}><span><IconButton size="small" color="error" disabled={busy}
           onClick={() => onAct(row.id, "inactive")}><BlockIcon fontSize="small" /></IconButton></span></Tooltip>
       </>}
     </Stack>
@@ -115,6 +98,7 @@ function MissedRow({ row, showClinic, clinicName, reasonLabels, busy, onAct, onO
   row: any; showClinic: boolean; clinicName?: string; reasonLabels: Record<string, string>;
   busy: boolean; onAct: (id: number, action: string) => void; onOpen: () => void;
 }) {
+  const t = useT();
   const hue = avatarHue(row.wa_user || "");
   const accent = riskColor[row.risk_band] || "warning";
   return (
@@ -147,8 +131,8 @@ function MissedRow({ row, showClinic, clinicName, reasonLabels, busy, onAct, onO
       </Box>
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0 }}>
         {row.risk_band && <Chip size="small" variant="outlined" color={riskColor[row.risk_band] || "default"}
-          label={row.risk_band} sx={{ height: 22, display: { xs: "none", md: "flex" } }} />}
-        <Chip size="small" variant="outlined" label={stageLabel(row.stage)} sx={{ height: 22 }} />
+          label={t(`enums.risk.${row.risk_band}`)} sx={{ height: 22, display: { xs: "none", md: "flex" } }} />}
+        <Chip size="small" variant="outlined" label={t(`enums.stage.${row.stage}`)} sx={{ height: 22 }} />
         <Box sx={{ display: { xs: "none", sm: "block" } }}><ActionBtns row={row} busy={busy} onAct={onAct} /></Box>
       </Stack>
     </Box>
@@ -159,6 +143,7 @@ function MissedDetail({ row, showClinic, clinicName, reasonLabels, busy, onClose
   row: any; showClinic: boolean; clinicName?: string; reasonLabels: Record<string, string>;
   busy: boolean; onClose: () => void; onAct: (id: number, action: string) => void; onView: () => void;
 }) {
+  const t = useT();
   const hue = avatarHue(row.wa_user || "");
   const Row = ({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) => (
     <Stack direction="row" spacing={1.5} alignItems="flex-start">
@@ -184,32 +169,32 @@ function MissedDetail({ row, showClinic, clinicName, reasonLabels, busy, onClose
             </Typography>
           </Box>
           <Box sx={{ flex: 1 }} />
-          <Chip label={stageLabel(row.stage)} sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700 }} />
+          <Chip label={t(`enums.stage.${row.stage}`)} sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700 }} />
         </Stack>
       </Box>
       <DialogContent dividers>
         <Stack spacing={2}>
-          <Row icon={<ScheduleIcon fontSize="small" />} label="Missed appointment">
+          <Row icon={<ScheduleIcon fontSize="small" />} label={t("missed.detailMissedAppointment")}>
             <b>{fmtDate(row.start_at)}</b>
           </Row>
-          <Row icon={<MedicalServicesIcon fontSize="small" />} label="Service">{row.service || "—"}{row.doctor ? ` · ${row.doctor}` : ""}</Row>
+          <Row icon={<MedicalServicesIcon fontSize="small" />} label={t("missed.detailService")}>{row.service || "—"}{row.doctor ? ` · ${row.doctor}` : ""}</Row>
           {row.risk_band && (
-            <Row icon={<WarningIcon fontSize="small" />} label="Missed-visit risk">
-              <Chip size="small" variant="outlined" color={riskColor[row.risk_band] || "default"} label={row.risk_band} />
+            <Row icon={<WarningIcon fontSize="small" />} label={t("missed.detailRisk")}>
+              <Chip size="small" variant="outlined" color={riskColor[row.risk_band] || "default"} label={t(`enums.risk.${row.risk_band}`)} />
             </Row>)}
-          <Row icon={<SpaIcon fontSize="small" />} label="Reason">{row.reason ? (reasonLabels[row.reason] || row.reason) : "—"}</Row>
-          <Row icon={<AutorenewIcon fontSize="small" />} label="Outcome">{row.outcome || "—"}</Row>
-          <Row icon={<OutboxIcon fontSize="small" />} label="Detected">{fmtDate(row.created_at)}</Row>
+          <Row icon={<SpaIcon fontSize="small" />} label={t("missed.detailReason")}>{row.reason ? (reasonLabels[row.reason] || row.reason) : "—"}</Row>
+          <Row icon={<AutorenewIcon fontSize="small" />} label={t("missed.detailOutcome")}>{row.outcome || "—"}</Row>
+          <Row icon={<OutboxIcon fontSize="small" />} label={t("missed.detailDetected")}>{fmtDate(row.created_at)}</Row>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onView}>View patient</Button>
+        <Button onClick={onView}>{t("common.viewPatient")}</Button>
         <Box sx={{ flex: 1 }} />
-        {row.stage === "detected" && <Button variant="contained" disabled={busy} onClick={() => onAct(row.id, "send")}>Send</Button>}
-        {["notified", "followed_up"].includes(row.stage) && <Button disabled={busy} onClick={() => onAct(row.id, "resend")}>Resend</Button>}
+        {row.stage === "detected" && <Button variant="contained" disabled={busy} onClick={() => onAct(row.id, "send")}>{t("missed.btnSend")}</Button>}
+        {["notified", "followed_up"].includes(row.stage) && <Button disabled={busy} onClick={() => onAct(row.id, "resend")}>{t("missed.btnResend")}</Button>}
         {!["resolved", "inactive"].includes(row.stage) && <>
-          <Button color="success" disabled={busy} onClick={() => onAct(row.id, "resolve")}>Resolve</Button>
-          <Button color="error" disabled={busy} onClick={() => onAct(row.id, "inactive")}>Inactive</Button>
+          <Button color="success" disabled={busy} onClick={() => onAct(row.id, "resolve")}>{t("missed.btnResolve")}</Button>
+          <Button color="error" disabled={busy} onClick={() => onAct(row.id, "inactive")}>{t("missed.btnInactive")}</Button>
         </>}
       </DialogActions>
     </Dialog>
@@ -217,14 +202,15 @@ function MissedDetail({ row, showClinic, clinicName, reasonLabels, busy, onClose
 }
 
 const FILTERS = [
-  { value: "", label: "All" },
-  { value: "outreach", label: "Needs outreach" },
-  { value: "recovery", label: "In recovery" },
-  { value: "resolved", label: "Recovered" },
-  { value: "inactive", label: "Inactive" },
+  { value: "", labelKey: "missed.filterAll" },
+  { value: "outreach", labelKey: "missed.filterNeedsOutreach" },
+  { value: "recovery", labelKey: "missed.filterInRecovery" },
+  { value: "resolved", labelKey: "missed.filterRecovered" },
+  { value: "inactive", labelKey: "missed.filterInactive" },
 ];
 
 export default function NoShows() {
+  const t = useT();
   const nav = useNavigate();
   const theme = useTheme();
   const [clinic] = useClinic();
@@ -234,11 +220,21 @@ export default function NoShows() {
   const [search, setSearch] = useState("");
   const [bucket, setBucket] = useState("");
   const [confirm, setConfirm] = useState<{ id: number; action: string; name: string } | null>(null);
+
+  // Per-action confirmation + success copy. `send`/`resend` reach the patient on WhatsApp,
+  // `resolve`/`inactive` only change internal state — the dialog spells out which is which.
+  const ACTION_META: ActionMeta = {
+    send: { label: t("missed.sendMessage"), color: "primary", done: t("missed.sentDone"), message: (n) => t("missed.sendMsg", { n }) },
+    resend: { label: t("missed.resendMessage"), color: "primary", done: t("missed.resentDone"), message: (n) => t("missed.resendMsg", { n }) },
+    resolve: { label: t("missed.markResolved"), color: "success", done: t("missed.resolvedDone"), message: (n) => t("missed.resolveMsg", { n }) },
+    inactive: { label: t("missed.markInactive"), color: "error", done: t("missed.inactiveDone"), message: (n) => t("missed.inactiveMsg", { n }) },
+  };
+
   const q = useApiQuery<any>(["no-shows", clinic], `/no-shows?clinic=${clinic}`);
   const act = useMutation({
     mutationFn: (v: { id: number; action: string }) => apiPost(`/no-shows/${v.id}/action`, { action: v.action }),
-    onSuccess: (_d, v) => { toast.ok(ACTION_META[v.action]?.done || "Done"); qc.invalidateQueries({ queryKey: ["no-shows"] }); },
-    onError: (e) => toast.err(e instanceof ApiError ? e.message : "Action failed"),
+    onSuccess: (_d, v) => { toast.ok(ACTION_META[v.action]?.done || t("missed.done")); qc.invalidateQueries({ queryKey: ["no-shows"] }); },
+    onError: (e) => toast.err(e instanceof ApiError ? e.message : t("missed.actionFailed")),
   });
 
   const rows: any[] = q.data?.rows ?? [];
@@ -264,7 +260,7 @@ export default function NoShows() {
     });
   }, [ordered, search, bucket, reasonLabels]);
 
-  if (q.isLoading) return <><PageTitle title="Missed Visits" /><TableSkeleton /></>;
+  if (q.isLoading) return <><PageTitle title={t("missed.title")} /><TableSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
   const { month_count, reasons = [], risk = {}, is_super, tenant_names = {}, selected_clinic } = q.data;
   const showClinic = is_super && !selected_clinic;
@@ -274,36 +270,36 @@ export default function NoShows() {
   const inactive = rows.filter((r) => r.stage === "inactive").length;
   const reasonData = reasons.map((r: any) => ({ label: reasonLabels[r.reason] || r.reason || "—", n: r.n }));
   const funnelSteps = [
-    { label: "Needs outreach", n: needsOutreach, color: theme.palette.info.main },
-    { label: "In recovery", n: inRecovery, color: theme.palette.warning.main },
-    { label: "Recovered", n: recovered, color: theme.palette.success.main },
-    { label: "Inactive", n: inactive, color: theme.palette.text.disabled },
+    { label: t("missed.legendNeedsOutreach"), n: needsOutreach, color: theme.palette.info.main },
+    { label: t("missed.legendInRecovery"), n: inRecovery, color: theme.palette.warning.main },
+    { label: t("missed.legendRecovered"), n: recovered, color: theme.palette.success.main },
+    { label: t("missed.legendInactive"), n: inactive, color: theme.palette.text.disabled },
   ];
   const cm = confirm ? ACTION_META[confirm.action] : null;
 
   return (
     <>
-      <PageTitle title="Missed Visits" subtitle="Detection & recovery outreach" right={<ClinicFilter meta={q.data} />} />
+      <PageTitle title={t("missed.title")} subtitle={t("missed.subtitle")} right={<ClinicFilter meta={q.data} />} />
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} md={3}><KpiCard label="Missed this month" value={month_count ?? 0} icon={<EventBusyIcon fontSize="small" />} color="error" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Needs outreach" value={needsOutreach} icon={<SendIcon fontSize="small" />} color="info" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="In recovery" value={inRecovery} icon={<AutorenewIcon fontSize="small" />} color="warning" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Recovered" value={recovered} icon={<CheckIcon fontSize="small" />} color="success" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("missed.kpiMissedThisMonth")} value={month_count ?? 0} icon={<EventBusyIcon fontSize="small" />} color="error" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("missed.kpiNeedsOutreach")} value={needsOutreach} icon={<SendIcon fontSize="small" />} color="info" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("missed.kpiInRecovery")} value={inRecovery} icon={<AutorenewIcon fontSize="small" />} color="warning" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("missed.kpiRecovered")} value={recovered} icon={<CheckIcon fontSize="small" />} color="success" /></Grid>
       </Grid>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={5}>
           <Card sx={{ height: "100%" }}><CardContent>
-            <Typography variant="caption" color="text.secondary" fontWeight={700}>Recovery funnel</Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>{t("missed.recoveryFunnel")}</Typography>
             <Box sx={{ mt: 1.5 }}><RecoveryFunnel steps={funnelSteps} /></Box>
           </CardContent></Card>
         </Grid>
         <Grid item xs={12} md={3}>
           <Card sx={{ height: "100%" }}><CardContent>
-            <Typography variant="caption" color="text.secondary" fontWeight={700}>Upcoming risk</Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>{t("missed.upcomingRisk")}</Typography>
             <Stack direction="row" spacing={3} sx={{ mt: 1.5 }}>
-              {[["Low", risk.low, "success.main"], ["Medium", risk.medium, "warning.main"], ["High", risk.high, "error.main"]].map(([l, v, c]: any) => (
+              {[[t("missed.riskLow"), risk.low, "success.main"], [t("missed.riskMedium"), risk.medium, "warning.main"], [t("missed.riskHigh"), risk.high, "error.main"]].map(([l, v, c]: any) => (
                 <Box key={l}><Typography variant="h5" sx={{ color: c }}>{v ?? 0}</Typography><Typography variant="caption" color="text.secondary">{l}</Typography></Box>
               ))}
             </Stack>
@@ -311,13 +307,13 @@ export default function NoShows() {
         </Grid>
         <Grid item xs={12} md={4}>
           <Card sx={{ height: "100%" }}><CardContent sx={{ pb: 0 }}>
-            <Typography variant="caption" color="text.secondary" fontWeight={700}>Why patients missed</Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>{t("missed.whyMissed")}</Typography>
             {reasonData.length ? (
               <BarChart height={150} layout="horizontal"
                 yAxis={[{ scaleType: "band", data: reasonData.map((r: any) => r.label) }]}
                 series={[{ data: reasonData.map((r: any) => r.n), color: "#f59e0b" }]}
                 margin={{ left: 90, right: 10, top: 10, bottom: 20 }} />
-            ) : <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>No reasons recorded yet.</Typography>}
+            ) : <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>{t("missed.noReasons")}</Typography>}
           </CardContent></Card>
         </Grid>
       </Grid>
@@ -326,18 +322,18 @@ export default function NoShows() {
         <Box sx={{ px: 2, py: 1.5, borderBottom: (t) => `1px solid ${t.palette.divider}`,
           background: (t) => alpha(t.palette.primary.main, 0.04) }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
-            <TextField fullWidth size="small" placeholder="Search by patient, phone, service, doctor or reason…"
+            <TextField fullWidth size="small" placeholder={t("missed.searchPlaceholder")}
               value={search} onChange={(e) => setSearch(e.target.value)}
               InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
               sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }} />
             <ToggleButtonGroup size="small" exclusive value={bucket} onChange={(_e, v) => setBucket(v ?? "")}
               sx={{ flexShrink: 0, flexWrap: "wrap" }}>
-              {FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{f.label}</ToggleButton>)}
+              {FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{t(f.labelKey)}</ToggleButton>)}
             </ToggleButtonGroup>
           </Stack>
         </Box>
         {filtered.length === 0 ? (
-          <EmptyState text={search || bucket ? "No missed visits match your filters." : "No missed visits — nice."} />
+          <EmptyState text={search || bucket ? t("missed.emptyFiltered") : t("missed.emptyNone")} />
         ) : (
           <Box sx={{ maxHeight: "calc(100vh - 470px)", minHeight: 240, overflow: "auto" }}>
             {filtered.map((r, i) => {
@@ -350,7 +346,7 @@ export default function NoShows() {
                       bgcolor: (t) => alpha(t.palette.background.paper, 0.92), backdropFilter: "blur(6px)",
                       borderBottom: (t) => `1px solid ${t.palette.divider}` }}>
                       <Typography variant="caption" fontWeight={800} color="text.secondary"
-                        sx={{ textTransform: "uppercase", letterSpacing: 0.5 }}>Missed · {label}</Typography>
+                        sx={{ textTransform: "uppercase", letterSpacing: 0.5 }}>{t("missed.missedPrefix", { label })}</Typography>
                     </Box>
                   )}
                   <MissedRow row={r} showClinic={showClinic} clinicName={tenant_names[r.tenant_id]}
@@ -367,7 +363,7 @@ export default function NoShows() {
         onView={() => nav(`/patients/${sel.wa_user}`)} />}
 
       <ConfirmDialog open={!!confirm}
-        title="Confirm action"
+        title={t("missed.confirmTitle")}
         confirmLabel={cm?.label} confirmColor={cm?.color}
         message={confirm && cm ? cm.message(confirm.name) : ""}
         onConfirm={doConfirm} onClose={() => setConfirm(null)} />

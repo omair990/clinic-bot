@@ -17,6 +17,7 @@ import TextsmsIcon from "@mui/icons-material/TextsmsOutlined";
 import GraphicEqIcon from "@mui/icons-material/GraphicEqOutlined";
 import { apiPost, ApiError } from "../api";
 import { useApiQuery, PageTitle, Loading, QueryError, useToast, KpiCard } from "../lib";
+import { useT } from "../i18n";
 
 const statusColor: Record<string, any> = { active: "success", suspended: "warning", expired: "error" };
 const fmt = (n: number | null | undefined) => (n == null ? "∞" : n.toLocaleString());
@@ -26,6 +27,7 @@ function avatarHue(s: string) { let h = 0; for (const c of s) h = (h * 31 + c.ch
 function UsageBar({ label, icon, used, quota, on }: {
   label: string; icon: React.ReactNode; used: number; quota: number | null; on: boolean;
 }) {
+  const t = useT();
   const unlimited = quota == null;
   const pct = quota ? Math.min(100, (used / quota) * 100) : (unlimited ? 100 : 0);
   const over = on && !unlimited && pct >= 100;
@@ -39,7 +41,7 @@ function UsageBar({ label, icon, used, quota, on }: {
           <Typography variant="caption" fontWeight={700}>{label}</Typography>
         </Stack>
         <Typography variant="caption" color={on ? "text.primary" : "text.secondary"} fontWeight={700}>
-          {on ? `${fmt(used)} / ${fmt(quota)}` : "off"}
+          {on ? `${fmt(used)} / ${fmt(quota)}` : t("plans.usageOff")}
         </Typography>
       </Stack>
       <Box sx={{ height: 7, borderRadius: 4, overflow: "hidden", bgcolor: (t) => alpha(t.palette.text.primary, 0.06) }}>
@@ -54,6 +56,10 @@ function ClinicCard({ t, plans, onPlan, onStatus, onEdit, onConnector }: {
   t: any; plans: any[]; onPlan: (id: number, planId: number) => void;
   onStatus: (id: number, status: string) => void; onEdit: () => void; onConnector: () => void;
 }) {
+  const tr = useT();
+  const statusLabel: Record<string, string> = {
+    active: tr("plans.statusActive"), suspended: tr("plans.statusSuspended"), expired: tr("plans.statusExpired"),
+  };
   const hue = avatarHue(t.slug || t.name || "");
   const sc = statusColor[t.status] || "default";
   return (
@@ -70,7 +76,7 @@ function ClinicCard({ t, plans, onPlan, onStatus, onEdit, onConnector }: {
             <Typography fontWeight={700} noWrap>{t.name}</Typography>
             <Typography variant="caption" color="text.secondary" noWrap display="block">{t.slug}</Typography>
           </Box>
-          <Chip size="small" color={sc} variant="outlined" label={t.status} sx={{ textTransform: "capitalize" }} />
+          <Chip size="small" color={sc} variant="outlined" label={statusLabel[t.status] || t.status} sx={{ textTransform: "capitalize" }} />
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center">
@@ -79,21 +85,21 @@ function ClinicCard({ t, plans, onPlan, onStatus, onEdit, onConnector }: {
             {plans.map((p: any) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
           </Select>
           <Select size="small" value={t.status} onChange={(e) => onStatus(t.id, String(e.target.value))} sx={{ minWidth: 124 }}>
-            {["active", "suspended", "expired"].map((s) => <MenuItem key={s} value={s} sx={{ textTransform: "capitalize" }}>{s}</MenuItem>)}
+            {["active", "suspended", "expired"].map((s) => <MenuItem key={s} value={s} sx={{ textTransform: "capitalize" }}>{statusLabel[s] || s}</MenuItem>)}
           </Select>
         </Stack>
 
         <Stack spacing={1.25} sx={{ mt: 0.5 }}>
-          <UsageBar label="Text" icon={<TextsmsIcon sx={{ fontSize: 15 }} />} used={t.text_count} quota={t.monthly_text_quota} on />
-          <UsageBar label="Voice" icon={<GraphicEqIcon sx={{ fontSize: 15 }} />} used={t.voice_count} quota={t.monthly_voice_quota} on={t.voice_enabled} />
+          <UsageBar label={tr("plans.usageText")} icon={<TextsmsIcon sx={{ fontSize: 15 }} />} used={t.text_count} quota={t.monthly_text_quota} on />
+          <UsageBar label={tr("plans.usageVoice")} icon={<GraphicEqIcon sx={{ fontSize: 15 }} />} used={t.voice_count} quota={t.monthly_voice_quota} on={t.voice_enabled} />
         </Stack>
 
         <Divider sx={{ mt: "auto" }} />
         <Stack direction="row" alignItems="center" spacing={1}>
           <Chip size="small" variant="outlined" label={t.connector_type} sx={{ textTransform: "capitalize" }} />
           <Box sx={{ flex: 1 }} />
-          <Tooltip title="Edit clinic"><IconButton size="small" onClick={onEdit}><EditIcon fontSize="small" /></IconButton></Tooltip>
-          <Tooltip title="Connector"><IconButton size="small" onClick={onConnector}><HubIcon fontSize="small" /></IconButton></Tooltip>
+          <Tooltip title={tr("plans.editClinic")}><IconButton size="small" onClick={onEdit}><EditIcon fontSize="small" /></IconButton></Tooltip>
+          <Tooltip title={tr("plans.connector")}><IconButton size="small" onClick={onConnector}><HubIcon fontSize="small" /></IconButton></Tooltip>
         </Stack>
       </CardContent>
     </Card>
@@ -101,6 +107,7 @@ function ClinicCard({ t, plans, onPlan, onStatus, onEdit, onConnector }: {
 }
 
 function PackageCard({ p, onEdit }: { p: any; onEdit: () => void }) {
+  const t = useT();
   const accent = p.is_trial ? "#a78bfa" : "#6366f1";
   return (
     <Card sx={{ height: "100%", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
@@ -109,33 +116,34 @@ function PackageCard({ p, onEdit }: { p: any; onEdit: () => void }) {
       <CardContent sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 1, position: "relative" }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between">
           <Typography variant="h6" fontWeight={800}>{p.name}</Typography>
-          {p.is_trial && <Chip size="small" label={`Trial · ${p.trial_days ?? 0}d`} sx={{ bgcolor: alpha(accent, 0.16), color: accent, fontWeight: 700 }} />}
+          {p.is_trial && <Chip size="small" label={t("plans.trialDays", { n: p.trial_days ?? 0 })} sx={{ bgcolor: alpha(accent, 0.16), color: accent, fontWeight: 700 }} />}
         </Stack>
         <Stack direction="row" alignItems="baseline" spacing={0.5}>
           <Typography variant="h4" fontWeight={800}>{p.price_sar != null ? p.price_sar : "—"}</Typography>
-          <Typography variant="body2" color="text.secondary">{p.price_sar != null ? "SAR / mo" : ""}</Typography>
+          <Typography variant="body2" color="text.secondary">{p.price_sar != null ? t("plans.sarPerMo") : ""}</Typography>
         </Stack>
         <Divider sx={{ my: 0.5 }} />
         <Stack spacing={0.75}>
           <Stack direction="row" spacing={1} alignItems="center">
             <TextsmsIcon sx={{ fontSize: 16, color: "#14b8a6" }} />
-            <Typography variant="body2"><b>{fmt(p.monthly_text_quota)}</b> text / mo</Typography>
+            <Typography variant="body2">{t("plans.textPerMo", { n: fmt(p.monthly_text_quota) })}</Typography>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
             <GraphicEqIcon sx={{ fontSize: 16, color: p.voice_enabled ? "#6366f1" : "#94a3b8" }} />
             <Typography variant="body2" color={p.voice_enabled ? "text.primary" : "text.secondary"}>
-              {p.voice_enabled ? <><b>{fmt(p.monthly_voice_quota)}</b> voice / mo</> : "Voice off"}
+              {p.voice_enabled ? t("plans.voicePerMo", { n: fmt(p.monthly_voice_quota) }) : t("plans.voiceOff")}
             </Typography>
           </Stack>
         </Stack>
         <Box sx={{ flex: 1 }} />
-        <Button size="small" startIcon={<EditIcon fontSize="small" />} onClick={onEdit} sx={{ alignSelf: "flex-start", mt: 1 }}>Edit</Button>
+        <Button size="small" startIcon={<EditIcon fontSize="small" />} onClick={onEdit} sx={{ alignSelf: "flex-start", mt: 1 }}>{t("common.edit")}</Button>
       </CardContent>
     </Card>
   );
 }
 
 export default function Plans() {
+  const t = useT();
   const qc = useQueryClient();
   const nav = useNavigate();
   const toast = useToast();
@@ -144,11 +152,11 @@ export default function Plans() {
   const q = useApiQuery<any>(["plans"], "/plans");
   const setPlan = useMutation({
     mutationFn: (v: { id: number; plan_id: number }) => apiPost(`/tenants/${v.id}/plan`, { plan_id: v.plan_id }),
-    onSuccess: () => { toast.ok("Plan updated"); qc.invalidateQueries({ queryKey: ["plans"] }); },
+    onSuccess: () => { toast.ok(t("plans.planUpdated")); qc.invalidateQueries({ queryKey: ["plans"] }); },
   });
   const setStatus = useMutation({
     mutationFn: (v: { id: number; status: string }) => apiPost(`/tenants/${v.id}/status`, { status: v.status }),
-    onSuccess: () => { toast.ok("Status updated"); qc.invalidateQueries({ queryKey: ["plans"] }); },
+    onSuccess: () => { toast.ok(t("plans.statusUpdated")); qc.invalidateQueries({ queryKey: ["plans"] }); },
   });
 
   if (q.isLoading) return <Loading />;
@@ -159,22 +167,22 @@ export default function Plans() {
 
   return (
     <>
-      <PageTitle title="Plans & usage" subtitle="Clinics, plans and monthly usage" right={
+      <PageTitle title={t("plans.title")} subtitle={t("plans.subtitle")} right={
         <Stack direction="row" spacing={1.5} alignItems="center">
-          <Chip variant="outlined" label={`Period ${period}`} />
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>Add clinic</Button>
+          <Chip variant="outlined" label={t("common.period", { period })} />
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>{t("plans.addClinic")}</Button>
         </Stack>} />
       <AddClinicDialog open={addOpen} onClose={() => setAddOpen(false)} plans={plans}
         onCreated={() => qc.invalidateQueries({ queryKey: ["plans"] })} />
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} md={3}><KpiCard label="Clinics" value={tenants.length} icon={<BusinessIcon fontSize="small" />} color="primary" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Active" value={active} icon={<CheckCircleIcon fontSize="small" />} color="success" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Suspended / expired" value={inactive} icon={<PauseIcon fontSize="small" />} color="warning" /></Grid>
-        <Grid item xs={6} md={3}><KpiCard label="Packages" value={plans.length} icon={<LayersIcon fontSize="small" />} color="secondary" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("plans.kpiClinics")} value={tenants.length} icon={<BusinessIcon fontSize="small" />} color="primary" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("plans.kpiActive")} value={active} icon={<CheckCircleIcon fontSize="small" />} color="success" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("plans.kpiSuspendedExpired")} value={inactive} icon={<PauseIcon fontSize="small" />} color="warning" /></Grid>
+        <Grid item xs={6} md={3}><KpiCard label={t("plans.kpiPackages")} value={plans.length} icon={<LayersIcon fontSize="small" />} color="secondary" /></Grid>
       </Grid>
 
-      <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1.5 }}>Clinics</Typography>
+      <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1.5 }}>{t("plans.sectionClinics")}</Typography>
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {tenants.map((t: any) => (
           <Grid item xs={12} sm={6} lg={4} key={t.id}>
@@ -187,8 +195,8 @@ export default function Plans() {
       </Grid>
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-        <Typography variant="subtitle2" fontWeight={800}>Packages</Typography>
-        <Button size="small" startIcon={<AddIcon />} onClick={() => setPkg({})}>New package</Button>
+        <Typography variant="subtitle2" fontWeight={800}>{t("plans.sectionPackages")}</Typography>
+        <Button size="small" startIcon={<AddIcon />} onClick={() => setPkg({})}>{t("plans.newPackage")}</Button>
       </Stack>
       <Grid container spacing={2}>
         {plans.map((p: any) => (
@@ -199,12 +207,13 @@ export default function Plans() {
       </Grid>
 
       <PackageDialog pkg={pkg} onClose={() => setPkg(null)}
-        onSaved={() => { toast.ok("Package saved"); qc.invalidateQueries({ queryKey: ["plans"] }); }} />
+        onSaved={() => { toast.ok(t("plans.packageSaved")); qc.invalidateQueries({ queryKey: ["plans"] }); }} />
     </>
   );
 }
 
 function AddClinicDialog({ open, onClose, plans, onCreated }: any) {
+  const t = useT();
   const [f, setF] = useState<any>({ timezone: "Asia/Riyadh", plan_id: plans[0]?.id });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -212,39 +221,40 @@ function AddClinicDialog({ open, onClose, plans, onCreated }: any) {
   const create = async () => {
     setBusy(true); setErr(null);
     try { await apiPost("/tenants", f); onCreated(); onClose(); }
-    catch (e) { setErr(e instanceof ApiError ? e.message : "Create failed"); }
+    catch (e) { setErr(e instanceof ApiError ? e.message : t("plans.createFailed")); }
     finally { setBusy(false); }
   };
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle sx={{ fontWeight: 800 }}>Add clinic</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 800 }}>{t("plans.addClinicTitle")}</DialogTitle>
       <DialogContent>
         {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
         <Grid container spacing={2} sx={{ mt: 0 }}>
-          <Grid item xs={12} md={6}><TextField fullWidth size="small" label="Name" onChange={set("name")} /></Grid>
-          <Grid item xs={12} md={6}><TextField fullWidth size="small" label="Slug (unique)" onChange={set("slug")} /></Grid>
-          <Grid item xs={12} md={6}><TextField fullWidth size="small" label="WhatsApp phone_number_id" onChange={set("wa_phone_number_id")} /></Grid>
-          <Grid item xs={12} md={6}><TextField fullWidth size="small" label="Timezone" value={f.timezone} onChange={set("timezone")} /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth size="small" label={t("plans.fieldName")} onChange={set("name")} /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth size="small" label={t("plans.fieldSlug")} onChange={set("slug")} /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth size="small" label={t("plans.fieldPhoneNumberId")} onChange={set("wa_phone_number_id")} /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth size="small" label={t("plans.fieldTimezone")} value={f.timezone} onChange={set("timezone")} /></Grid>
           <Grid item xs={12} md={6}>
             <Select fullWidth size="small" value={f.plan_id ?? ""} onChange={set("plan_id")}>
               {plans.map((p: any) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
             </Select>
           </Grid>
-          <Grid item xs={12} md={6}><TextField fullWidth size="small" label="WhatsApp token (optional)" onChange={set("wa_access_token")} /></Grid>
-          <Grid item xs={12} md={6}><TextField fullWidth size="small" label="Staff username (optional)" onChange={set("staff_username")} /></Grid>
-          <Grid item xs={12} md={6}><TextField fullWidth size="small" type="password" label="Staff password (optional)" onChange={set("staff_password")} /></Grid>
-          <Grid item xs={12}><TextField fullWidth multiline minRows={4} label="Clinic data JSON (optional)" onChange={set("clinic_data")} InputProps={{ sx: { fontFamily: "monospace", fontSize: 13 } }} /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth size="small" label={t("plans.fieldWaToken")} onChange={set("wa_access_token")} /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth size="small" label={t("plans.fieldStaffUsername")} onChange={set("staff_username")} /></Grid>
+          <Grid item xs={12} md={6}><TextField fullWidth size="small" type="password" label={t("plans.fieldStaffPassword")} onChange={set("staff_password")} /></Grid>
+          <Grid item xs={12}><TextField fullWidth multiline minRows={4} label={t("plans.fieldClinicData")} onChange={set("clinic_data")} InputProps={{ sx: { fontFamily: "monospace", fontSize: 13 } }} /></Grid>
         </Grid>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} color="inherit">Cancel</Button>
-        <Button variant="contained" disabled={busy} onClick={create}>Create clinic</Button>
+        <Button onClick={onClose} color="inherit">{t("common.cancel")}</Button>
+        <Button variant="contained" disabled={busy} onClick={create}>{t("plans.createClinic")}</Button>
       </DialogActions>
     </Dialog>
   );
 }
 
 function PackageDialog({ pkg, onClose, onSaved }: { pkg: any | null; onClose: () => void; onSaved: () => void }) {
+  const t = useT();
   const [f, setF] = useState<any>({});
   const [busy, setBusy] = useState(false);
   useEffect(() => { setF(pkg || {}); }, [pkg]);
@@ -262,21 +272,21 @@ function PackageDialog({ pkg, onClose, onSaved }: { pkg: any | null; onClose: ()
   };
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle sx={{ fontWeight: 800 }}>{pkg?.id ? "Edit package" : "New package"}</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 800 }}>{pkg?.id ? t("plans.editPackage") : t("plans.newPackage")}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
-          <TextField size="small" label="Name (existing name = edit)" value={f.name || ""} onChange={set("name")} disabled={!!pkg?.id} />
-          <TextField size="small" type="number" label="Monthly text quota (blank = unlimited)" value={f.monthly_text_quota ?? ""} onChange={set("monthly_text_quota")} />
-          <FormControlLabel control={<Switch checked={!!f.voice_enabled} onChange={(e) => setF({ ...f, voice_enabled: e.target.checked })} />} label="Voice enabled" />
-          <TextField size="small" type="number" label="Monthly voice quota (blank = unlimited)" value={f.monthly_voice_quota ?? ""} onChange={set("monthly_voice_quota")} disabled={!f.voice_enabled} />
-          <FormControlLabel control={<Switch checked={!!f.is_trial} onChange={(e) => setF({ ...f, is_trial: e.target.checked })} />} label="Trial plan" />
-          <TextField size="small" type="number" label="Trial days" value={f.trial_days ?? ""} onChange={set("trial_days")} disabled={!f.is_trial} />
-          <TextField size="small" type="number" label="Price (SAR)" value={f.price_sar ?? ""} onChange={set("price_sar")} />
+          <TextField size="small" label={t("plans.pkgName")} value={f.name || ""} onChange={set("name")} disabled={!!pkg?.id} />
+          <TextField size="small" type="number" label={t("plans.pkgTextQuota")} value={f.monthly_text_quota ?? ""} onChange={set("monthly_text_quota")} />
+          <FormControlLabel control={<Switch checked={!!f.voice_enabled} onChange={(e) => setF({ ...f, voice_enabled: e.target.checked })} />} label={t("plans.pkgVoiceEnabled")} />
+          <TextField size="small" type="number" label={t("plans.pkgVoiceQuota")} value={f.monthly_voice_quota ?? ""} onChange={set("monthly_voice_quota")} disabled={!f.voice_enabled} />
+          <FormControlLabel control={<Switch checked={!!f.is_trial} onChange={(e) => setF({ ...f, is_trial: e.target.checked })} />} label={t("plans.pkgTrialPlan")} />
+          <TextField size="small" type="number" label={t("plans.pkgTrialDays")} value={f.trial_days ?? ""} onChange={set("trial_days")} disabled={!f.is_trial} />
+          <TextField size="small" type="number" label={t("plans.pkgPrice")} value={f.price_sar ?? ""} onChange={set("price_sar")} />
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} color="inherit">Cancel</Button>
-        <Button variant="contained" disabled={busy || !f.name} onClick={save}>Save package</Button>
+        <Button onClick={onClose} color="inherit">{t("common.cancel")}</Button>
+        <Button variant="contained" disabled={busy || !f.name} onClick={save}>{t("plans.savePackage")}</Button>
       </DialogActions>
     </Dialog>
   );

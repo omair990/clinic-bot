@@ -20,6 +20,7 @@ import StarIcon from "@mui/icons-material/StarRounded";
 import StarBorderIcon from "@mui/icons-material/StarBorderRounded";
 import FilterFunnelIcon from "@mui/icons-material/FilterAltOutlined";
 import { useApiQuery, PageTitle, ClinicFilter, useClinic, TableSkeleton, QueryError, KpiCard } from "../lib";
+import { useT } from "../i18n";
 
 // Brand palette — keeps every chart and accent on the same teal→indigo→amber language.
 const C = {
@@ -53,10 +54,10 @@ function Panel({ icon, title, caption, accent, children }: {
   );
 }
 
-function Empty({ h = 160 }: { h?: number }) {
+function Empty({ h = 160, label }: { h?: number; label: string }) {
   return (
     <Box sx={{ height: h, display: "grid", placeItems: "center", color: "text.secondary" }}>
-      <Typography variant="caption">No data for this period</Typography>
+      <Typography variant="caption">{label}</Typography>
     </Box>
   );
 }
@@ -89,17 +90,19 @@ function SegBar({ segments }: { segments: { label: string; n: number; color: str
 }
 
 // Two-step conversion funnel: patients who messaged → patients who booked.
-function Conversion({ messaged, booked, pct }: { messaged: number; booked: number; pct: number }) {
+function Conversion({ messaged, booked, pct, messagedLabel, bookedLabel, rateLabel }: {
+  messaged: number; booked: number; pct: number; messagedLabel: string; bookedLabel: string; rateLabel: string;
+}) {
   const max = Math.max(messaged, 1);
   const steps = [
-    { label: "Messaged", n: messaged, color: C.indigo },
-    { label: "Booked", n: booked, color: C.teal },
+    { label: messagedLabel, n: messaged, color: C.indigo },
+    { label: bookedLabel, n: booked, color: C.teal },
   ];
   return (
     <Box>
       <Stack direction="row" alignItems="baseline" spacing={1}>
         <Typography variant="h3" fontWeight={800} sx={{ color: C.teal }}>{pct}%</Typography>
-        <Typography variant="body2" color="text.secondary">message → booking</Typography>
+        <Typography variant="body2" color="text.secondary">{rateLabel}</Typography>
       </Stack>
       <Stack spacing={1.5} sx={{ mt: 2 }}>
         {steps.map((s) => (
@@ -136,13 +139,14 @@ const SHARED_BAR_SX = {
 } as const;
 
 export default function Insights() {
+  const t = useT();
   const [clinic] = useClinic();
   const [params, setParams] = useSearchParams();
   const period = params.get("period") || "day";
   const q = useApiQuery<any>(["insights", clinic, period], `/insights?clinic=${clinic}&period=${period}`);
   const setPeriod = (p: string) => { const n = new URLSearchParams(params); n.set("period", p); setParams(n); };
 
-  if (q.isLoading) return <><PageTitle title="Business insights" /><TableSkeleton rows={4} /></>;
+  if (q.isLoading) return <><PageTitle title={t("insights.title")} /><TableSkeleton rows={4} /></>;
   if (q.error) return <QueryError error={q.error} />;
   const r = q.data.report || {}; const m = r.metrics || {};
   const conv = m.conversion || { users_messaged: 0, users_booked: 0, conversion_pct: 0 };
@@ -152,7 +156,9 @@ export default function Insights() {
   const peaks = (m.peak_hours || []).map((p: any) => ({ label: `${String(p.hour).padStart(2, "0")}:00`, n: p.n }));
 
   const sentOrder: [string, string, string][] = [
-    ["positive", "Positive", C.green], ["neutral", "Neutral", C.sky], ["negative", "Negative", C.red],
+    ["positive", t("insights.sentimentPositive"), C.green],
+    ["neutral", t("insights.sentimentNeutral"), C.sky],
+    ["negative", t("insights.sentimentNegative"), C.red],
   ];
   const sentiment = sentOrder
     .map(([k, label, color], i) => ({ id: i, value: m.sentiment?.[k] || 0, label, color }))
@@ -160,20 +166,20 @@ export default function Insights() {
   const sentTotal = sentiment.reduce((s, x) => s + x.value, 0);
 
   const leadSegments = [
-    { label: "Hot", n: m.lead_mix?.hot || 0, color: C.red },
-    { label: "Warm", n: m.lead_mix?.warm || 0, color: C.amber },
-    { label: "Cold", n: m.lead_mix?.cold || 0, color: C.sky },
+    { label: t("insights.leadHot"), n: m.lead_mix?.hot || 0, color: C.red },
+    { label: t("insights.leadWarm"), n: m.lead_mix?.warm || 0, color: C.amber },
+    { label: t("insights.leadCold"), n: m.lead_mix?.cold || 0, color: C.sky },
   ];
   const hasLeads = leadSegments.some((s) => s.n > 0);
 
   return (
     <>
-      <PageTitle title="Business insights" subtitle={r.label} right={
+      <PageTitle title={t("insights.title")} subtitle={r.label} right={
         <Stack direction="row" spacing={1.5} alignItems="center">
           <ClinicFilter meta={q.data} />
           <ToggleButtonGroup size="small" exclusive value={period} onChange={(_e, v) => v && setPeriod(v)}>
-            <ToggleButton value="day">Today</ToggleButton>
-            <ToggleButton value="week">7 days</ToggleButton>
+            <ToggleButton value="day">{t("insights.today")}</ToggleButton>
+            <ToggleButton value="week">{t("insights.week")}</ToggleButton>
           </ToggleButtonGroup>
         </Stack>} />
 
@@ -188,8 +194,8 @@ export default function Insights() {
               </Box>
               <Box sx={{ minWidth: 0 }}>
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75 }}>
-                  <Typography variant="subtitle2" fontWeight={800} sx={{ letterSpacing: 0.6 }}>AI BUSINESS INSIGHT</Typography>
-                  <Chip size="small" label={r.narrative_source === "ai" ? "AI-generated" : "Auto-summary"}
+                  <Typography variant="subtitle2" fontWeight={800} sx={{ letterSpacing: 0.6 }}>{t("insights.aiInsight")}</Typography>
+                  <Chip size="small" label={r.narrative_source === "ai" ? t("insights.aiGenerated") : t("insights.autoSummary")}
                     sx={{ height: 20, bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700 }} />
                 </Stack>
                 <Typography variant="body1" sx={{ lineHeight: 1.65, color: alpha("#fff", 0.96) }}>{r.narrative}</Typography>
@@ -200,28 +206,29 @@ export default function Insights() {
       )}
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} sm={4} md={2}><KpiCard label="Inbound messages" value={m.inbound ?? 0} icon={<ForumIcon fontSize="small" />} color="primary" /></Grid>
-        <Grid item xs={6} sm={4} md={2}><KpiCard label="Patients" value={m.users ?? 0} icon={<PeopleIcon fontSize="small" />} color="secondary" /></Grid>
-        <Grid item xs={6} sm={4} md={2}><KpiCard label="Bookings" value={conv.users_booked ?? 0} icon={<EventAvailableIcon fontSize="small" />} color="success" /></Grid>
-        <Grid item xs={6} sm={4} md={2}><KpiCard label="Conversion" value={`${conv.conversion_pct ?? 0}%`} icon={<TrendingUpIcon fontSize="small" />} color="info" /></Grid>
-        <Grid item xs={6} sm={4} md={2}><KpiCard label="Voice share" value={`${m.voice_share_pct ?? 0}%`} icon={<GraphicEqIcon fontSize="small" />} color="warning" /></Grid>
-        <Grid item xs={6} sm={4} md={2}><KpiCard label="Missed visits" value={m.no_shows ?? 0} icon={<EventBusyIcon fontSize="small" />} color="error" /></Grid>
+        <Grid item xs={6} sm={4} md={2}><KpiCard label={t("insights.kpiInbound")} value={m.inbound ?? 0} icon={<ForumIcon fontSize="small" />} color="primary" /></Grid>
+        <Grid item xs={6} sm={4} md={2}><KpiCard label={t("insights.kpiPatients")} value={m.users ?? 0} icon={<PeopleIcon fontSize="small" />} color="secondary" /></Grid>
+        <Grid item xs={6} sm={4} md={2}><KpiCard label={t("insights.kpiBookings")} value={conv.users_booked ?? 0} icon={<EventAvailableIcon fontSize="small" />} color="success" /></Grid>
+        <Grid item xs={6} sm={4} md={2}><KpiCard label={t("insights.kpiConversion")} value={`${conv.conversion_pct ?? 0}%`} icon={<TrendingUpIcon fontSize="small" />} color="info" /></Grid>
+        <Grid item xs={6} sm={4} md={2}><KpiCard label={t("insights.kpiVoiceShare")} value={`${m.voice_share_pct ?? 0}%`} icon={<GraphicEqIcon fontSize="small" />} color="warning" /></Grid>
+        <Grid item xs={6} sm={4} md={2}><KpiCard label={t("insights.kpiMissedVisits")} value={m.no_shows ?? 0} icon={<EventBusyIcon fontSize="small" />} color="error" /></Grid>
       </Grid>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={4}>
-          <Panel icon={<FilterFunnelIcon fontSize="small" />} title="Conversion funnel"
-            caption="Patients who messaged vs. booked" accent={C.teal}>
-            <Conversion messaged={conv.users_messaged ?? 0} booked={conv.users_booked ?? 0} pct={conv.conversion_pct ?? 0} />
+          <Panel icon={<FilterFunnelIcon fontSize="small" />} title={t("insights.funnelTitle")}
+            caption={t("insights.funnelCaption")} accent={C.teal}>
+            <Conversion messaged={conv.users_messaged ?? 0} booked={conv.users_booked ?? 0} pct={conv.conversion_pct ?? 0}
+              messagedLabel={t("insights.funnelMessaged")} bookedLabel={t("insights.funnelBooked")} rateLabel={t("insights.funnelRate")} />
           </Panel>
         </Grid>
         <Grid item xs={12} md={4}>
-          <Panel icon={<LocalFireIcon fontSize="small" />} title="Lead mix" caption="Intent quality across conversations" accent={C.red}>
-            {hasLeads ? <SegBar segments={leadSegments} /> : <Empty h={140} />}
+          <Panel icon={<LocalFireIcon fontSize="small" />} title={t("insights.leadTitle")} caption={t("insights.leadCaption")} accent={C.red}>
+            {hasLeads ? <SegBar segments={leadSegments} /> : <Empty h={140} label={t("common.noData")} />}
           </Panel>
         </Grid>
         <Grid item xs={12} md={4}>
-          <Panel icon={<MoodIcon fontSize="small" />} title="Sentiment" caption="Conversation mood — negative = at-risk" accent={C.green}>
+          <Panel icon={<MoodIcon fontSize="small" />} title={t("insights.sentimentTitle")} caption={t("insights.sentimentCaption")} accent={C.green}>
             {sentiment.length ? (
               <Box sx={{ position: "relative" }}>
                 <PieChart height={180}
@@ -231,7 +238,7 @@ export default function Insights() {
                 <Box sx={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
                   <Box sx={{ textAlign: "center" }}>
                     <Typography variant="h5" fontWeight={800} sx={{ lineHeight: 1 }}>{sentTotal}</Typography>
-                    <Typography variant="caption" color="text.secondary">chats</Typography>
+                    <Typography variant="caption" color="text.secondary">{t("insights.sentimentChats")}</Typography>
                   </Box>
                 </Box>
                 <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 1 }}>
@@ -243,52 +250,52 @@ export default function Insights() {
                   ))}
                 </Stack>
               </Box>
-            ) : <Empty h={180} />}
+            ) : <Empty h={180} label={t("common.noData")} />}
           </Panel>
         </Grid>
       </Grid>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={6}>
-          <Panel icon={<QuestionAnswerIcon fontSize="small" />} title="Top inquiries" caption="What patients ask about most" accent={C.teal}>
+          <Panel icon={<QuestionAnswerIcon fontSize="small" />} title={t("insights.inquiriesTitle")} caption={t("insights.inquiriesCaption")} accent={C.teal}>
             {inquiries.length ? <BarChart height={240} layout="horizontal"
               yAxis={[{ scaleType: "band", data: inquiries.map((i: any) => i.label) }]}
               series={[{ data: inquiries.map((i: any) => i.n), color: C.teal }]}
-              borderRadius={6} margin={{ left: 100, right: 12, top: 6, bottom: 24 }} sx={SHARED_BAR_SX} /> : <Empty />}
+              borderRadius={6} margin={{ left: 100, right: 12, top: 6, bottom: 24 }} sx={SHARED_BAR_SX} /> : <Empty label={t("common.noData")} />}
           </Panel>
         </Grid>
         <Grid item xs={12} md={6}>
-          <Panel icon={<MedicalServicesIcon fontSize="small" />} title="Top doctors" caption="Most-requested practitioners" accent={C.indigo}>
+          <Panel icon={<MedicalServicesIcon fontSize="small" />} title={t("insights.doctorsTitle")} caption={t("insights.doctorsCaption")} accent={C.indigo}>
             {doctors.length ? <BarChart height={240} layout="horizontal"
               yAxis={[{ scaleType: "band", data: doctors.map((d: any) => d.label) }]}
               series={[{ data: doctors.map((d: any) => d.n), color: C.indigo }]}
-              borderRadius={6} margin={{ left: 120, right: 12, top: 6, bottom: 24 }} sx={SHARED_BAR_SX} /> : <Empty />}
+              borderRadius={6} margin={{ left: 120, right: 12, top: 6, bottom: 24 }} sx={SHARED_BAR_SX} /> : <Empty label={t("common.noData")} />}
           </Panel>
         </Grid>
         <Grid item xs={12} md={8}>
-          <Panel icon={<ScheduleIcon fontSize="small" />} title="Peak contact hours" caption="When patients reach out" accent={C.sky}>
+          <Panel icon={<ScheduleIcon fontSize="small" />} title={t("insights.peaksTitle")} caption={t("insights.peaksCaption")} accent={C.sky}>
             {peaks.length ? <BarChart height={220} xAxis={[{ scaleType: "band", data: peaks.map((p: any) => p.label) }]}
               series={[{ data: peaks.map((p: any) => p.n), color: C.sky }]}
-              borderRadius={6} margin={{ left: 32, right: 12, top: 6, bottom: 24 }} sx={SHARED_BAR_SX} /> : <Empty h={220} />}
+              borderRadius={6} margin={{ left: 32, right: 12, top: 6, bottom: 24 }} sx={SHARED_BAR_SX} /> : <Empty h={220} label={t("common.noData")} />}
           </Panel>
         </Grid>
         <Grid item xs={12} md={4}>
-          <Panel icon={<StarIcon fontSize="small" />} title="Reviews" caption="Patient feedback collected" accent={C.amber}>
+          <Panel icon={<StarIcon fontSize="small" />} title={t("insights.reviewsTitle")} caption={t("insights.reviewsCaption")} accent={C.amber}>
             {reviews.avg_rating != null ? (
               <Stack spacing={1.5} sx={{ pt: 1 }}>
                 <Stack direction="row" alignItems="baseline" spacing={1}>
                   <Typography variant="h3" fontWeight={800}>{Number(reviews.avg_rating).toFixed(1)}</Typography>
-                  <Typography variant="body2" color="text.secondary">/ 5</Typography>
+                  <Typography variant="body2" color="text.secondary">{t("insights.reviewsOutOf")}</Typography>
                 </Stack>
                 <Stars value={Number(reviews.avg_rating)} />
                 <Stack direction="row" spacing={3} sx={{ pt: 1 }}>
                   <Box><Typography variant="h6" fontWeight={800}>{reviews.responded ?? 0}</Typography>
-                    <Typography variant="caption" color="text.secondary">responded</Typography></Box>
+                    <Typography variant="caption" color="text.secondary">{t("insights.reviewsResponded")}</Typography></Box>
                   <Box><Typography variant="h6" fontWeight={800}>{reviews.requested ?? 0}</Typography>
-                    <Typography variant="caption" color="text.secondary">requested</Typography></Box>
+                    <Typography variant="caption" color="text.secondary">{t("insights.reviewsRequested")}</Typography></Box>
                 </Stack>
               </Stack>
-            ) : <Empty h={180} />}
+            ) : <Empty h={180} label={t("insights.reviewsEmpty")} />}
           </Panel>
         </Grid>
       </Grid>

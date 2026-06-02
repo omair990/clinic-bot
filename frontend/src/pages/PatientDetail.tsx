@@ -19,6 +19,7 @@ import TipsIcon from "@mui/icons-material/TipsAndUpdatesOutlined";
 import { apiPost } from "../api";
 import { useApiQuery, Loading, QueryError, fmtDate, fmtTime, dayLabel, displayName, initials as initialsOf, EmptyState, useToast } from "../lib";
 import { useLive } from "../realtime";
+import { useT } from "../i18n";
 
 const statusColor: Record<string, any> = { confirmed: "success", completed: "info", cancelled: "default", no_show: "warning" };
 const leadMeta: Record<string, { c: string; label: string }> = {
@@ -117,7 +118,11 @@ function Bubble({ m, isFirst, isLast }: { m: Msg; isFirst: boolean; isLast: bool
 
 // Premium AI analysis panel: lead temperature + score bar, icon'd fields, rationale.
 function AIPanel({ a, busy, onRefresh }: { a: any; busy: boolean; onRefresh: () => void }) {
+  const t = useT();
   const lead = a?.lead_band ? leadMeta[a.lead_band] : null;
+  const leadLabel = a?.lead_band
+    ? t(`patient.lead${a.lead_band.charAt(0).toUpperCase()}${a.lead_band.slice(1)}`)
+    : "";
   const score = a?.lead_score;
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, height: "100%",
@@ -125,14 +130,14 @@ function AIPanel({ a, busy, onRefresh }: { a: any; busy: boolean; onRefresh: () 
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
         <Stack direction="row" spacing={1} alignItems="center">
           <AutoAwesomeIcon fontSize="small" color="secondary" />
-          <Typography fontWeight={800}>AI analysis</Typography>
+          <Typography fontWeight={800}>{t("patient.aiAnalysis")}</Typography>
         </Stack>
-        <Tooltip title="Re-run analysis">
+        <Tooltip title={t("patient.reRunAnalysis")}>
           <span><IconButton size="small" disabled={busy} onClick={onRefresh}><RefreshIcon fontSize="small" /></IconButton></span>
         </Tooltip>
       </Stack>
 
-      {!a ? <Typography variant="body2" color="text.secondary">No analysis yet.</Typography> : (
+      {!a ? <Typography variant="body2" color="text.secondary">{t("patient.noAnalysis")}</Typography> : (
         <Stack spacing={1.75}>
           {lead && (
             <Box sx={{ p: 1.5, borderRadius: 2.5, border: (t) => `1px solid ${alpha(lead.c, 0.4)}`,
@@ -140,7 +145,7 @@ function AIPanel({ a, busy, onRefresh }: { a: any; busy: boolean; onRefresh: () 
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Stack direction="row" spacing={0.75} alignItems="center">
                   {a.lead_band === "hot" && <FireIcon sx={{ color: lead.c, fontSize: 18 }} />}
-                  <Typography fontWeight={800} sx={{ color: lead.c }}>{lead.label}</Typography>
+                  <Typography fontWeight={800} sx={{ color: lead.c }}>{leadLabel}</Typography>
                 </Stack>
                 {score != null && <Typography fontWeight={800} sx={{ color: lead.c }}>{score}<Typography component="span" variant="caption" color="text.secondary"> / 100</Typography></Typography>}
               </Stack>
@@ -153,14 +158,14 @@ function AIPanel({ a, busy, onRefresh }: { a: any; busy: boolean; onRefresh: () 
           )}
 
           <Stack spacing={1.25}>
-            {a.requested_service && <FieldRow icon={<MedicalServicesIcon fontSize="small" />} label="Service" value={a.requested_service} />}
-            {a.appointment_preference && <FieldRow icon={<ScheduleIcon fontSize="small" />} label="Preference" value={a.appointment_preference} />}
-            {a.insurance && <FieldRow icon={<ShieldIcon fontSize="small" />} label="Insurance" value={a.insurance} />}
-            {a.urgency && <FieldRow icon={<BoltIcon fontSize="small" />} label="Urgency"
-              value={<Chip size="small" color={urgencyColor[a.urgency] || "default"} variant="outlined" label={a.urgency} sx={{ textTransform: "capitalize", height: 22 }} />} />}
-            {a.sentiment && <FieldRow icon={<MoodIcon fontSize="small" />} label="Sentiment"
-              value={<Chip size="small" color={sentimentColor[a.sentiment] || "default"} variant="outlined" label={a.sentiment} sx={{ textTransform: "capitalize", height: 22 }} />} />}
-            {a.next_action && <FieldRow icon={<BoltIcon fontSize="small" />} label="Next" value={a.next_action} />}
+            {a.requested_service && <FieldRow icon={<MedicalServicesIcon fontSize="small" />} label={t("patient.fieldService")} value={a.requested_service} />}
+            {a.appointment_preference && <FieldRow icon={<ScheduleIcon fontSize="small" />} label={t("patient.fieldPreference")} value={a.appointment_preference} />}
+            {a.insurance && <FieldRow icon={<ShieldIcon fontSize="small" />} label={t("patient.fieldInsurance")} value={a.insurance} />}
+            {a.urgency && <FieldRow icon={<BoltIcon fontSize="small" />} label={t("patient.fieldUrgency")}
+              value={<Chip size="small" color={urgencyColor[a.urgency] || "default"} variant="outlined" label={t(`patient.urgency_${a.urgency}`)} sx={{ textTransform: "capitalize", height: 22 }} />} />}
+            {a.sentiment && <FieldRow icon={<MoodIcon fontSize="small" />} label={t("patient.fieldSentiment")}
+              value={<Chip size="small" color={sentimentColor[a.sentiment] || "default"} variant="outlined" label={t(`patient.sentiment_${a.sentiment}`)} sx={{ textTransform: "capitalize", height: 22 }} />} />}
+            {a.next_action && <FieldRow icon={<BoltIcon fontSize="small" />} label={t("patient.fieldNext")} value={a.next_action} />}
           </Stack>
 
           {a.lead_rationale && (
@@ -182,12 +187,13 @@ export default function PatientDetail() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
+  const t = useT();
   const { typing, activity } = useLive();
   const [tab, setTab] = useState(0);
   const q = useApiQuery<any>(["patient", wa], `/patients/${wa}`);
   const refresh = useMutation({
     mutationFn: () => apiPost(`/conversations/${wa}/analysis/refresh`),
-    onSuccess: () => { toast.ok("Analysis refreshed"); qc.invalidateQueries({ queryKey: ["patient", wa] }); },
+    onSuccess: () => { toast.ok(t("patient.analysisRefreshed")); qc.invalidateQueries({ queryKey: ["patient", wa] }); },
   });
 
   const fetched: Msg[] = q.data?.messages || [];
@@ -222,7 +228,7 @@ export default function PatientDetail() {
   return (
     <>
       <Button startIcon={<ArrowBackIcon />} onClick={() => nav("/conversations")} sx={{ mb: 1.5 }}>
-        Back to Patient Chats
+        {t("patient.backToChats")}
       </Button>
 
       {/* Premium gradient profile header */}
@@ -241,22 +247,22 @@ export default function PatientDetail() {
                 <Stack direction="row" spacing={0.6} alignItems="center">
                   <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "#34d399",
                     boxShadow: "0 0 0 0 #34d399", animation: `${wave} 1.2s ease-in-out infinite` }} />
-                  <Typography sx={{ color: "#d1fae5", fontWeight: 700, fontSize: 13 }}>typing…</Typography>
+                  <Typography sx={{ color: "#d1fae5", fontWeight: 700, fontSize: 13 }}>{t("patient.typing")}</Typography>
                 </Stack>
               )}
             </Stack>
             <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
               {a?.lead_band && <Chip size="small" icon={a.lead_band === "hot" ? <FireIcon sx={{ fontSize: "15px !important", color: "#fff !important" }} /> : undefined}
-                label={`Lead: ${a.lead_band}${a.lead_score != null ? ` (${a.lead_score})` : ""}`}
+                label={`${t("patient.leadChip", { band: t(`patient.band_${a.lead_band}`) })}${a.lead_score != null ? ` (${a.lead_score})` : ""}`}
                 sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700, textTransform: "capitalize" }} />}
-              {a?.urgency && <Chip size="small" label={`Urgency: ${a.urgency}`} sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700, textTransform: "capitalize" }} />}
+              {a?.urgency && <Chip size="small" label={t("patient.urgencyChip", { x: t(`patient.urgency_${a.urgency}`) })} sx={{ bgcolor: alpha("#fff", 0.18), color: "#fff", fontWeight: 700, textTransform: "capitalize" }} />}
             </Stack>
           </Box>
           <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
-            <Stat label="Messages" value={p.message_count} active={tab === 0} onClick={() => setTab(0)} />
-            <Stat label="Appointments" value={p.appointments?.length ?? 0} active={tab === 1} onClick={() => setTab(1)} />
-            <Stat label="Reviews" value={p.reviews?.length ?? 0} active={tab === 2} onClick={() => setTab(2)} />
-            <Stat label="Missed" value={p.no_shows?.length ?? 0} active={tab === 3} onClick={() => setTab(3)} />
+            <Stat label={t("patient.statMessages")} value={p.message_count} active={tab === 0} onClick={() => setTab(0)} />
+            <Stat label={t("patient.statAppointments")} value={p.appointments?.length ?? 0} active={tab === 1} onClick={() => setTab(1)} />
+            <Stat label={t("patient.statReviews")} value={p.reviews?.length ?? 0} active={tab === 2} onClick={() => setTab(2)} />
+            <Stat label={t("patient.statMissed")} value={p.no_shows?.length ?? 0} active={tab === 3} onClick={() => setTab(3)} />
           </Stack>
         </Stack>
       </Box>
@@ -265,10 +271,10 @@ export default function PatientDetail() {
         <Tabs value={tab} onChange={(_e, t) => setTab(t)}
           sx={{ borderBottom: 1, borderColor: "divider", px: 1,
             "& .MuiTab-root": { fontWeight: 700, textTransform: "none" } }}>
-          <Tab label="Conversation" />
-          <Tab label={`Appointments (${p.appointments?.length ?? 0})`} />
-          <Tab label={`Reviews (${p.reviews?.length ?? 0})`} />
-          <Tab label={`Missed visits (${p.no_shows?.length ?? 0})`} />
+          <Tab label={t("patient.tabConversation")} />
+          <Tab label={t("patient.tabAppointments", { n: p.appointments?.length ?? 0 })} />
+          <Tab label={t("patient.tabReviews", { n: p.reviews?.length ?? 0 })} />
+          <Tab label={t("patient.tabMissed", { n: p.no_shows?.length ?? 0 })} />
         </Tabs>
         <CardContent>
           {tab === 0 && (
@@ -293,7 +299,7 @@ export default function PatientDetail() {
                     </Box>
                   ))}
                   {isTyping && <Box sx={{ mt: 0.9 }}><TypingBubble /></Box>}
-                  {messages.length === 0 && !isTyping && <EmptyState text="No messages yet." />}
+                  {messages.length === 0 && !isTyping && <EmptyState text={t("patient.noMessages")} />}
                 </Box>
               </Grid>
               <Grid item xs={12} md={4}>
@@ -302,18 +308,18 @@ export default function PatientDetail() {
             </Grid>
           )}
 
-          {tab === 1 && (<MiniTable cols={["Service", "Doctor", "When", "Status"]} empty="No appointments."
+          {tab === 1 && (<MiniTable cols={[t("patient.colService"), t("patient.colDoctor"), t("patient.colWhen"), t("patient.colStatus")]} empty={t("patient.noAppointments")}
             rows={(p.appointments || []).map((x: any) => [x.service || "—", x.doctor || "—", fmtDate(x.start_at),
-              <Chip size="small" color={statusColor[x.status] || "default"} label={x.status} />])} />)}
+              <Chip size="small" color={statusColor[x.status] || "default"} label={t(`enums.appt.${x.status}`)} />])} />)}
 
-          {tab === 2 && (<MiniTable cols={["Rating", "Visit", "Comment", "When"]} empty="No reviews."
+          {tab === 2 && (<MiniTable cols={[t("patient.colRating"), t("patient.colVisit"), t("patient.colComment"), t("patient.colWhen")]} empty={t("patient.noReviews")}
             rows={(p.reviews || []).map((x: any) => [
               x.rating ? <Rating value={x.rating} readOnly size="small" /> : "—",
               `${x.service || "—"}${x.doctor ? " · " + x.doctor : ""}`, x.comment || "", fmtDate(x.responded_at || x.created_at)])} />)}
 
-          {tab === 3 && (<MiniTable cols={["Service", "Stage", "Outcome", "Reason", "When"]} empty="No missed visits."
+          {tab === 3 && (<MiniTable cols={[t("patient.colService"), t("patient.colStage"), t("patient.colOutcome"), t("patient.colReason"), t("patient.colWhen")]} empty={t("patient.noMissedVisits")}
             rows={(p.no_shows || []).map((x: any) => [`${x.service || "—"}${x.doctor ? " · " + x.doctor : ""}`,
-              <Chip size="small" variant="outlined" label={(x.stage || "").replace("_", " ")} />, x.outcome || "—", x.reason || "—", fmtDate(x.created_at)])} />)}
+              <Chip size="small" variant="outlined" label={t(`enums.stage.${x.stage}`)} />, x.outcome || "—", x.reason || "—", fmtDate(x.created_at)])} />)}
         </CardContent>
       </Card>
     </>

@@ -3,12 +3,14 @@ import TextsmsIcon from "@mui/icons-material/TextsmsOutlined";
 import GraphicEqIcon from "@mui/icons-material/GraphicEqOutlined";
 import PremiumIcon from "@mui/icons-material/WorkspacePremiumOutlined";
 import { useApiQuery, PageTitle, Loading, QueryError } from "../lib";
+import { useT } from "../i18n";
 
 const C = { teal: "#14b8a6", amber: "#f59e0b", red: "#ef4444", grey: "#94a3b8" };
 const fmt = (n: number | null | undefined) => (n == null ? "∞" : n.toLocaleString());
 
 // Circular usage gauge: track ring + value ring + a centered used/quota readout.
 function Gauge({ used, quota, color, disabled }: { used: number; quota: number | null; color: string; disabled?: boolean }) {
+  const t = useT();
   const unlimited = quota == null;
   const pct = disabled ? 0 : unlimited ? 100 : Math.min(100, quota ? (used / quota) * 100 : 0);
   const size = 156, thickness = 5;
@@ -22,11 +24,11 @@ function Gauge({ used, quota, color, disabled }: { used: number; quota: number |
       )}
       <Box sx={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", textAlign: "center" }}>
         {disabled ? (
-          <Typography variant="body2" color="text.secondary">Off</Typography>
+          <Typography variant="body2" color="text.secondary">{t("usage.off")}</Typography>
         ) : (
           <Box>
             <Typography variant="h4" fontWeight={800} sx={{ lineHeight: 1 }}>{fmt(used)}</Typography>
-            <Typography variant="caption" color="text.secondary">of {fmt(quota)}</Typography>
+            <Typography variant="caption" color="text.secondary">{t("usage.ofQuota", { quota: fmt(quota) })}</Typography>
           </Box>
         )}
       </Box>
@@ -37,16 +39,17 @@ function Gauge({ used, quota, color, disabled }: { used: number; quota: number |
 function MeterCard({ label, icon, used, quota, on }: {
   label: string; icon: React.ReactNode; used: number; quota: number | null; on: boolean;
 }) {
+  const t = useT();
   const unlimited = quota == null;
   const pct = quota ? Math.min(100, (used / quota) * 100) : 0;
   const over = on && !unlimited && pct >= 100;
   const near = on && !unlimited && pct >= 80 && !over;
   const color = !on ? C.grey : over ? C.red : near ? C.amber : C.teal;
-  const status = !on ? { label: "Not included", c: "default" as const }
-    : over ? { label: "Limit reached", c: "error" as const }
-    : near ? { label: "Approaching limit", c: "warning" as const }
-    : unlimited ? { label: "Unlimited", c: "success" as const }
-    : { label: "Healthy", c: "success" as const };
+  const status = !on ? { label: t("usage.notIncluded"), c: "default" as const }
+    : over ? { label: t("usage.limitReached"), c: "error" as const }
+    : near ? { label: t("usage.approachingLimit"), c: "warning" as const }
+    : unlimited ? { label: t("usage.unlimited"), c: "success" as const }
+    : { label: t("usage.healthy"), c: "success" as const };
   return (
     <Card sx={{ height: "100%", position: "relative", overflow: "hidden",
       "&::before": { content: '""', position: "absolute", inset: 0, pointerEvents: "none",
@@ -62,9 +65,9 @@ function MeterCard({ label, icon, used, quota, on }: {
         </Stack>
         <Gauge used={used} quota={quota} color={color} disabled={!on} />
         <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 2 }}>
-          {!on ? "Not included in your plan."
-            : unlimited ? "Unlimited on your plan."
-            : `${Math.round(pct)}% of your monthly quota used`}
+          {!on ? t("usage.footerNotIncluded")
+            : unlimited ? t("usage.footerUnlimited")
+            : t("usage.footerUsed", { pct: Math.round(pct) })}
         </Typography>
       </CardContent>
     </Card>
@@ -72,11 +75,12 @@ function MeterCard({ label, icon, used, quota, on }: {
 }
 
 export default function Usage() {
+  const t = useT();
   const q = useApiQuery<any>(["usage"], "/usage");
   if (q.isLoading) return <Loading />;
   if (q.error) return <QueryError error={q.error} />;
   const u = q.data.usage;
-  if (!u) return <Typography color="text.secondary">No usage data yet.</Typography>;
+  if (!u) return <Typography color="text.secondary">{t("usage.noData")}</Typography>;
 
   const tp = u.monthly_text_quota ? (u.text_count / u.monthly_text_quota) * 100 : 0;
   const vp = u.voice_enabled && u.monthly_voice_quota ? (u.voice_count / u.monthly_voice_quota) * 100 : 0;
@@ -85,8 +89,8 @@ export default function Usage() {
 
   return (
     <>
-      <PageTitle title="Plan & usage" subtitle="Your monthly message allowance" right={
-        <Chip variant="outlined" label={`Period ${q.data.period}`} />} />
+      <PageTitle title={t("usage.title")} subtitle={t("usage.subtitle")} right={
+        <Chip variant="outlined" label={t("common.period", { period: q.data.period })} />} />
 
       <Card sx={{ mb: 2, position: "relative", overflow: "hidden", color: "#fff",
         background: over ? "linear-gradient(120deg,#b91c1c 0%,#ef4444 55%,#6366f1 100%)"
@@ -97,17 +101,17 @@ export default function Usage() {
             <Box sx={{ width: 50, height: 50, borderRadius: 2.5, display: "grid", placeItems: "center", flexShrink: 0,
               bgcolor: alpha("#fff", 0.18), border: `1px solid ${alpha("#fff", 0.35)}` }}><PremiumIcon /></Box>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="overline" sx={{ color: alpha("#fff", 0.85), letterSpacing: 1 }}>Your plan</Typography>
+              <Typography variant="overline" sx={{ color: alpha("#fff", 0.85), letterSpacing: 1 }}>{t("usage.yourPlan")}</Typography>
               <Typography variant="h5" sx={{ color: "#fff", lineHeight: 1.1 }}>{u.plan_name || "—"}</Typography>
             </Box>
             <Box sx={{ flex: 1 }} />
-            <Chip label={over ? "Quota reached" : near ? "Near limit" : "All good"}
+            <Chip label={over ? t("usage.statusReached") : near ? t("usage.statusNear") : t("usage.statusGood")}
               sx={{ bgcolor: alpha("#fff", 0.22), color: "#fff", fontWeight: 700, flexShrink: 0 }} />
           </Stack>
           {(over || near) && (
             <Typography variant="body2" sx={{ mt: 1.5, color: alpha("#fff", 0.95) }}>
-              {over ? "You have reached a monthly quota. New messages may be blocked until the period resets — please contact the clinic administrator about upgrading."
-                : "You are approaching your monthly quota. Consider upgrading your plan to avoid interruptions."}
+              {over ? t("usage.warnOver")
+                : t("usage.warnNear")}
             </Typography>
           )}
         </CardContent>
@@ -115,11 +119,11 @@ export default function Usage() {
 
       <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
-          <MeterCard label="Text messages" icon={<TextsmsIcon fontSize="small" />}
+          <MeterCard label={t("usage.textMessages")} icon={<TextsmsIcon fontSize="small" />}
             used={u.text_count} quota={u.monthly_text_quota} on />
         </Grid>
         <Grid item xs={12} md={6}>
-          <MeterCard label="Voice notes" icon={<GraphicEqIcon fontSize="small" />}
+          <MeterCard label={t("usage.voiceNotes")} icon={<GraphicEqIcon fontSize="small" />}
             used={u.voice_count} quota={u.monthly_voice_quota} on={u.voice_enabled} />
         </Grid>
       </Grid>

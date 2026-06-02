@@ -18,6 +18,7 @@ import {
   useApiQuery, PageTitle, ClinicFilter, useClinic, fmtDate, displayName, initials,
   TableSkeleton, QueryError, KpiCard, EmptyState,
 } from "../lib";
+import { useT } from "../i18n";
 
 const AMBER = "#f59e0b";
 function avatarHue(s: string) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
@@ -57,6 +58,7 @@ function Distribution({ dist, total }: { dist: Record<number, number>; total: nu
 function ReviewCard({ row, showClinic, clinicName, onOpen }: {
   row: any; showClinic: boolean; clinicName?: string; onOpen: () => void;
 }) {
+  const t = useT();
   const hue = avatarHue(row.wa_user || "");
   const awaiting = row.stage !== "done" || !row.rating;
   const accent = ratingColor(row.rating);
@@ -89,7 +91,7 @@ function ReviewCard({ row, showClinic, clinicName, onOpen }: {
 
         {awaiting ? (
           <Chip size="small" variant="outlined" color="warning" icon={<HourglassIcon sx={{ fontSize: 15 }} />}
-            label="Awaiting response" sx={{ alignSelf: "flex-start", height: 24 }} />
+            label={t("reviews.awaitingResponse")} sx={{ alignSelf: "flex-start", height: 24 }} />
         ) : (
           <Rating value={row.rating} readOnly size="small" />
         )}
@@ -100,7 +102,7 @@ function ReviewCard({ row, showClinic, clinicName, onOpen }: {
           <Typography variant="body2" color={row.comment ? "text.primary" : "text.disabled"}
             sx={{ fontStyle: row.comment ? "italic" : "normal",
               display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-            {row.comment || (awaiting ? "No response yet." : "No comment left.")}
+            {row.comment || (awaiting ? t("reviews.noResponseYet") : t("reviews.noCommentLeft"))}
           </Typography>
         </Box>
 
@@ -114,6 +116,7 @@ function ReviewCard({ row, showClinic, clinicName, onOpen }: {
 function ReviewDetail({ row, showClinic, clinicName, onClose, onView }: {
   row: any; showClinic: boolean; clinicName?: string; onClose: () => void; onView: () => void;
 }) {
+  const t = useT();
   const awaiting = row.stage !== "done" || !row.rating;
   const Row = ({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) => (
     <Stack direction="row" spacing={1.5} alignItems="flex-start">
@@ -144,36 +147,37 @@ function ReviewDetail({ row, showClinic, clinicName, onClose, onView }: {
       </Box>
       <DialogContent dividers>
         <Stack spacing={2}>
-          <Row icon={<MedicalServicesIcon fontSize="small" />} label="Visit">{row.service || "—"}{row.doctor ? ` · ${row.doctor}` : ""}</Row>
-          <Row icon={<StarIcon fontSize="small" />} label="Rating">
-            {awaiting ? <Chip size="small" variant="outlined" color="warning" label="Awaiting response" />
+          <Row icon={<MedicalServicesIcon fontSize="small" />} label={t("reviews.visit")}>{row.service || "—"}{row.doctor ? ` · ${row.doctor}` : ""}</Row>
+          <Row icon={<StarIcon fontSize="small" />} label={t("reviews.rating")}>
+            {awaiting ? <Chip size="small" variant="outlined" color="warning" label={t("reviews.awaitingResponse")} />
               : <Rating value={row.rating} readOnly size="small" />}
           </Row>
-          <Row icon={<QuoteIcon fontSize="small" />} label="Comment">
+          <Row icon={<QuoteIcon fontSize="small" />} label={t("reviews.comment")}>
             <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", fontStyle: row.comment ? "italic" : "normal" }}
               color={row.comment ? "text.primary" : "text.disabled"}>{row.comment || "—"}</Typography>
           </Row>
-          <Row icon={<ScheduleIcon fontSize="small" />} label={awaiting ? "Requested" : "Responded"}>
+          <Row icon={<ScheduleIcon fontSize="small" />} label={awaiting ? t("reviews.requested") : t("reviews.responded")}>
             {fmtDate(row.responded_at || row.created_at)}
           </Row>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onClose} color="inherit">Close</Button>
+        <Button onClick={onClose} color="inherit">{t("common.close")}</Button>
         <Box sx={{ flex: 1 }} />
-        <Button variant="contained" onClick={onView}>View patient</Button>
+        <Button variant="contained" onClick={onView}>{t("common.viewPatient")}</Button>
       </DialogActions>
     </Dialog>
   );
 }
 
 const FILTERS = [
-  { value: "", label: "All" },
-  { value: "received", label: "Received" },
-  { value: "awaiting", label: "Awaiting" },
+  { value: "", key: "filterAll" },
+  { value: "received", key: "filterReceived" },
+  { value: "awaiting", key: "filterAwaiting" },
 ];
 
 export default function Reviews() {
+  const t = useT();
   const nav = useNavigate();
   const [clinic] = useClinic();
   const [sel, setSel] = useState<any | null>(null);
@@ -198,7 +202,7 @@ export default function Reviews() {
     });
   }, [rows, search, filter]);
 
-  if (q.isLoading) return <><PageTitle title="Patient reviews" /><TableSkeleton /></>;
+  if (q.isLoading) return <><PageTitle title={t("reviews.title")} /><TableSkeleton /></>;
   if (q.error) return <QueryError error={q.error} />;
   const { stats = {}, is_super, tenant_names = {}, selected_clinic } = q.data;
   const showClinic = is_super && !selected_clinic;
@@ -208,7 +212,7 @@ export default function Reviews() {
 
   return (
     <>
-      <PageTitle title="Patient reviews" subtitle="Feedback collected after visits" right={<ClinicFilter meta={q.data} />} />
+      <PageTitle title={t("reviews.title")} subtitle={t("reviews.subtitle")} right={<ClinicFilter meta={q.data} />} />
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={4}>
@@ -216,7 +220,7 @@ export default function Reviews() {
             "&::before": { content: '""', position: "absolute", inset: 0, pointerEvents: "none",
               background: `radial-gradient(120% 90% at 100% 0%, ${alpha(AMBER, 0.16)}, transparent 55%)` } }}>
             <CardContent sx={{ position: "relative", textAlign: "center", py: 3 }}>
-              <Typography variant="caption" color="text.secondary" fontWeight={700}>OVERALL RATING</Typography>
+              <Typography variant="caption" color="text.secondary" fontWeight={700}>{t("reviews.overallRating")}</Typography>
               <Typography variant="h2" fontWeight={800} sx={{ mt: 0.5, lineHeight: 1 }}>
                 {avg != null ? avg : "—"}
               </Typography>
@@ -224,26 +228,26 @@ export default function Reviews() {
                 <Rating value={avg ?? 0} precision={0.1} readOnly />
               </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Based on {stats.responded ?? 0} review{(stats.responded ?? 0) === 1 ? "" : "s"}
+                {t("reviews.basedOn", { n: stats.responded ?? 0 })}
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} md={5}>
           <Card sx={{ height: "100%" }}><CardContent>
-            <Typography variant="caption" color="text.secondary" fontWeight={700}>Rating distribution</Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>{t("reviews.ratingDistribution")}</Typography>
             <Box sx={{ mt: 2 }}>
               {(stats.responded ?? 0) > 0
                 ? <Distribution dist={dist} total={stats.responded ?? 0} />
-                : <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>No reviews yet.</Typography>}
+                : <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: "center" }}>{t("reviews.noReviewsYet")}</Typography>}
             </Box>
           </CardContent></Card>
         </Grid>
         <Grid item xs={12} md={3}>
           <Stack spacing={2} sx={{ height: "100%" }}>
-            <KpiCard label="Reviews received" value={stats.responded ?? 0} color="success" icon={<CheckIcon fontSize="small" />} />
-            <KpiCard label="Awaiting response" value={awaiting} color="warning" icon={<HourglassIcon fontSize="small" />} />
-            <KpiCard label={`Response rate (${stats.responded ?? 0}/${stats.requested ?? 0})`} value={`${rate}%`} color="info" icon={<PercentIcon fontSize="small" />} />
+            <KpiCard label={t("reviews.kpiReceived")} value={stats.responded ?? 0} color="success" icon={<CheckIcon fontSize="small" />} />
+            <KpiCard label={t("reviews.kpiAwaiting")} value={awaiting} color="warning" icon={<HourglassIcon fontSize="small" />} />
+            <KpiCard label={t("reviews.kpiResponseRate", { n: stats.responded ?? 0, m: stats.requested ?? 0 })} value={`${rate}%`} color="info" icon={<PercentIcon fontSize="small" />} />
           </Stack>
         </Grid>
       </Grid>
@@ -252,20 +256,20 @@ export default function Reviews() {
         <Box sx={{ px: 2, py: 1.5, borderBottom: (t) => `1px solid ${t.palette.divider}`,
           background: (t) => alpha(t.palette.primary.main, 0.04) }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
-            <TextField fullWidth size="small" placeholder="Search by patient, visit, doctor or comment…"
+            <TextField fullWidth size="small" placeholder={t("reviews.searchPlaceholder")}
               value={search} onChange={(e) => setSearch(e.target.value)}
               InputProps={{ startAdornment: (<InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>) }}
               sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }} />
             <ToggleButtonGroup size="small" exclusive value={filter} onChange={(_e, v) => setFilter(v ?? "")}
               sx={{ flexShrink: 0 }}>
-              {FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{f.label}</ToggleButton>)}
+              {FILTERS.map((f) => <ToggleButton key={f.value} value={f.value}>{t(`reviews.${f.key}`)}</ToggleButton>)}
             </ToggleButtonGroup>
           </Stack>
         </Box>
 
         <Box sx={{ p: 2 }}>
           {filtered.length === 0 ? (
-            <EmptyState text={search || filter ? "No reviews match your filters." : "No reviews yet."} />
+            <EmptyState text={search || filter ? t("reviews.emptyNoMatch") : t("reviews.emptyNone")} />
           ) : (
             <Grid container spacing={2}>
               {filtered.map((r) => (
