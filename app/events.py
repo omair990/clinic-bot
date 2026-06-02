@@ -87,9 +87,23 @@ def notify(title: str, body: str = "", *, level: str = "info", category: str = "
     level: "info" | "success" | "warning" | "error" (maps to the bell/toast severity).
     link:  in-app SPA path the bell entry deep-links to (e.g. "/conversations/<wa>").
     """
+    # Persist first so the bell history + the unread badge survive a refresh/restart and the
+    # id is stable across the seed fetch and the live SSE push. Best-effort: if the DB write
+    # fails, fall back to an in-memory id so the live notification still fires.
+    nid: int
+    ts: str
+    try:
+        from app import db
+        row = db.record_notification(level, category, title, body, tenant_id, wa_user, link)
+        nid = row["id"]
+        ts = row["created_at"].isoformat()
+    except Exception:  # noqa: BLE001 — notifications must never break the flow they report on
+        log.warning("failed to persist notification (%s: %s)", category, title)
+        nid = next(_ids)
+        ts = datetime.now(timezone.utc).isoformat()
     note = {
         "type": "notification",
-        "id": next(_ids),
+        "id": nid,
         "level": level,
         "title": title,
         "body": (body or "")[:500],
@@ -97,7 +111,7 @@ def notify(title: str, body: str = "", *, level: str = "info", category: str = "
         "tenant_id": tenant_id,
         "link": link,
         "wa_user": wa_user,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": ts,
     }
     _recent.append(note)
     _emit(note)

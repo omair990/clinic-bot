@@ -16,7 +16,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import { useAuth } from "./auth";
-import { apiGet } from "./api";
+import { apiGet, apiPost } from "./api";
 
 export type Level = "info" | "success" | "warning" | "error";
 
@@ -83,16 +83,20 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     }, 1200);
   }, [qc]);
 
-  const markAllRead = useCallback(() => setUnread(0), []);
-  const clear = useCallback(() => { setNotes([]); setUnread(0); }, []);
+  // Persist "seen" so the unread badge stays cleared across refreshes and other sessions.
+  const markAllRead = useCallback(() => {
+    setUnread(0);
+    apiPost("/notifications/seen").catch(() => {});
+  }, []);
+  const clear = useCallback(() => { setNotes([]); markAllRead(); }, [markAllRead]);
 
   useEffect(() => {
     if (!me) { setConnected(false); return; }
     let cancelled = false;
 
-    // Seed the bell with recent history (does not count as unread).
-    apiGet<{ notifications: Note[] }>("/notifications")
-      .then((d) => { if (!cancelled) setNotes(d.notifications || []); })
+    // Seed the bell with durable history + the durable unread count (survives refresh/restart).
+    apiGet<{ notifications: Note[]; unread: number }>("/notifications")
+      .then((d) => { if (!cancelled) { setNotes(d.notifications || []); setUnread(d.unread || 0); } })
       .catch(() => {});
 
     const es = new EventSource("/api/stream");
