@@ -254,9 +254,9 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
                f"User: {user_text}\nAI: {ctx.reply}")
         if summary:
             msg += f"\n--- AI summary ---\n{summary}"
-        # Patient escalation → the clinic's own staff/owner, plus the platform admin.
+        # Patient escalation → the clinic's own staff/owner only. The platform admin is
+        # paged for technical issues, not patient handovers.
         await notify.notify_clinic(tenant, msg, kind="escalation")
-        await notify.notify_tech(msg)
         publish_notify(f"{'Emergency' if ctx.emergency else 'Handover'} · +{sender}",
                        ctx.escalation_reason or summary or user_text,
                        level="error" if ctx.emergency else "warning", category="handover",

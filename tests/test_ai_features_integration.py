@@ -458,12 +458,15 @@ def test_handover_notifies_staff_with_ai_summary(monkeypatch):
     async def fake_mark(*a, **k):
         return None
 
-    from app import settings, wa_client
+    from app import settings, wa_client, notify
     monkeypatch.setattr(settings, "get",
                         lambda key, default=None: "999admin" if key == "ADMIN_WA_NUMBER" else default)
     monkeypatch.setattr(webhook, "send_text", fake_send)       # patient reply
     monkeypatch.setattr(wa_client, "send_text", fake_send)     # escalation via app.notify
     monkeypatch.setattr(webhook, "mark_read", fake_mark)
+    # The clinic's own escalation recipient (patient handovers go here, NOT the platform admin).
+    monkeypatch.setattr(notify, "clinic_numbers",
+                        lambda t, kind: ["clinicstaff"] if kind == "escalation" else [])
 
     def run(tenant, sender, text, hist):
         c = AgentContext(wa_user=sender, reply="A staff member will follow up.")
@@ -481,10 +484,12 @@ def test_handover_notifies_staff_with_ai_summary(monkeypatch):
            "type": "text", "text": {"body": "I have a complaint"}}
     asyncio.run(webhook._handle_message(msg, None))
 
-    admin = [b for to, b in sent if to == "999admin"]
-    assert admin, "staff was not notified"
-    assert "AI summary" in admin[0]
-    assert "Insurance: Bupa" in admin[0] and "Service: Dermatology" in admin[0]
+    staff = [b for to, b in sent if to == "clinicstaff"]
+    assert staff, "clinic staff was not notified"
+    assert "AI summary" in staff[0]
+    assert "Insurance: Bupa" in staff[0] and "Service: Dermatology" in staff[0]
+    # Patient escalations must NOT page the platform admin (technical issues only).
+    assert not [b for to, b in sent if to == "999admin"]
 
 
 def test_webhook_blocks_suspended_tenant_end_to_end(monkeypatch):
