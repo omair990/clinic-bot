@@ -1,13 +1,16 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Card, CardContent, Typography, Grid, Stack, TextField, ToggleButton, ToggleButtonGroup,
-  Divider, Box, Chip, Button, Table, TableBody, TableCell, TableHead, TableRow, alpha,
+  Divider, Box, Chip, Button, Table, TableBody, TableCell, TableHead, TableRow, InputAdornment,
+  alpha,
 } from "@mui/material";
 import SmartToyIcon from "@mui/icons-material/SmartToyOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import NotificationsIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import GraphicEqIcon from "@mui/icons-material/GraphicEqOutlined";
 import CloudIcon from "@mui/icons-material/CloudOutlined";
 import PaymentsIcon from "@mui/icons-material/PaymentsOutlined";
+import ForumIcon from "@mui/icons-material/ForumOutlined";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { useApiQuery, PageTitle, Loading, QueryError, KpiCard } from "../lib";
 import { useT } from "../i18n";
@@ -20,15 +23,19 @@ type Rates = {
   avg_output_tokens_per_inquiry: number;
   whatsapp_sar_per_conversation: number;
   messages_per_conversation: number;
+  whatsapp_sar_per_reminder: number;
+  reminders_per_inquiry: number;
+  replies_per_inquiry: number;
   voice_sar_per_message: number;
   railway_usd_per_month: number;
   target_margin_pct: number;
 };
 
-const LS_KEY = "costCalculatorRates.v1";
+const LS_KEY = "costCalculatorRates.v2";
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const sar = (n: number) =>
   n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const intf = (n: number) => Math.round(n).toLocaleString();
 
 export default function CostCalculator() {
   const t = useT();
@@ -40,8 +47,8 @@ export default function CostCalculator() {
   );
 
   const [rates, setRates] = useState<Rates | null>(null);
-  const [mode, setMode] = useState<"actual" | "projected">("actual");
-  const [projInquiries, setProjInquiries] = useState<number>(1000);
+  const [mode, setMode] = useState<"actual" | "projected">("projected");
+  const [messages, setMessages] = useState<number>(1000);   // headline input
   const [voiceSharePct, setVoiceSharePct] = useState<number>(0);
 
   // Seed editable rates from server defaults, overlaying any the owner saved locally.
@@ -52,12 +59,11 @@ export default function CostCalculator() {
     setRates({ ...serverDefaults, ...saved });
   }, [serverDefaults]);
 
-  // Default the volume knobs from the period's actual figures, once loaded.
+  // Default the voice mix from the period's real ratio, once loaded.
   useEffect(() => {
     if (!q.data) return;
-    const { messages, voice } = q.data.totals;
-    setProjInquiries(messages || 1000);
-    setVoiceSharePct(messages ? Math.round((voice / messages) * 100) : 0);
+    const { inbound, voice } = q.data.totals;
+    setVoiceSharePct(inbound ? Math.round((voice / inbound) * 100) : 0);
   }, [q.data]);
 
   if (q.isLoading || !rates) return <Loading />;
@@ -77,37 +83,43 @@ export default function CostCalculator() {
     try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
   };
 
-  const inquiries = mode === "actual" ? totals.messages : projInquiries;
-  const voiceMsgs = mode === "actual"
-    ? totals.voice
-    : Math.round((projInquiries * voiceSharePct) / 100);
+  // ---- Volume: headline messages drive replies/reminders/voice via current ratios. ----
+  const inbound = mode === "actual" ? totals.inbound : messages;
+  const reminders = mode === "actual" ? totals.reminders : Math.round(inbound * r.reminders_per_inquiry);
+  const replies = mode === "actual" ? totals.replies : Math.round(inbound * r.replies_per_inquiry);
+  const voiceMsgs = mode === "actual" ? totals.voice : Math.round((inbound * voiceSharePct) / 100);
 
-  // Per-inquiry Claude cost (SAR): tokens × per-token price × FX.
-  const claudePerInquirySar =
+  // ---- Cost model (per month, SAR). Replies live inside the service conversation, so they
+  // don't add a separate WhatsApp charge; reminders are billed as proactive messages. ----
+  const claudePerMsgSar =
     ((r.avg_input_tokens_per_inquiry / 1e6) * r.claude_input_usd_per_mtok +
       (r.avg_output_tokens_per_inquiry / 1e6) * r.claude_output_usd_per_mtok) * r.usd_to_sar;
+  const waConvRate = r.messages_per_conversation > 0
+    ? r.whatsapp_sar_per_conversation / r.messages_per_conversation : 0;
 
-  const claudeMonthly = claudePerInquirySar * inquiries;
-  const waConversations = r.messages_per_conversation > 0 ? inquiries / r.messages_per_conversation : 0;
-  const waMonthly = waConversations * r.whatsapp_sar_per_conversation;
+  const claudeMonthly = claudePerMsgSar * inbound;
+  const waMonthly = waConvRate * inbound;                      // service conversations
+  const reminderMonthly = reminders * r.whatsapp_sar_per_reminder;
   const voiceMonthly = voiceMsgs * r.voice_sar_per_message;
   const railwayMonthly = r.railway_usd_per_month * r.usd_to_sar;
-  const totalMonthly = claudeMonthly + waMonthly + voiceMonthly + railwayMonthly;
+  const totalMonthly = claudeMonthly + waMonthly + reminderMonthly + voiceMonthly + railwayMonthly;
 
-  const allInPerInquiry = inquiries > 0 ? totalMonthly / inquiries : 0;
+  const perMsg = inbound > 0 ? totalMonthly / inbound : 0;
   const margin = 1 + r.target_margin_pct / 100;
-  const suggestedPerInquiry = allInPerInquiry * margin;
+  const suggestedPerMsg = perMsg * margin;
   const suggestedMonthly = totalMonthly * margin;
 
-  // Per-clinic estimate uses the same variable per-inquiry rate (fixed hosting isn't split here).
+  // Per-clinic estimate from each clinic's REAL usage (hosting is platform-wide, excluded here).
   const clinicCost = (c: any) =>
-    (c.text_count + c.voice_count) * (claudePerInquirySar + (r.messages_per_conversation > 0
-      ? r.whatsapp_sar_per_conversation / r.messages_per_conversation : 0)) +
-    c.voice_count * r.voice_sar_per_message;
+    c.inbound * (claudePerMsgSar + waConvRate) +
+    c.reminders * r.whatsapp_sar_per_reminder +
+    c.voice * r.voice_sar_per_message;
+  const clinicsTotalCost = clinics.reduce((s: number, c: any) => s + clinicCost(c), 0);
 
-  const costRows: { key: keyof Rates | string; label: string; icon: any; color: string; value: number }[] = [
+  const costRows = [
     { key: "claude", label: t("calculator.claudeCost"), icon: <SmartToyIcon fontSize="small" />, color: "#6366f1", value: claudeMonthly },
     { key: "wa", label: t("calculator.waCost"), icon: <WhatsAppIcon fontSize="small" />, color: "#25D366", value: waMonthly },
+    { key: "reminders", label: t("calculator.reminderCost"), icon: <NotificationsIcon fontSize="small" />, color: "#f43f5e", value: reminderMonthly },
     { key: "voice", label: t("calculator.voiceCost"), icon: <GraphicEqIcon fontSize="small" />, color: "#0ea5e9", value: voiceMonthly },
     { key: "railway", label: t("calculator.railwayCost"), icon: <CloudIcon fontSize="small" />, color: "#f59e0b", value: railwayMonthly },
   ];
@@ -130,11 +142,11 @@ export default function CostCalculator() {
             icon={<PaymentsIcon fontSize="small" />} color="primary" />
         </Grid>
         <Grid item xs={6} md={3}>
-          <KpiCard label={t("calculator.perInquiry")} value={`${sar(allInPerInquiry)} ${t("calculator.sar")}`}
-            icon={<SmartToyIcon fontSize="small" />} color="secondary" />
+          <KpiCard label={t("calculator.perInquiry")} value={`${sar(perMsg)} ${t("calculator.sar")}`}
+            icon={<ForumIcon fontSize="small" />} color="secondary" />
         </Grid>
         <Grid item xs={6} md={3}>
-          <KpiCard label={t("calculator.suggestedPrice")} value={`${sar(suggestedPerInquiry)} ${t("calculator.sar")}`}
+          <KpiCard label={t("calculator.suggestedPrice")} value={`${sar(suggestedPerMsg)} ${t("calculator.sar")}`}
             icon={<PaymentsIcon fontSize="small" />} color="success" />
         </Grid>
         <Grid item xs={6} md={3}>
@@ -148,26 +160,38 @@ export default function CostCalculator() {
         <Grid item xs={12} md={7}>
           <Card sx={{ mb: 2 }}>
             <CardContent>
-              <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1.5 }}>{t("calculator.volumeSection")}</Typography>
-              <ToggleButtonGroup size="small" exclusive value={mode}
-                onChange={(_, v) => v && setMode(v)} sx={{ mb: 2 }}>
-                <ToggleButton value="actual">{t("calculator.volumeActual")}</ToggleButton>
-                <ToggleButton value="projected">{t("calculator.volumeProjected")}</ToggleButton>
-              </ToggleButtonGroup>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+                <Typography variant="subtitle2" fontWeight={800}>{t("calculator.volumeSection")}</Typography>
+                <ToggleButtonGroup size="small" exclusive value={mode} onChange={(_, v) => v && setMode(v)}>
+                  <ToggleButton value="projected">{t("calculator.volumeProjected")}</ToggleButton>
+                  <ToggleButton value="actual">{t("calculator.volumeActual")}</ToggleButton>
+                </ToggleButtonGroup>
+              </Stack>
               {mode === "actual" ? (
                 <Typography variant="body2" color="text.secondary">
-                  {t("calculator.actualNote", { messages: totals.messages, period, voice: totals.voice })}
+                  {t("calculator.actualNote", {
+                    period, inbound: intf(totals.inbound), replies: intf(totals.replies),
+                    reminders: intf(totals.reminders), voice: intf(totals.voice),
+                  })}
                 </Typography>
               ) : (
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <TextField fullWidth size="small" type="number" label={t("calculator.monthlyInquiries")}
-                      value={projInquiries} onChange={(e) => setProjInquiries(num(e.target.value))} inputProps={{ min: 0 }} />
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} sm={7}>
+                    <TextField fullWidth label={t("calculator.messagesInput")} type="number"
+                      value={messages} onChange={(e) => setMessages(num(e.target.value))}
+                      inputProps={{ min: 0, step: 50 }}
+                      InputProps={{ startAdornment: <InputAdornment position="start"><ForumIcon fontSize="small" /></InputAdornment> }}
+                      helperText={t("calculator.messagesHelp")} />
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid item xs={12} sm={5}>
                     <TextField fullWidth size="small" type="number" label={t("calculator.voiceShare")}
                       value={voiceSharePct} onChange={(e) => setVoiceSharePct(num(e.target.value))}
                       inputProps={{ min: 0, max: 100 }} />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Typography variant="caption" color="text.secondary">
+                      {t("calculator.derived", { replies: intf(replies), reminders: intf(reminders) })}
+                    </Typography>
                   </Grid>
                 </Grid>
               )}
@@ -205,6 +229,9 @@ export default function CostCalculator() {
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>{numField("whatsapp_sar_per_conversation", t("calculator.waPerConv"))}</Grid>
                 <Grid item xs={12} sm={6}>{numField("messages_per_conversation", t("calculator.msgsPerConv"), "1")}</Grid>
+                <Grid item xs={12} sm={6}>{numField("whatsapp_sar_per_reminder", t("calculator.waReminderRate"))}</Grid>
+                <Grid item xs={12} sm={6}>{numField("reminders_per_inquiry", t("calculator.remindersPer"), "0.01")}</Grid>
+                <Grid item xs={12} sm={6}>{numField("replies_per_inquiry", t("calculator.repliesPer"), "0.1")}</Grid>
                 <Grid item xs={12} sm={6}>{numField("voice_sar_per_message", t("calculator.voicePerMsg"))}</Grid>
               </Grid>
 
@@ -217,7 +244,7 @@ export default function CostCalculator() {
           </Card>
         </Grid>
 
-        {/* Right: results */}
+        {/* Right: results + exact per-clinic usage */}
         <Grid item xs={12} md={5}>
           <Card sx={{ mb: 2 }}>
             <CardContent>
@@ -226,7 +253,7 @@ export default function CostCalculator() {
                 {costRows.map((row) => {
                   const pct = totalMonthly > 0 ? (row.value / totalMonthly) * 100 : 0;
                   return (
-                    <Box key={row.key as string}>
+                    <Box key={row.key}>
                       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
                         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ color: row.color }}>
                           {row.icon}
@@ -248,7 +275,7 @@ export default function CostCalculator() {
               </Stack>
               <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: 0.5 }}>
                 <Typography variant="body2" color="text.secondary">{t("calculator.perInquiry")}</Typography>
-                <Typography variant="body2" fontWeight={700}>{sar(allInPerInquiry)} {t("calculator.sar")}</Typography>
+                <Typography variant="body2" fontWeight={700}>{sar(perMsg)} {t("calculator.sar")}</Typography>
               </Stack>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
                 {t("calculator.disclaimer")}
@@ -266,7 +293,9 @@ export default function CostCalculator() {
                   <TableHead>
                     <TableRow>
                       <TableCell>{t("calculator.colClinic")}</TableCell>
-                      <TableCell align="right">{t("calculator.colInquiries")}</TableCell>
+                      <TableCell align="right">{t("calculator.colInbound")}</TableCell>
+                      <TableCell align="right">{t("calculator.colReplies")}</TableCell>
+                      <TableCell align="right">{t("calculator.colReminders")}</TableCell>
                       <TableCell align="right">{t("calculator.colVoice")}</TableCell>
                       <TableCell align="right">{t("calculator.colCost")}</TableCell>
                     </TableRow>
@@ -274,12 +303,24 @@ export default function CostCalculator() {
                   <TableBody>
                     {clinics.map((c: any) => (
                       <TableRow key={c.id}>
-                        <TableCell sx={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</TableCell>
-                        <TableCell align="right">{(c.text_count + c.voice_count).toLocaleString()}</TableCell>
-                        <TableCell align="right">{c.voice_count.toLocaleString()}</TableCell>
+                        <TableCell sx={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</TableCell>
+                        <TableCell align="right">{intf(c.inbound)}</TableCell>
+                        <TableCell align="right">{intf(c.replies)}</TableCell>
+                        <TableCell align="right">{intf(c.reminders)}</TableCell>
+                        <TableCell align="right">{intf(c.voice)}</TableCell>
                         <TableCell align="right">{sar(clinicCost(c))}</TableCell>
                       </TableRow>
                     ))}
+                    {clinics.length > 1 && (
+                      <TableRow sx={{ "& td": { fontWeight: 800, borderTop: (th) => `2px solid ${th.palette.divider}` } }}>
+                        <TableCell>{t("calculator.totalRow")}</TableCell>
+                        <TableCell align="right">{intf(totals.inbound)}</TableCell>
+                        <TableCell align="right">{intf(totals.replies)}</TableCell>
+                        <TableCell align="right">{intf(totals.reminders)}</TableCell>
+                        <TableCell align="right">{intf(totals.voice)}</TableCell>
+                        <TableCell align="right">{sar(clinicsTotalCost)}</TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               )}

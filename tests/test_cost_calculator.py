@@ -50,18 +50,24 @@ def test_super_gets_volumes_and_defaults():
     assert r.status_code == 200
     body = r.json()
     assert "period" in body and "model" in body
-    # Volume totals are consistent.
+    # Volume totals are present and non-negative; headline "messages" == inbound.
     tot = body["totals"]
-    assert tot["messages"] == tot["text"] + tot["voice"]
-    assert tot["messages"] >= 0
+    for k in ("inbound", "voice", "replies", "reminders", "messages"):
+        assert tot[k] >= 0, k
+    assert tot["messages"] == tot["inbound"]
     # Rate defaults the UI needs are present and numeric.
     d = body["defaults"]
     for k in ("usd_to_sar", "claude_input_usd_per_mtok", "claude_output_usd_per_mtok",
               "avg_input_tokens_per_inquiry", "avg_output_tokens_per_inquiry",
               "whatsapp_sar_per_conversation", "messages_per_conversation",
+              "whatsapp_sar_per_reminder", "reminders_per_inquiry", "replies_per_inquiry",
               "voice_sar_per_message", "railway_usd_per_month"):
         assert isinstance(d[k], (int, float)), k
+    # Per-clinic exact usage carries the real breakdown fields.
     assert isinstance(body["clinics"], list)
+    for c in body["clinics"]:
+        for k in ("inbound", "voice", "replies", "reminders"):
+            assert k in c, k
 
 
 def test_claude_price_default_by_tier():

@@ -1613,6 +1613,27 @@ def get_usage(tenant_id: int, period: str) -> dict:
     return row or {"text_count": 0, "voice_count": 0}
 
 
+def usage_breakdown(since: datetime) -> dict[int, dict]:
+    """Exact message counts per tenant since `since` (the period start), read straight from
+    the conversation log — the source of truth for what was actually sent/received:
+      * inbound  — patient messages received (voice_in = the voice subset)
+      * replies  — bot answers sent back (any outbound that isn't a proactive reminder)
+      * reminders— proactive outreach we initiated (no-show follow-ups + visit reminders)
+    Keyed by tenant_id, so the cost calculator can show real usage and cost per clinic."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT COALESCE(tenant_id, 0) AS tenant_id, "
+            "  COUNT(*) FILTER (WHERE direction='in') AS inbound, "
+            "  COUNT(*) FILTER (WHERE direction='in' AND source='voice') AS voice_in, "
+            "  COUNT(*) FILTER (WHERE direction='out' AND intent='no_show') AS reminders, "
+            "  COUNT(*) FILTER (WHERE direction='out' AND COALESCE(intent,'') <> 'no_show') AS replies "
+            "FROM conversations WHERE created_at >= %s GROUP BY COALESCE(tenant_id, 0)",
+            (since,),
+        ).fetchall()
+    return {r["tenant_id"]: {"inbound": r["inbound"], "voice_in": r["voice_in"],
+                             "replies": r["replies"], "reminders": r["reminders"]} for r in rows}
+
+
 def list_plans() -> list[dict]:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM plans ORDER BY COALESCE(price_sar, 0)").fetchall()
