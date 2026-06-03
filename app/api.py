@@ -517,10 +517,12 @@ async def cost_calculator(request: Request):
     reminders_per = round(reminders / inbound, 3) if inbound else 0.1
     replies_per = round(replies / inbound, 2) if inbound else 1.0
     # Seed avg tokens/message from REAL captured usage once we have some; until then (capture
-    # only began when the token columns shipped), fall back to priors.
+    # only began when the token columns shipped), fall back to priors. The priors are sized
+    # to a measured turn (~9.7k input on a full tool-using booking, where cache reads count as
+    # input + the system prompt re-sends each round-trip), so the estimate doesn't understate.
     tokens_captured = bool(input_tokens or output_tokens)
-    avg_in = round(input_tokens / inbound) if (inbound and input_tokens) else 1500
-    avg_out = round(output_tokens / inbound) if (inbound and output_tokens) else 200
+    avg_in = round(input_tokens / inbound) if (inbound and input_tokens) else 6000
+    avg_out = round(output_tokens / inbound) if (inbound and output_tokens) else 300
     return {
         "period": period,
         "model": CLAUDE_MODEL,
