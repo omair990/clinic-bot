@@ -1,8 +1,8 @@
-// Cost calculator (super-admin only): estimate Claude + WhatsApp + reminders + hosting in SAR.
+// Cost calculator (super-admin only): estimate LLM + WhatsApp + reminders + hosting in SAR.
 export default {
   en: {
     title: "Cost Calculator",
-    subtitle: "Enter your monthly messages — we estimate Claude, WhatsApp, reminders and hosting cost in SAR.",
+    subtitle: "Enter your monthly messages — we estimate LLM, WhatsApp, reminders and hosting cost in SAR.",
     // Volume
     volumeSection: "Message volume",
     volumeActual: "This month's actual",
@@ -16,7 +16,7 @@ export default {
     ratesSection: "Unit rates (editable)",
     ratesHint: "Defaults are estimates — adjust them to your real bills, then the totals update live.",
     fx: "USD → SAR rate",
-    claudeGroup: "Claude (model: {model})",
+    claudeGroup: "LLM",
     claudeInPrice: "Input price (USD / 1M tokens)",
     claudeOutPrice: "Output price (USD / 1M tokens)",
     avgInTokens: "Avg input tokens / message",
@@ -33,7 +33,7 @@ export default {
     targetMargin: "Target margin (%)",
     // Results
     resultsSection: "Monthly estimate",
-    claudeCost: "Claude AI",
+    claudeCost: "LLM",
     waCost: "WhatsApp",
     reminderCost: "Reminders",
     voiceCost: "Voice add-on",
@@ -43,8 +43,8 @@ export default {
     suggestedPrice: "Suggested price / message",
     suggestedMonthly: "Suggested plan price / month",
     exactChip: "Exact (real tokens)",
-    tokensPending: "Exact Claude token capture just started, so it reads 0 until new messages are handled this period — historical messages weren't measured. The estimate below uses average tokens until then.",
-    tokensExact: "Claude cost is exact this period — {input} input + {output} output tokens actually used.",
+    tokensPending: "Exact LLM token capture just started, so it reads 0 until new messages are handled this period — historical messages weren't measured. The estimate below uses average tokens until then.",
+    tokensExact: "LLM cost is exact this period — {input} input + {output} output tokens actually used.",
     // Per-clinic exact usage
     perClinicSection: "Current usage this month — exact, per clinic",
     colClinic: "Clinic",
@@ -61,7 +61,7 @@ export default {
   },
   ar: {
     title: "حاسبة التكلفة",
-    subtitle: "أدخل عدد رسائلك الشهرية — نقدّر تكلفة Claude وواتساب والتذكيرات والاستضافة بالريال.",
+    subtitle: "أدخل عدد رسائلك الشهرية — نقدّر تكلفة LLM وواتساب والتذكيرات والاستضافة بالريال.",
     volumeSection: "حجم الرسائل",
     volumeActual: "الفعلي لهذا الشهر",
     volumeProjected: "تقدير",
@@ -73,7 +73,7 @@ export default {
     ratesSection: "أسعار الوحدة (قابلة للتعديل)",
     ratesHint: "القيم الافتراضية تقديرية — عدّلها حسب فواتيرك الحقيقية وستتحدث النتائج فورًا.",
     fx: "سعر الدولار → الريال",
-    claudeGroup: "Claude (النموذج: {model})",
+    claudeGroup: "LLM",
     claudeInPrice: "سعر الإدخال (دولار / مليون رمز)",
     claudeOutPrice: "سعر الإخراج (دولار / مليون رمز)",
     avgInTokens: "متوسط رموز الإدخال / رسالة",
@@ -89,7 +89,7 @@ export default {
     railwayMonthly: "استضافة ثابتة / شهر (دولار)",
     targetMargin: "هامش الربح المستهدف (%)",
     resultsSection: "التقدير الشهري",
-    claudeCost: "Claude AI",
+    claudeCost: "LLM",
     waCost: "واتساب",
     reminderCost: "التذكيرات",
     voiceCost: "إضافة الصوت",
@@ -99,8 +99,8 @@ export default {
     suggestedPrice: "السعر المقترح / رسالة",
     suggestedMonthly: "سعر الباقة المقترح / شهر",
     exactChip: "دقيق (رموز فعلية)",
-    tokensPending: "بدأ تسجيل رموز Claude الفعلية للتو، لذا تظهر 0 حتى تتم معالجة رسائل جديدة هذه الفترة — الرسائل السابقة لم تُقَس. يستخدم التقدير أدناه متوسط الرموز حتى ذلك الحين.",
-    tokensExact: "تكلفة Claude دقيقة هذه الفترة — {input} رمز إدخال + {output} رمز إخراج مستخدمة فعليًا.",
+    tokensPending: "بدأ تسجيل رموز LLM الفعلية للتو، لذا تظهر 0 حتى تتم معالجة رسائل جديدة هذه الفترة — الرسائل السابقة لم تُقَس. يستخدم التقدير أدناه متوسط الرموز حتى ذلك الحين.",
+    tokensExact: "تكلفة LLM دقيقة هذه الفترة — {input} رمز إدخال + {output} رمز إخراج مستخدمة فعليًا.",
     perClinicSection: "الاستخدام الحالي هذا الشهر — دقيق لكل عيادة",
     colClinic: "العيادة",
     colInbound: "الرسائل",
