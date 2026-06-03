@@ -268,6 +268,7 @@ def init_db() -> None:
         conn.execute(DDL)
     _ensure_appt_unique_slot()
     seed_tenancy()
+    _seed_default_aliases()
 
 
 def _ensure_appt_unique_slot() -> None:
@@ -313,6 +314,59 @@ def _encrypt_existing_secrets() -> None:
             if sets:
                 params.append(r["id"])
                 conn.execute(f"UPDATE tenants SET {', '.join(sets)} WHERE id = %s", tuple(params))
+
+
+def _enrich_clinic_data(data: dict, tmpl_services: list, tmpl_doctors: list) -> tuple[dict, bool]:
+    """Pure, additive merge: copy `aliases`/`specialty`/`requires_doctor` from the template
+    rows onto matching services/doctors in `data` by EXACT (normalized) name. Fills only
+    MISSING fields — never overwrites existing values, never touches availability or any
+    other field. Returns (data, changed)."""
+    def key(n: str) -> str:
+        return "".join(ch for ch in (n or "").lower() if ch.isalnum())
+    tmpl_s = {key(s.get("name")): s for s in tmpl_services}
+    tmpl_d = {key(d.get("name")): d for d in tmpl_doctors}
+    changed = False
+    for svc in data.get("services") or []:
+        src = tmpl_s.get(key(svc.get("name")))
+        if not src:
+            continue
+        for k in ("aliases", "specialty", "requires_doctor"):
+            if k in src and k not in svc:
+                svc[k] = src[k]
+                changed = True
+    for doc in data.get("doctors") or []:
+        src = tmpl_d.get(key(doc.get("name")))
+        if src and "aliases" in src and "aliases" not in doc:
+            doc["aliases"] = src["aliases"]
+            changed = True
+    return data, changed
+
+
+def _seed_default_aliases() -> None:
+    """One-time enrichment of the DEFAULT tenant's clinic_data with the Arabic aliases /
+    specialty / requires_doctor fields from clinic_data.json. Additive only (preserves admin
+    edits incl. availability), scoped to slug='default', and idempotent via the
+    `_aliases_seeded` marker so the clinic can later remove/edit aliases in the panel without
+    them being re-added. Guarded so it can never block startup."""
+    from psycopg.types.json import Json
+
+    from app.config import CLINIC_DATA
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT clinic_data FROM tenants WHERE slug = 'default'").fetchone()
+            data = row.get("clinic_data") if row else None
+            if not isinstance(data, dict) or data.get("_aliases_seeded"):
+                return
+            data, changed = _enrich_clinic_data(
+                data, CLINIC_DATA.get("services", []), CLINIC_DATA.get("doctors", []))
+            data["_aliases_seeded"] = True
+            conn.execute("UPDATE tenants SET clinic_data = %s WHERE slug = 'default'",
+                         (Json(data),))
+            log.info("Default tenant alias enrichment %s",
+                     "applied" if changed else "no-op (already had fields)")
+    except Exception as e:  # noqa: BLE001 — enrichment must never block boot
+        log.warning("alias seeding skipped: %s", e)
 
 
 def seed_tenancy() -> None:
