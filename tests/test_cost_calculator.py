@@ -52,9 +52,11 @@ def test_super_gets_volumes_and_defaults():
     assert "period" in body and "model" in body
     # Volume totals are present and non-negative; headline "messages" == inbound.
     tot = body["totals"]
-    for k in ("inbound", "voice", "replies", "reminders", "messages"):
+    for k in ("inbound", "voice", "replies", "reminders", "messages",
+              "input_tokens", "output_tokens"):
         assert tot[k] >= 0, k
     assert tot["messages"] == tot["inbound"]
+    assert isinstance(tot["tokens_captured"], bool)
     # Rate defaults the UI needs are present and numeric.
     d = body["defaults"]
     for k in ("usd_to_sar", "claude_input_usd_per_mtok", "claude_output_usd_per_mtok",
@@ -66,7 +68,7 @@ def test_super_gets_volumes_and_defaults():
     # Per-clinic exact usage carries the real breakdown fields.
     assert isinstance(body["clinics"], list)
     for c in body["clinics"]:
-        for k in ("inbound", "voice", "replies", "reminders"):
+        for k in ("inbound", "voice", "replies", "reminders", "input_tokens", "output_tokens"):
             assert k in c, k
 
 

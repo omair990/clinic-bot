@@ -487,37 +487,54 @@ async def cost_calculator(request: Request):
     except Exception:  # noqa: BLE001 — usage detail is best-effort; never 500 the calculator
         log.warning("usage_breakdown failed", exc_info=True)
         breakdown = {}
+    try:
+        tokens = db.usage_tokens(period)              # real Claude tokens, per tenant
+    except Exception:  # noqa: BLE001
+        log.warning("usage_tokens failed", exc_info=True)
+        tokens = {}
     clinics = []
     for t in tenants:
         b = breakdown.get(t["id"], {})
+        tk = tokens.get(t["id"], {})
         clinics.append({
             "id": t["id"], "name": t["name"], "slug": t.get("slug"),
             "inbound": int(b.get("inbound") or 0),
             "voice": int(b.get("voice_in") or 0),
             "replies": int(b.get("replies") or 0),
             "reminders": int(b.get("reminders") or 0),
+            "input_tokens": int(tk.get("input_tokens") or 0),
+            "output_tokens": int(tk.get("output_tokens") or 0),
         })
     inbound = sum(c["inbound"] for c in clinics)
     voice = sum(c["voice"] for c in clinics)
     replies = sum(c["replies"] for c in clinics)
     reminders = sum(c["reminders"] for c in clinics)
+    input_tokens = sum(c["input_tokens"] for c in clinics)
+    output_tokens = sum(c["output_tokens"] for c in clinics)
     px = _claude_price_default(CLAUDE_MODEL)
     # Ratios observed this period seed the estimator so "1000 messages" auto-scales replies
     # and reminders realistically; fall back to sane priors when there's no traffic yet.
     reminders_per = round(reminders / inbound, 3) if inbound else 0.1
     replies_per = round(replies / inbound, 2) if inbound else 1.0
+    # Seed avg tokens/message from REAL captured usage once we have some; until then (capture
+    # only began when the token columns shipped), fall back to priors.
+    tokens_captured = bool(input_tokens or output_tokens)
+    avg_in = round(input_tokens / inbound) if (inbound and input_tokens) else 1500
+    avg_out = round(output_tokens / inbound) if (inbound and output_tokens) else 200
     return {
         "period": period,
         "model": CLAUDE_MODEL,
         "totals": {"inbound": inbound, "voice": voice, "replies": replies,
-                   "reminders": reminders, "messages": inbound, "clinics": len(clinics)},
+                   "reminders": reminders, "messages": inbound, "clinics": len(clinics),
+                   "input_tokens": input_tokens, "output_tokens": output_tokens,
+                   "tokens_captured": tokens_captured},
         "clinics": clinics,
         "defaults": {
             "usd_to_sar": 3.75,                       # SAR is pegged to USD at ~3.75
             "claude_input_usd_per_mtok": px["input"],
             "claude_output_usd_per_mtok": px["output"],
-            "avg_input_tokens_per_inquiry": 1500,     # one patient inquiry ≈ a few tool round-trips
-            "avg_output_tokens_per_inquiry": 200,
+            "avg_input_tokens_per_inquiry": avg_in,   # real average once captured, else a prior
+            "avg_output_tokens_per_inquiry": avg_out,
             "whatsapp_sar_per_conversation": 0.20,    # service conversation (region/category dependent)
             "messages_per_conversation": 4,           # inbound msgs that fall in one 24h WA window
             "whatsapp_sar_per_reminder": 0.20,        # proactive (utility) template message

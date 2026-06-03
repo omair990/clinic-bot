@@ -88,3 +88,15 @@ def record_usage(tenant: dict | None, *, is_voice: bool) -> None:
                       text=0 if is_voice else 1, voice=1 if is_voice else 0)
     except Exception:  # noqa: BLE001
         log.exception("Failed to record usage for tenant %s", tenant.get("id"))
+
+
+def record_tokens(tenant: dict | None, input_tokens: int, output_tokens: int) -> None:
+    """Add a turn's real Claude token usage to the tenant's period totals. Never raises."""
+    if not tenant or not (input_tokens or output_tokens):
+        return
+    try:
+        period = current_period(tenant.get("timezone") or "Asia/Riyadh")
+        db.incr_tokens(tenant["id"], period,
+                       input_tokens=input_tokens, output_tokens=output_tokens)
+    except Exception:  # noqa: BLE001
+        log.exception("Failed to record tokens for tenant %s", tenant.get("id"))
