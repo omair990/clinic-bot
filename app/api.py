@@ -14,6 +14,7 @@ from datetime import datetime
 import psycopg
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 
+from app import capacity as capacity_mod
 from app import clinic_schema as cs
 from app import connectors as connectors_mod
 from app import db
@@ -545,6 +546,49 @@ async def cost_calculator(request: Request):
             "voice_sar_per_message": 0.15,            # transcription + TTS surcharge per voice note
             "railway_usd_per_month": 20.0,            # flat hosting; spread across all inquiries
         },
+    }
+
+
+@router.get("/capacity")
+async def capacity(request: Request):
+    """Super-admin load/capacity inputs: the account's LIVE Claude rate limits, the measured
+    per-turn cost, and the server's concurrency config. The UI does the what-if math (max
+    sustained throughput + burst drain time) so the owner can size for traffic spikes."""
+    _require_super(request)
+    import os
+    from app.config import CLAUDE_MODEL, DB_POOL_MAX
+    period = current_period(str(TZ))
+    # Per-turn token cost: real average this period if captured, else the same priors the
+    # cost calculator uses (sized to a measured tool-using turn).
+    try:
+        tok = db.usage_tokens(period)
+        bd = db.usage_breakdown(_month_start())
+    except Exception:  # noqa: BLE001
+        tok, bd = {}, {}
+    in_tok = sum(int(v.get("input_tokens") or 0) for v in tok.values())
+    out_tok = sum(int(v.get("output_tokens") or 0) for v in tok.values())
+    inbound = sum(int(v.get("inbound") or 0) for v in bd.values())
+    avg_in = round(in_tok / inbound) if (inbound and in_tok) else 6000
+    avg_out = round(out_tok / inbound) if (inbound and out_tok) else 300
+
+    # Probe is a blocking network call — run it off the event loop so it can't add latency
+    # to live message handling. Cached, so it only actually probes ~once per 5 min.
+    live = await _to_thread(capacity_mod.rate_limits)   # live Anthropic limits, or None
+    tier = {
+        "requests_per_min": (live or {}).get("requests_per_min") or 50,
+        "input_tpm": (live or {}).get("input_tpm") or 30000,
+        "output_tpm": (live or {}).get("output_tpm") or 8000,
+        "live": live is not None,
+        "model": (live or {}).get("model") or CLAUDE_MODEL,
+    }
+    # Default asyncio.to_thread executor size — the cap on concurrent agent turns per replica.
+    threads = min(32, (os.cpu_count() or 1) + 4)
+    return {
+        "tier": tier,
+        "per_turn": {"llm_calls": 3, "input_tokens": avg_in, "output_tokens": avg_out,
+                     "seconds": 8, "tokens_captured": bool(in_tok or out_tok)},
+        "server": {"threads": threads, "replicas": int(os.getenv("WEB_REPLICAS", "1") or 1),
+                   "db_pool_max": DB_POOL_MAX},
     }
 
 
