@@ -231,8 +231,11 @@ def parse_date(s: str, today: date_cls) -> date_cls | None:
         except ValueError:
             continue
     # Weekday names: compute the next occurrence (deterministic — don't rely on the model).
-    nxt = "next" in s
-    key = s.replace("this", "").replace("next", "").replace("on", "").strip()
+    # Strip whole filler words only — a substring replace would mangle weekdays ("monday"
+    # contains "on", so .replace("on","") → "mday").
+    tokens = s.split()
+    nxt = "next" in tokens
+    key = " ".join(t for t in tokens if t not in ("this", "next", "on")).strip()
     if key in _WEEKDAYS:
         delta = (_WEEKDAYS[key] - today.weekday()) % 7
         if delta == 0 and nxt:
