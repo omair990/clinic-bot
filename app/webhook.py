@@ -23,7 +23,7 @@ from app.db import (
 from app.events import notify as publish_notify, publish
 from app.llm import LLMUnavailable
 from app import voice_reply
-from app.tenancy import check_quota, record_usage, resolve_tenant
+from app.tenancy import check_quota, record_tokens, record_usage, resolve_tenant
 from app.tools import AgentContext
 from app.transcribe import transcribe_audio
 from app.wa_client import download_media, mark_read, send_text
@@ -210,6 +210,9 @@ async def _handle_message(msg: dict, phone_number_id: str | None = None) -> None
         await notify.notify_tech(f"[AGENT ERROR] +{sender}\nUser: {user_text}")
         publish("stoptyping", {"wa_user": sender, "tenant_id": tid})
         return
+
+    # Record the real Claude tokens this turn cost, for the cost calculator's exact AI spend.
+    await asyncio.to_thread(record_tokens, tenant, ctx.input_tokens, ctx.output_tokens)
 
     # The reply guard blocked a booking confirmation the DB couldn't back — page staff.
     if getattr(ctx, "guard_tripped", False):

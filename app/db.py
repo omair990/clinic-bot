@@ -205,6 +205,11 @@ ALTER TABLE conversation_analysis ADD COLUMN IF NOT EXISTS insurance TEXT;
 -- Maps a mirrored appointment to its record in an external system (e.g. a Google Calendar
 -- event id) when the tenant is backed by a connector other than Native.
 ALTER TABLE appointments  ADD COLUMN IF NOT EXISTS external_id TEXT;
+-- Real Claude token usage per tenant per period, so the cost calculator can show exact
+-- (not estimated) AI cost. Cache reads are folded into input at full rate (a small, safe
+-- over-estimate). Counting starts when this column ships — earlier periods read 0.
+ALTER TABLE tenant_usage  ADD COLUMN IF NOT EXISTS input_tokens BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE tenant_usage  ADD COLUMN IF NOT EXISTS output_tokens BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS wa_access_token TEXT;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS clinic_data JSONB;
 ALTER TABLE tenants       ADD COLUMN IF NOT EXISTS staff_username TEXT;
@@ -1601,6 +1606,33 @@ def incr_usage(tenant_id: int, period: str, *, text: int = 0, voice: int = 0) ->
             "voice_count = tenant_usage.voice_count + EXCLUDED.voice_count",
             (tenant_id, period, text, voice),
         )
+
+
+def incr_tokens(tenant_id: int, period: str, *, input_tokens: int = 0,
+                output_tokens: int = 0) -> None:
+    """Add a turn's real Claude token usage to the tenant's running period totals."""
+    if not (input_tokens or output_tokens):
+        return
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO tenant_usage (tenant_id, period, input_tokens, output_tokens) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (tenant_id, period) DO UPDATE SET "
+            "input_tokens = tenant_usage.input_tokens + EXCLUDED.input_tokens, "
+            "output_tokens = tenant_usage.output_tokens + EXCLUDED.output_tokens",
+            (tenant_id, period, input_tokens, output_tokens),
+        )
+
+
+def usage_tokens(period: str) -> dict[int, dict]:
+    """Real Claude token totals per tenant for `period` — keyed by tenant_id."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT tenant_id, input_tokens, output_tokens FROM tenant_usage WHERE period = %s",
+            (period,),
+        ).fetchall()
+    return {r["tenant_id"]: {"input_tokens": int(r["input_tokens"] or 0),
+                             "output_tokens": int(r["output_tokens"] or 0)} for r in rows}
 
 
 def get_usage(tenant_id: int, period: str) -> dict:

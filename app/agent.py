@@ -49,7 +49,8 @@ _SCRIPT_NAME = {
 }
 
 
-def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: str) -> str:
+def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: str,
+                      ctx=None) -> str:
     """Strong language guard: the reply MUST be in the patient's language (any language). The
     system prompt already asks for this, but models occasionally drift — so when the reply
     clearly answers in the wrong language we ask the model, once, to rewrite the SAME answer in
@@ -82,6 +83,8 @@ def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: s
     except Exception:  # noqa: BLE001 — a retry failure must never drop the original turn
         log.warning("Language regeneration failed; keeping original reply")
         return reply
+    if ctx is not None:
+        ctx.add_usage(result.usage)
     new = (result.text or "").strip()
     if new and not reply_guard.language_mismatch(user_text, new):
         return new
@@ -128,6 +131,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
 
     for step in range(AGENT_MAX_STEPS):
         result = generate(system, messages, TOOL_SPECS)
+        ctx.add_usage(result.usage)
 
         if not result.tool_calls:
             ctx.reply = ((result.text or "").strip()
@@ -135,7 +139,7 @@ def run_agent(tenant: dict | None, wa_user: str, user_text: str,
                                                  ur=_FALLBACK_REPLY_UR, hi=_FALLBACK_REPLY_HI))
             reply_guard.verify(ctx, user_text)   # never state a booking/time we can't back
             if not ctx.guard_tripped:            # don't re-touch a localized safe message
-                ctx.reply = _enforce_language(system, messages, user_text, ctx.reply)
+                ctx.reply = _enforce_language(system, messages, user_text, ctx.reply, ctx)
             return ctx
 
         messages.append(Msg(role="assistant", content=result.text or "",

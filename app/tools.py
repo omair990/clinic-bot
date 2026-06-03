@@ -90,6 +90,17 @@ class AgentContext:
     # The clinic connector backing this tenant (our DB by default; could be Cliniko, a
     # calendar, etc.). Lazily defaults to NativeConnector via _conn().
     connector: object | None = None
+    # Real Claude tokens consumed answering this turn, summed across every model call
+    # (tool round-trips + any language-fix regeneration). Persisted per tenant for the
+    # cost calculator's exact AI cost.
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    def add_usage(self, usage: dict | None) -> None:
+        if not usage:
+            return
+        self.input_tokens += int(usage.get("input_tokens") or 0)
+        self.output_tokens += int(usage.get("output_tokens") or 0)
 
     @property
     def doctors(self) -> list[dict]:

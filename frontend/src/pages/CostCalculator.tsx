@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import {
   Card, CardContent, Typography, Grid, Stack, TextField, ToggleButton, ToggleButtonGroup,
   Divider, Box, Chip, Button, Table, TableBody, TableCell, TableHead, TableRow, InputAdornment,
-  alpha,
+  Alert, alpha,
 } from "@mui/material";
 import SmartToyIcon from "@mui/icons-material/SmartToyOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
@@ -91,13 +91,19 @@ export default function CostCalculator() {
 
   // ---- Cost model (per month, SAR). Replies live inside the service conversation, so they
   // don't add a separate WhatsApp charge; reminders are billed as proactive messages. ----
-  const claudePerMsgSar =
-    ((r.avg_input_tokens_per_inquiry / 1e6) * r.claude_input_usd_per_mtok +
-      (r.avg_output_tokens_per_inquiry / 1e6) * r.claude_output_usd_per_mtok) * r.usd_to_sar;
+  const tokenCost = (inTok: number, outTok: number) =>
+    ((inTok / 1e6) * r.claude_input_usd_per_mtok +
+      (outTok / 1e6) * r.claude_output_usd_per_mtok) * r.usd_to_sar;
+  const claudePerMsgSar = tokenCost(r.avg_input_tokens_per_inquiry, r.avg_output_tokens_per_inquiry);
   const waConvRate = r.messages_per_conversation > 0
     ? r.whatsapp_sar_per_conversation / r.messages_per_conversation : 0;
 
-  const claudeMonthly = claudePerMsgSar * inbound;
+  // Actuals with captured tokens → exact AI cost from real usage; otherwise estimate from
+  // the average tokens-per-message rate.
+  const exactClaude = mode === "actual" && totals.tokens_captured;
+  const claudeMonthly = exactClaude
+    ? tokenCost(totals.input_tokens, totals.output_tokens)
+    : claudePerMsgSar * inbound;
   const waMonthly = waConvRate * inbound;                      // service conversations
   const reminderMonthly = reminders * r.whatsapp_sar_per_reminder;
   const voiceMonthly = voiceMsgs * r.voice_sar_per_message;
@@ -109,11 +115,14 @@ export default function CostCalculator() {
   const suggestedPerMsg = perMsg * margin;
   const suggestedMonthly = totalMonthly * margin;
 
-  // Per-clinic estimate from each clinic's REAL usage (hosting is platform-wide, excluded here).
-  const clinicCost = (c: any) =>
-    c.inbound * (claudePerMsgSar + waConvRate) +
-    c.reminders * r.whatsapp_sar_per_reminder +
-    c.voice * r.voice_sar_per_message;
+  // Per-clinic estimate from each clinic's REAL usage (hosting is platform-wide, excluded
+  // here). Claude is exact when that clinic has captured tokens, else estimated from inbound.
+  const clinicCost = (c: any) => {
+    const claude = (c.input_tokens || c.output_tokens)
+      ? tokenCost(c.input_tokens, c.output_tokens) : claudePerMsgSar * c.inbound;
+    return claude + c.inbound * waConvRate +
+      c.reminders * r.whatsapp_sar_per_reminder + c.voice * r.voice_sar_per_message;
+  };
   const clinicsTotalCost = clinics.reduce((s: number, c: any) => s + clinicCost(c), 0);
 
   const costRows = [
@@ -249,6 +258,13 @@ export default function CostCalculator() {
           <Card sx={{ mb: 2 }}>
             <CardContent>
               <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1.5 }}>{t("calculator.resultsSection")}</Typography>
+              {!totals.tokens_captured ? (
+                <Alert severity="info" sx={{ mb: 2, py: 0.25 }}>{t("calculator.tokensPending")}</Alert>
+              ) : exactClaude ? (
+                <Alert severity="success" sx={{ mb: 2, py: 0.25 }}>
+                  {t("calculator.tokensExact", { input: intf(totals.input_tokens), output: intf(totals.output_tokens) })}
+                </Alert>
+              ) : null}
               <Stack spacing={1.25}>
                 {costRows.map((row) => {
                   const pct = totalMonthly > 0 ? (row.value / totalMonthly) * 100 : 0;

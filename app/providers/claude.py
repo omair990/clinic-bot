@@ -106,8 +106,10 @@ def generate(system: str, messages: list[Msg], tools: list[ToolSpec]) -> LLMResu
             calls.append(ToolCall(id=block.id, name=block.name, arguments=block.input or {}))
 
     usage = resp.usage
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    in_tok = (getattr(usage, "input_tokens", 0) or 0) + cache_read   # cache reads billed as input
+    out_tok = getattr(usage, "output_tokens", 0) or 0
     log.info("[claude] in=%s out=%s cache_read=%s",
-             getattr(usage, "input_tokens", "?"),
-             getattr(usage, "output_tokens", "?"),
-             getattr(usage, "cache_read_input_tokens", 0))
-    return LLMResult(text="".join(text_chunks), tool_calls=calls)
+             getattr(usage, "input_tokens", "?"), out_tok, cache_read)
+    return LLMResult(text="".join(text_chunks), tool_calls=calls,
+                     usage={"input_tokens": in_tok, "output_tokens": out_tok})
