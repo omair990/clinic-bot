@@ -20,6 +20,7 @@ from app import db
 from app import insights as insights_mod
 from app import no_show as no_show_mod
 from app.auth import hash_password, verify_password
+from app.events import publish
 from app.config import (
     ADMIN_ACCOUNTS,
     ADMIN_PASSWORD,
@@ -309,6 +310,34 @@ async def patient(request: Request, wa_user: str):
         "reviews": db.reviews_for_user(tid, wa_user),
         "no_shows": db.no_shows_for_user(tid, wa_user),
     }
+
+
+@router.post("/conversations/{wa_user}/message")
+async def add_message(request: Request, wa_user: str, body: dict = Body(...)):
+    """Manually add a chat message to a patient's thread (admin-authored, record-only).
+
+    This does NOT send anything over WhatsApp — it only inserts the row so the message
+    appears in the thread + live feed. Lets staff backfill or correct conversation history.
+    """
+    _require(request)
+    direction = (body.get("direction") or "").strip()
+    if direction not in ("in", "out"):
+        raise HTTPException(400, "direction must be 'in' or 'out'")
+    message = (body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(400, "message is required")
+    # Resolve the tenant exactly like the read endpoints: a clinic login is locked to its own
+    # tenant; super-admin uses ?clinic=<id>, falling back to the patient's existing tenant.
+    scope = _view_scope(request)
+    tid = scope if scope is not None else db.tenant_id_for_user(wa_user)
+    if tid is None:
+        raise HTTPException(404, "Unknown patient")
+    mid = db.log_message(tid, wa_user, direction, message, source="text")
+    # Mirror the live-feed payload webhook.py publishes so open consoles merge it instantly.
+    publish("message", {"wa_user": wa_user, "direction": direction, "text": message,
+                        "tenant_id": tid, "source": "text"})
+    log.info("admin added %s message for %s (tenant %s, id %s)", direction, wa_user, tid, mid)
+    return {"ok": True, "id": mid}
 
 
 @router.post("/conversations/{wa_user}/analysis/refresh")

@@ -19,6 +19,15 @@ export default {
     tabMissed: "Missed visits ({n})",
     // Conversation
     noMessages: "No messages yet.",
+    // Admin composer (record-only, not sent on WhatsApp)
+    addMessage: "Add",
+    addAs: "Add message as",
+    asPatient: "As patient",
+    asClinic: "As clinic",
+    messagePlaceholder: "Add a message to this conversation…",
+    recordOnlyHint: "Saved to the record only — not sent on WhatsApp.",
+    messageAdded: "Message added",
+    messageAddFailed: "Couldn't add message",
     // AI panel
     aiAnalysis: "AI analysis",
     reRunAnalysis: "Re-run analysis",
@@ -77,6 +86,15 @@ export default {
     tabMissed: "الزيارات الفائتة ({n})",
     // Conversation
     noMessages: "لا توجد رسائل بعد.",
+    // Admin composer (record-only, not sent on WhatsApp)
+    addMessage: "إضافة",
+    addAs: "إضافة رسالة باسم",
+    asPatient: "كالمريض",
+    asClinic: "كالعيادة",
+    messagePlaceholder: "أضف رسالة إلى هذه المحادثة…",
+    recordOnlyHint: "تُحفظ في السجل فقط — لا تُرسل عبر واتساب.",
+    messageAdded: "تمت إضافة الرسالة",
+    messageAddFailed: "تعذّر إضافة الرسالة",
     // AI panel
     aiAnalysis: "تحليل الذكاء الاصطناعي",
     reRunAnalysis: "إعادة تشغيل التحليل",

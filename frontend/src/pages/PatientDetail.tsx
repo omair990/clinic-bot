@@ -4,8 +4,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card, CardContent, Box, Typography, Button, Stack, Chip, Grid, Paper, Avatar, Tabs, Tab,
   Table, TableHead, TableRow, TableCell, TableBody, Rating, alpha, keyframes, IconButton, Tooltip,
+  TextField, ToggleButton, ToggleButtonGroup,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import SendIcon from "@mui/icons-material/SendRounded";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
@@ -196,6 +198,17 @@ export default function PatientDetail() {
     onSuccess: () => { toast.ok(t("patient.analysisRefreshed")); qc.invalidateQueries({ queryKey: ["patient", wa] }); },
   });
 
+  // Admin-authored message: record-only (never sent over WhatsApp), for backfilling /
+  // correcting history. Direction picks who the message is attributed to.
+  const [draft, setDraft] = useState("");
+  const [draftDir, setDraftDir] = useState<"in" | "out">("out");
+  const addMsg = useMutation({
+    mutationFn: () => apiPost(`/conversations/${wa}/message`, { direction: draftDir, message: draft.trim() }),
+    onSuccess: () => { setDraft(""); toast.ok(t("patient.messageAdded")); qc.invalidateQueries({ queryKey: ["patient", wa] }); },
+    onError: (e: any) => toast.err(e?.message || t("patient.messageAddFailed")),
+  });
+  const sendDraft = () => { if (draft.trim() && !addMsg.isPending) addMsg.mutate(); };
+
   const fetched: Msg[] = q.data?.messages || [];
   const isTyping = !!wa && typing.has(wa);
 
@@ -301,6 +314,27 @@ export default function PatientDetail() {
                   {isTyping && <Box sx={{ mt: 0.9 }}><TypingBubble /></Box>}
                   {messages.length === 0 && !isTyping && <EmptyState text={t("patient.noMessages")} />}
                 </Box>
+
+                {/* Admin composer — adds a message to the record only (not sent on WhatsApp). */}
+                <Stack spacing={1} sx={{ mt: 1.5 }}>
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <ToggleButtonGroup size="small" exclusive value={draftDir}
+                      onChange={(_e, v) => v && setDraftDir(v)} aria-label={t("patient.addAs")}>
+                      <ToggleButton value="in" sx={{ textTransform: "none", px: 1.5 }}>{t("patient.asPatient")}</ToggleButton>
+                      <ToggleButton value="out" sx={{ textTransform: "none", px: 1.5 }}>{t("patient.asClinic")}</ToggleButton>
+                    </ToggleButtonGroup>
+                    <Typography variant="caption" color="text.secondary">{t("patient.recordOnlyHint")}</Typography>
+                  </Stack>
+                  <Stack direction="row" spacing={1} alignItems="flex-end">
+                    <TextField fullWidth multiline maxRows={4} size="small" value={draft}
+                      onChange={(e) => setDraft(e.target.value)} placeholder={t("patient.messagePlaceholder")}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDraft(); } }} />
+                    <Button variant="contained" endIcon={<SendIcon />} disabled={!draft.trim() || addMsg.isPending}
+                      onClick={sendDraft} sx={{ borderRadius: 2, whiteSpace: "nowrap" }}>
+                      {t("patient.addMessage")}
+                    </Button>
+                  </Stack>
+                </Stack>
               </Grid>
               <Grid item xs={12} md={4}>
                 <AIPanel a={a} busy={refresh.isPending} onRefresh={() => refresh.mutate()} />
