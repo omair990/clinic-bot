@@ -13,6 +13,7 @@ import Reviews from "./pages/Reviews";
 import Insights from "./pages/Insights";
 import Usage from "./pages/Usage";
 import Plans from "./pages/Plans";
+import CostCalculator from "./pages/CostCalculator";
 import Issues from "./pages/Issues";
 import TenantEdit from "./pages/TenantEdit";
 import Connector from "./pages/Connector";
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/reviews" element={<Reviews />} />
         {!isSuper && <Route path="/usage" element={<Usage />} />}
         {isSuper && <Route path="/plans" element={<Plans />} />}
+        {isSuper && <Route path="/calculator" element={<CostCalculator />} />}
         {isSuper && <Route path="/issues" element={<Issues />} />}
         {isSuper && <Route path="/settings" element={<Settings />} />}
         {isSuper && <Route path="/tenants/:id" element={<TenantEdit />} />}
