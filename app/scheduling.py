@@ -5,6 +5,7 @@ so it is fully unit-testable. All datetimes returned are timezone-aware (clinic 
 """
 from datetime import date as date_cls
 from datetime import datetime, time, timedelta
+from difflib import SequenceMatcher
 
 from app.config import (
     BOOKING_LEAD_HOURS,
@@ -18,40 +19,110 @@ SERVICES = CLINIC_DATA["services"]
 
 
 def _norm(s: str) -> str:
-    return "".join(ch for ch in s.lower() if ch.isalnum())
+    # Honorifics/titles carry no identifying signal and differ by language ("Dr.", "د.",
+    # "دكتور"), so strip them before matching to avoid them dominating a fuzzy score.
+    s = (s or "").lower()
+    for title in ("dr.", "dr ", "doctor", "د.", "د ", "دكتور", "الدكتور"):
+        s = s.replace(title, " ")
+    return "".join(ch for ch in s if ch.isalnum())
+
+
+# Fuzzy-match acceptance threshold (0..1). High enough to avoid cross-service false
+# positives, low enough to absorb typos and word-order/spelling variants in one script.
+_FUZZY_MIN = 0.78
+
+
+def _aliases(row: dict) -> list[str]:
+    """A row's alternative names (e.g. Arabic terms a clinic added). Optional — absent on
+    most rows. Lets cross-script queries match without a translation step."""
+    raw = row.get("aliases")
+    if isinstance(raw, str):
+        return [a.strip() for a in raw.split(",") if a.strip()]
+    return [str(a) for a in raw] if isinstance(raw, list) else []
+
+
+def _best_match(query: str, rows: list[dict], extra_keys: tuple = ()) -> dict | None:
+    """Resolve `query` to one row by: exact normalized name/alias → substring either way →
+    fuzzy ratio over name+aliases(+extra_keys, e.g. specialty). Returns None below threshold
+    so callers can surface the real list instead of guessing wrong."""
+    if not query or not rows:
+        return None
+    q = _norm(query)
+    if not q:
+        return None
+
+    def cands(row: dict) -> list[str]:
+        vals = [row.get("name", "")] + _aliases(row) + [row.get(k, "") for k in extra_keys]
+        out: list[str] = []
+        for v in vals:
+            whole = _norm(v)
+            if whole:
+                out.append(whole)
+            # Also match individual words, so a typo on part of a name ("kalid" for the
+            # "Khalid" in "Dr. Khalid Al-Otaibi") still resolves. Skip tiny tokens ("al").
+            for tok in str(v).split():
+                t = _norm(tok)
+                if len(t) >= 3:
+                    out.append(t)
+        return out
+
+    for row in rows:                                   # exact
+        if q in cands(row):
+            return row
+    for row in rows:                                   # substring either direction
+        if any(q in c or c in q for c in cands(row)):
+            return row
+    best, best_score = None, 0.0                       # fuzzy fallback (same-script typos)
+    for row in rows:
+        score = max((SequenceMatcher(None, q, c).ratio() for c in cands(row)), default=0.0)
+        if score > best_score:
+            best, best_score = row, score
+    return best if best_score >= _FUZZY_MIN else None
 
 
 def find_doctor(query: str, doctors: list[dict] | None = None) -> dict | None:
-    """Match a doctor by full name or a distinctive fragment (e.g. 'khalid', 'dentist').
+    """Match a doctor by full name, alias, specialty, or a close/typo'd fragment.
 
     `doctors` defaults to the global clinic config; pass a tenant's list for isolation.
     """
-    if not query:
-        return None
     doctors = DOCTORS if doctors is None else doctors
-    q = _norm(query)
-    for doc in doctors:
-        if _norm(doc["name"]) == q:
-            return doc
-    for doc in doctors:
-        name = _norm(doc["name"])
-        if q in name or name in q or q in _norm(doc["specialty"]):
-            return doc
-    return None
+    return _best_match(query, doctors, extra_keys=("specialty",))
 
 
 def find_service(query: str, services: list[dict] | None = None) -> dict | None:
-    if not query:
-        return None
     services = SERVICES if services is None else services
-    q = _norm(query)
-    for svc in services:
-        if _norm(svc["name"]) == q:
-            return svc
-    for svc in services:
-        if q in _norm(svc["name"]) or _norm(svc["name"]) in q:
-            return svc
-    return None
+    return _best_match(query, services)
+
+
+# Lightweight category inference: services whose name reads like a lab/imaging test don't
+# need a clinician chosen. A clinic can override either way with an explicit `requires_doctor`.
+_LAB_HINTS = ("lab", "test", "screen", "blood", "x-ray", "xray", "scan", "sample", "urine",
+              "تحليل", "فحص", "مختبر", "أشعة", "اشعة", "عينة")
+
+
+def service_requires_doctor(service: dict) -> bool:
+    """Whether booking this service needs a specific doctor. Explicit `requires_doctor`
+    wins; otherwise lab/imaging-type services default to False, everything else True."""
+    explicit = service.get("requires_doctor")
+    if isinstance(explicit, bool):
+        return explicit
+    name = (service.get("name") or "").lower()
+    return not any(h in name for h in _LAB_HINTS)
+
+
+def service_specialty(service: dict) -> str:
+    """The specialty a service should be performed by, if the clinic declared one
+    (e.g. a 'Dental Cleaning' tagged 'Dentist'). Empty string when unspecified."""
+    return str(service.get("specialty") or "").strip()
+
+
+def doctor_matches_specialty(doctor: dict, specialty: str) -> bool:
+    """Loose specialty compatibility — substring either way so 'Dentist' matches
+    'Dental', 'dentistry', etc. Always True when no specialty is required."""
+    if not specialty:
+        return True
+    a, b = _norm(doctor.get("specialty", "")), _norm(specialty)
+    return bool(a) and bool(b) and (a in b or b in a)
 
 
 def _parse_time(token: str) -> time:
