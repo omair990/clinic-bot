@@ -14,6 +14,7 @@ import StarIcon from "@mui/icons-material/StarBorderOutlined";
 import SpeedIcon from "@mui/icons-material/SpeedOutlined";
 import LayersIcon from "@mui/icons-material/LayersOutlined";
 import CalculateIcon from "@mui/icons-material/CalculateOutlined";
+import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import SettingsIcon from "@mui/icons-material/SettingsOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -59,6 +60,7 @@ export default function Layout() {
       { label: t("nav.issues"), to: "/issues", icon: <ReportProblemIcon /> },
       { label: t("nav.plans"), to: "/plans", icon: <LayersIcon /> },
       { label: t("nav.calculator"), to: "/calculator", icon: <CalculateIcon /> },
+      { label: t("nav.capacity"), to: "/capacity", icon: <SpeedOutlinedIcon /> },
       { label: t("nav.settings"), to: "/settings", icon: <SettingsIcon /> },
     ] : []),
   ];
