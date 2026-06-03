@@ -266,7 +266,23 @@ def init_db() -> None:
         log.info("DB pool opened (min=%s max=%s)", DB_POOL_MIN, DB_POOL_MAX)
     with get_conn() as conn:
         conn.execute(DDL)
+    _ensure_appt_unique_slot()
     seed_tenancy()
+
+
+def _ensure_appt_unique_slot() -> None:
+    """Hard backstop against double-booking: one confirmed appointment per (tenant, doctor,
+    start time). Kept OUT of the main DDL and guarded, because a live table may already hold
+    duplicate confirmed rows — in that case we log and skip rather than abort startup. The
+    overlap check in create_appointment is the primary guard; this closes the phantom-row
+    race where two concurrent bookings both pass the SELECT before either inserts."""
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_appt_doctor_slot "
+                "ON appointments (tenant_id, doctor, start_at) WHERE status = 'confirmed'")
+    except Exception as e:  # noqa: BLE001 — pre-existing duplicates must not block boot
+        log.warning("could not create uq_appt_doctor_slot (existing duplicate slots?): %s", e)
     try:
         _encrypt_existing_secrets()
     except Exception:  # noqa: BLE001 — never block startup on the secrets sweep
@@ -482,23 +498,29 @@ def create_appointment(tenant_id: int, wa_user: str, patient_name: str | None,
                        extra: dict | None = None) -> dict:
     """Atomically book a slot. Returns the new row, or {'conflict': True} if the
     doctor is already booked in an overlapping window (within this tenant)."""
+    from psycopg.errors import UniqueViolation
     from psycopg.types.json import Json
     with get_conn() as conn:
-        with conn.transaction():
-            clash = conn.execute(
-                "SELECT id FROM appointments WHERE tenant_id = %s AND doctor = %s "
-                "AND status = 'confirmed' AND start_at < %s AND end_at > %s FOR UPDATE",
-                (tenant_id, doctor, end_at, start_at),
-            ).fetchone()
-            if clash:
-                return {"conflict": True}
-            row = conn.execute(
-                "INSERT INTO appointments "
-                "(tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at, "
-                "notes, extra) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
-                (tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at,
-                 notes, Json(extra) if extra else None),
-            ).fetchone()
+        try:
+            with conn.transaction():
+                clash = conn.execute(
+                    "SELECT id FROM appointments WHERE tenant_id = %s AND doctor = %s "
+                    "AND status = 'confirmed' AND start_at < %s AND end_at > %s FOR UPDATE",
+                    (tenant_id, doctor, end_at, start_at),
+                ).fetchone()
+                if clash:
+                    return {"conflict": True}
+                row = conn.execute(
+                    "INSERT INTO appointments "
+                    "(tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at, "
+                    "notes, extra) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                    (tenant_id, wa_user, patient_name, phone, doctor, service, start_at, end_at,
+                     notes, Json(extra) if extra else None),
+                ).fetchone()
+        except UniqueViolation:
+            # uq_appt_doctor_slot caught a concurrent booking of the same doctor+slot that
+            # slipped past the SELECT (phantom-row race). Surface it as a normal conflict.
+            return {"conflict": True}
     return row
 
 

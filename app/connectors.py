@@ -16,10 +16,10 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from datetime import date as date_cls
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app import db
-from app.scheduling import available_slots, day_bounds
+from app.scheduling import available_slots, day_bounds, next_available_days
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +65,23 @@ class ClinicConnector(ABC):
     @abstractmethod
     def set_status(self, appointment_id: int, status: str) -> None: ...
 
+    def next_available(self, doctor: dict, duration_min: int, now: datetime,
+                       start: date_cls | None = None, horizon_days: int = 30,
+                       max_days: int = 3) -> list[tuple[date_cls, list[datetime]]]:
+        """Next working days with free slots, scanning up to a month ahead. Default
+        implementation loops `available_slots` per day so it works for any backend;
+        connectors with a batch availability API can override for fewer round-trips."""
+        start = start or now.date()
+        found: list[tuple[date_cls, list[datetime]]] = []
+        for offset in range(horizon_days + 1):
+            on = start + timedelta(days=offset)
+            slots = self.available_slots(doctor, on, duration_min, now)
+            if slots:
+                found.append((on, slots))
+                if len(found) >= max_days:
+                    break
+        return found
+
 
 class NativeConnector(ClinicConnector):
     """Our Postgres is the system of record — the default for every tenant. Thin wrapper
@@ -80,6 +97,15 @@ class NativeConnector(ClinicConnector):
         day_start, day_end = day_bounds(on)
         booked = db.booked_intervals(self.tenant_id, doctor["name"], day_start, day_end)
         return available_slots(doctor, on, duration_min, booked, now)
+
+    def next_available(self, doctor, duration_min, now, start=None, horizon_days=30, max_days=3):
+        # One query for the whole window (vs. the base class's per-day loop), then scan.
+        start = start or now.date()
+        win_start, _ = day_bounds(start)
+        _, win_end = day_bounds(start + timedelta(days=horizon_days))
+        booked = db.booked_intervals(self.tenant_id, doctor["name"], win_start, win_end)
+        return next_available_days(doctor, duration_min, booked, now, start,
+                                   horizon_days, max_days)
 
     def create_appointment(self, *, wa_user, patient_name, phone, doctor, service,
                            start, end, extra=None):

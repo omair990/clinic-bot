@@ -104,6 +104,29 @@ def available_slots(doctor: dict, on: date_cls, duration_min: int,
     return slots
 
 
+def next_available_days(doctor: dict, duration_min: int,
+                        booked: list[tuple[datetime, datetime]], now: datetime,
+                        start: date_cls, horizon_days: int = 30,
+                        max_days: int = 3) -> list[tuple[date_cls, list[datetime]]]:
+    """Scan from `start` up to `horizon_days` ahead (inclusive) and return the first
+    `max_days` working days that have free slots, as (date, slots).
+
+    Answers "when is the doctor next free?" deterministically instead of the model
+    guessing dates or only ever checking today/tomorrow. `booked` must cover the whole
+    [start, start+horizon_days] window; `_overlaps` only matches same-day intervals, so
+    passing the full window's bookings is safe.
+    """
+    found: list[tuple[date_cls, list[datetime]]] = []
+    for offset in range(horizon_days + 1):
+        on = start + timedelta(days=offset)
+        slots = available_slots(doctor, on, duration_min, booked, now)
+        if slots:
+            found.append((on, slots))
+            if len(found) >= max_days:
+                break
+    return found
+
+
 def _overlaps(start: datetime, end: datetime,
               intervals: list[tuple[datetime, datetime]]) -> bool:
     return any(start < b_end and end > b_start for b_start, b_end in intervals)
