@@ -30,16 +30,36 @@
     "notes": "Weekly closure: Friday mornings only (for Jummah prayer). Last appointment 30 minutes before closing. Two shifts daily with a midday break."
   },
   "services": [
-    {"name": "General Consultation", "price_sar": 150, "duration_min": 20},
-    {"name": "Pediatric Consultation", "price_sar": 200, "duration_min": 30},
-    {"name": "Dental Checkup", "price_sar": 250, "duration_min": 30},
-    {"name": "Dental Cleaning", "price_sar": 400, "duration_min": 45},
-    {"name": "Cavity Filling", "price_sar": 350, "duration_min": 45},
-    {"name": "Dermatology Consultation", "price_sar": 300, "duration_min": 30},
-    {"name": "Lab Test - CBC", "price_sar": 80, "duration_min": 10},
-    {"name": "Lab Test - Blood Sugar", "price_sar": 50, "duration_min": 10},
-    {"name": "Vaccination (per dose)", "price_sar": 150, "duration_min": 15},
-    {"name": "ECG", "price_sar": 180, "duration_min": 20}
+    {"name": "General Consultation", "price_sar": 150, "duration_min": 20,
+     "specialty": "General Physician",
+     "aliases": ["استشارة عامة", "كشف عام", "كشف", "استشارة طبية"]},
+    {"name": "Pediatric Consultation", "price_sar": 200, "duration_min": 30,
+     "specialty": "Pediatrician",
+     "aliases": ["استشارة أطفال", "كشف أطفال", "طب الأطفال", "عيادة الأطفال"]},
+    {"name": "Dental Checkup", "price_sar": 250, "duration_min": 30,
+     "specialty": "Dentist",
+     "aliases": ["كشف أسنان", "فحص الأسنان", "فحص أسنان"]},
+    {"name": "Dental Cleaning", "price_sar": 400, "duration_min": 45,
+     "specialty": "Dentist",
+     "aliases": ["تنظيف الأسنان", "تنظيف أسنان", "تنظيف الجير"]},
+    {"name": "Cavity Filling", "price_sar": 350, "duration_min": 45,
+     "specialty": "Dentist",
+     "aliases": ["حشو الأسنان", "حشوة", "حشو ضرس", "حشو سن"]},
+    {"name": "Dermatology Consultation", "price_sar": 300, "duration_min": 30,
+     "specialty": "Dermatologist",
+     "aliases": ["استشارة جلدية", "كشف جلدية", "الأمراض الجلدية", "عيادة الجلدية"]},
+    {"name": "Lab Test - CBC", "price_sar": 80, "duration_min": 10,
+     "requires_doctor": false,
+     "aliases": ["تحليل دم شامل", "صورة دم كاملة", "تحليل CBC", "فحص الدم", "تحليل الدم"]},
+    {"name": "Lab Test - Blood Sugar", "price_sar": 50, "duration_min": 10,
+     "requires_doctor": false,
+     "aliases": ["فحص السكر", "تحليل السكر", "سكر الدم", "تحليل سكر", "قياس السكر"]},
+    {"name": "Vaccination (per dose)", "price_sar": 150, "duration_min": 15,
+     "requires_doctor": false,
+     "aliases": ["تطعيم", "لقاح", "تطعيمات", "جرعة لقاح"]},
+    {"name": "ECG", "price_sar": 180, "duration_min": 20,
+     "requires_doctor": false,
+     "aliases": ["تخطيط القلب", "رسم القلب", "تخطيط كهربية القلب", "إيكو"]}
   ],
   "doctors": [
     {
@@ -48,7 +68,8 @@
       "qualifications": "MBBS, SBFM (Saudi Board of Family Medicine)",
       "available_days": ["Sunday", "Monday", "Tuesday", "Wednesday", "Saturday"],
       "available_hours": "10:00 AM - 1:00 PM, 5:00 PM - 9:00 PM",
-      "languages": ["Arabic", "English"]
+      "languages": ["Arabic", "English"],
+      "aliases": ["خالد العتيبي", "د. خالد", "الدكتور خالد", "دكتور خالد", "خالد"]
     },
     {
       "name": "Dr. Sara Al-Subaie",
@@ -56,7 +77,8 @@
       "qualifications": "MBBS, MD (Pediatrics), Member of Saudi Pediatric Society",
       "available_days": ["Sunday", "Tuesday", "Thursday"],
       "available_hours": "4:00 PM - 9:00 PM",
-      "languages": ["Arabic", "English"]
+      "languages": ["Arabic", "English"],
+      "aliases": ["سارة السبيعي", "د. سارة", "الدكتورة سارة", "دكتورة سارة", "سارة"]
     },
     {
       "name": "Dr. Hassan Al-Qahtani",
@@ -64,7 +86,8 @@
       "qualifications": "BDS, SBOD (Saudi Board of Operative Dentistry)",
       "available_days": ["Monday", "Wednesday", "Saturday"],
       "available_hours": "11:00 AM - 1:00 PM, 5:00 PM - 10:00 PM",
-      "languages": ["Arabic", "English"]
+      "languages": ["Arabic", "English"],
+      "aliases": ["حسن القحطاني", "د. حسن", "الدكتور حسن", "دكتور حسن", "حسن"]
     },
     {
       "name": "Dr. Layla Al-Ghamdi",
@@ -72,7 +95,8 @@
       "qualifications": "MBBS, SBD (Saudi Board of Dermatology)",
       "available_days": ["Wednesday", "Saturday"],
       "available_hours": "5:00 PM - 9:00 PM",
-      "languages": ["Arabic", "English"]
+      "languages": ["Arabic", "English"],
+      "aliases": ["ليلى الغامدي", "د. ليلى", "الدكتورة ليلى", "دكتورة ليلى", "ليلى"]
     }
   ],
   "appointment_policy": {
