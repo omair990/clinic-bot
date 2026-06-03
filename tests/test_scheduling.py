@@ -88,3 +88,34 @@ def test_no_slots_on_non_working_day():
     friday = _next_named_day("Friday", date(2026, 6, 1))
     now = datetime.combine(friday, time(7, 0), tzinfo=TZ)
     assert s.available_slots(doctor, friday, 30, [], now) == []
+
+
+def test_next_available_returns_working_days_in_order_within_horizon():
+    doctor = s.find_doctor("Khalid")
+    monday = _next_named_day("Monday", date(2026, 6, 1))
+    now = datetime.combine(monday, time(0, 1), tzinfo=TZ)
+    days = s.next_available_days(doctor, 20, booked=[], now=now, start=monday)
+    assert days, "should find openings within the month"
+    assert len(days) <= 3                            # default max_days cap
+    dates = [d for d, _ in days]
+    assert dates == sorted(dates)                    # chronological
+    for d, slots in days:
+        assert s.doctor_works_on(doctor, d)          # only real working days
+        assert (d - monday).days <= 30               # within the month horizon
+        assert slots                                 # each has bookable times
+    # The first opening is the earliest working day on/after the start — none skipped.
+    cur = monday
+    while not s.doctor_works_on(doctor, cur):
+        cur += timedelta(days=1)
+    assert dates[0] == cur
+
+
+def test_next_available_empty_when_no_working_day_in_horizon():
+    doctor = s.find_doctor("Khalid")
+    # Anchor on the next day this doctor does NOT work; a 0-day horizon checks only that
+    # day, so there is no opening -> empty list (no crash, no guessing).
+    start = _next_named_day("Monday", date(2026, 6, 1))
+    while s.doctor_works_on(doctor, start):
+        start += timedelta(days=1)
+    now = datetime.combine(start, time(7, 0), tzinfo=TZ)
+    assert s.next_available_days(doctor, 20, [], now, start=start, horizon_days=0) == []

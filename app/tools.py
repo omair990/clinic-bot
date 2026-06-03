@@ -138,6 +138,17 @@ TOOL_SPECS: list[ToolSpec] = [
                  "date": {"type": "string", "description": "YYYY-MM-DD, or 'today'/'tomorrow'."},
                  "service": {"type": "string", "description": "Service name (sets the slot length)."}},
               "required": ["doctor", "date"]}),
+    ToolSpec("find_next_availability",
+             "Find a doctor's NEXT open days, scanning up to a month ahead. Use when the "
+             "patient wants the soonest appointment, asks 'when is he/she available?', or the "
+             "day they wanted is full. Returns the next working days that have free times. "
+             "Always prefer this over guessing or checking days one at a time.",
+             {"type": "object", "properties": {
+                 "doctor": {"type": "string", "description": "Doctor name or fragment, e.g. 'Khalid'."},
+                 "service": {"type": "string", "description": "Service name (sets the slot length)."},
+                 "from_date": {"type": "string", "description": "Optional start of the search "
+                               "(YYYY-MM-DD or 'today'/'tomorrow'); defaults to today."}},
+              "required": ["doctor"]}),
     ToolSpec("book_appointment",
              "Reserve a specific slot. Only use a time confirmed free by check_availability. "
              "Collect the patient's name and contact phone number before calling.",
@@ -252,7 +263,8 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
         "slot_duration_min": duration,
         "available_times": [s.strftime("%H:%M") for s in slots[:12]],
         "more_available": len(slots) > 12,
-        "note": None if slots else "No free slots that day — suggest another day.",
+        "note": None if slots else ("No free slots that day — call find_next_availability "
+                                    "to find the doctor's next open day, don't stop here."),
         "booking_lead_hours": BOOKING_LEAD_HOURS,
     }
     # Today only: times before now + lead-time can't be booked even though the clinic is
@@ -268,6 +280,45 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
             "listed times or another day."
         )
     return result
+
+
+def _find_next_availability(args: dict, ctx: AgentContext) -> dict:
+    doctor = find_doctor(args.get("doctor", ""), ctx.doctors)
+    if not doctor:
+        return {"error": "doctor_not_found",
+                "available_doctors": [d["name"] for d in ctx.doctors]}
+    service = find_service(args.get("service", ""), ctx.services) if args.get("service") else None
+    duration = service["duration_min"] if service else DEFAULT_DURATION_MIN
+
+    now = _now()
+    raw_from = (args.get("from_date") or "").strip()
+    start = parse_date(raw_from, now.date()) if raw_from else now.date()
+    if not start:
+        return {"error": "bad_date", "hint": "Use YYYY-MM-DD or 'today'/'tomorrow'."}
+
+    days = _conn(ctx).next_available(doctor, duration, now, start=start)
+    # Same guard bookkeeping as check_availability: the reply may only offer times the
+    # tool actually surfaced, across every day we return here.
+    ctx.availability_checked = True
+    for _on, slots in days:
+        ctx.offered_times.update(s.strftime("%H:%M") for s in slots)
+    options = [{
+        "date": on.isoformat(),
+        "day": on.strftime("%A"),                  # weekday name — use this, don't compute it
+        "date_label": on.strftime("%A, %d %B %Y"),
+        "available_times": [s.strftime("%H:%M") for s in slots[:12]],
+        "more_available": len(slots) > 12,
+    } for on, slots in days]
+    return {
+        "doctor": doctor["name"],
+        "service": service["name"] if service else None,
+        "slot_duration_min": duration,
+        "searched_from": start.isoformat(),
+        "searched_through": (start + timedelta(days=30)).isoformat(),
+        "next_available": options,
+        "note": None if options else ("No openings for this doctor in the next month. Suggest "
+                                      "another doctor or offer to have staff follow up."),
+    }
 
 
 def _resolve_slot(args: dict, ctx: AgentContext):
@@ -542,6 +593,7 @@ _HANDLERS = {
     "list_services": _list_services,
     "list_doctors": _list_doctors,
     "check_availability": _check_availability,
+    "find_next_availability": _find_next_availability,
     "book_appointment": _book_appointment,
     "find_branch": _find_branch,
     "get_faqs": _get_faqs,
