@@ -454,6 +454,58 @@ async def usage(request: Request):
     return {"period": period, "usage": db.tenant_usage_row(p["tenant_id"], period)}
 
 
+# --------------------------------------------------------------------------- cost calculator (super)
+# Public Anthropic list prices (USD per 1M tokens) per Claude tier — used ONLY as editable
+# defaults the owner tunes in the calculator. Not authoritative; the UI lets them override.
+_CLAUDE_PRICES = {
+    "opus": {"input": 15.0, "output": 75.0},
+    "sonnet": {"input": 3.0, "output": 15.0},
+    "haiku": {"input": 1.0, "output": 5.0},
+}
+
+
+def _claude_price_default(model: str) -> dict:
+    m = (model or "").lower()
+    for tier, px in _CLAUDE_PRICES.items():
+        if tier in m:
+            return px
+    return _CLAUDE_PRICES["sonnet"]
+
+
+@router.get("/cost-calculator")
+async def cost_calculator(request: Request):
+    """Super-admin cost calculator: real message volume for the period plus sensible default
+    unit rates, so the owner can estimate Claude, WhatsApp and hosting cost in SAR and price
+    plans. Rates are returned as defaults only — the UI keeps the owner's edits client-side."""
+    _require_super(request)
+    from app.config import CLAUDE_MODEL
+    period = current_period(str(TZ))
+    tenants = db.list_tenants(period)
+    clinics = [{"id": t["id"], "name": t["name"], "slug": t.get("slug"),
+                "text_count": int(t.get("text_count") or 0),
+                "voice_count": int(t.get("voice_count") or 0)} for t in tenants]
+    text = sum(c["text_count"] for c in clinics)
+    voice = sum(c["voice_count"] for c in clinics)
+    px = _claude_price_default(CLAUDE_MODEL)
+    return {
+        "period": period,
+        "model": CLAUDE_MODEL,
+        "totals": {"text": text, "voice": voice, "messages": text + voice, "clinics": len(clinics)},
+        "clinics": clinics,
+        "defaults": {
+            "usd_to_sar": 3.75,                       # SAR is pegged to USD at ~3.75
+            "claude_input_usd_per_mtok": px["input"],
+            "claude_output_usd_per_mtok": px["output"],
+            "avg_input_tokens_per_inquiry": 1500,     # one patient inquiry ≈ a few tool round-trips
+            "avg_output_tokens_per_inquiry": 200,
+            "whatsapp_sar_per_conversation": 0.20,    # region/category dependent — owner to confirm
+            "messages_per_conversation": 4,           # inbound msgs that fall in one 24h WA window
+            "voice_sar_per_message": 0.15,            # transcription + TTS surcharge per voice note
+            "railway_usd_per_month": 20.0,            # flat hosting; spread across all inquiries
+        },
+    }
+
+
 # --------------------------------------------------------------------------- plans / tenants
 @router.get("/plans")
 async def plans(request: Request):
