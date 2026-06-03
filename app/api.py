@@ -481,16 +481,36 @@ async def cost_calculator(request: Request):
     from app.config import CLAUDE_MODEL
     period = current_period(str(TZ))
     tenants = db.list_tenants(period)
-    clinics = [{"id": t["id"], "name": t["name"], "slug": t.get("slug"),
-                "text_count": int(t.get("text_count") or 0),
-                "voice_count": int(t.get("voice_count") or 0)} for t in tenants]
-    text = sum(c["text_count"] for c in clinics)
-    voice = sum(c["voice_count"] for c in clinics)
+    # Exact, real usage this period straight from the conversation log (per tenant).
+    try:
+        breakdown = db.usage_breakdown(_month_start())
+    except Exception:  # noqa: BLE001 — usage detail is best-effort; never 500 the calculator
+        log.warning("usage_breakdown failed", exc_info=True)
+        breakdown = {}
+    clinics = []
+    for t in tenants:
+        b = breakdown.get(t["id"], {})
+        clinics.append({
+            "id": t["id"], "name": t["name"], "slug": t.get("slug"),
+            "inbound": int(b.get("inbound") or 0),
+            "voice": int(b.get("voice_in") or 0),
+            "replies": int(b.get("replies") or 0),
+            "reminders": int(b.get("reminders") or 0),
+        })
+    inbound = sum(c["inbound"] for c in clinics)
+    voice = sum(c["voice"] for c in clinics)
+    replies = sum(c["replies"] for c in clinics)
+    reminders = sum(c["reminders"] for c in clinics)
     px = _claude_price_default(CLAUDE_MODEL)
+    # Ratios observed this period seed the estimator so "1000 messages" auto-scales replies
+    # and reminders realistically; fall back to sane priors when there's no traffic yet.
+    reminders_per = round(reminders / inbound, 3) if inbound else 0.1
+    replies_per = round(replies / inbound, 2) if inbound else 1.0
     return {
         "period": period,
         "model": CLAUDE_MODEL,
-        "totals": {"text": text, "voice": voice, "messages": text + voice, "clinics": len(clinics)},
+        "totals": {"inbound": inbound, "voice": voice, "replies": replies,
+                   "reminders": reminders, "messages": inbound, "clinics": len(clinics)},
         "clinics": clinics,
         "defaults": {
             "usd_to_sar": 3.75,                       # SAR is pegged to USD at ~3.75
@@ -498,8 +518,11 @@ async def cost_calculator(request: Request):
             "claude_output_usd_per_mtok": px["output"],
             "avg_input_tokens_per_inquiry": 1500,     # one patient inquiry ≈ a few tool round-trips
             "avg_output_tokens_per_inquiry": 200,
-            "whatsapp_sar_per_conversation": 0.20,    # region/category dependent — owner to confirm
+            "whatsapp_sar_per_conversation": 0.20,    # service conversation (region/category dependent)
             "messages_per_conversation": 4,           # inbound msgs that fall in one 24h WA window
+            "whatsapp_sar_per_reminder": 0.20,        # proactive (utility) template message
+            "reminders_per_inquiry": reminders_per,   # seeded from this period's real ratio
+            "replies_per_inquiry": replies_per,
             "voice_sar_per_message": 0.15,            # transcription + TTS surcharge per voice note
             "railway_usd_per_month": 20.0,            # flat hosting; spread across all inquiries
         },
