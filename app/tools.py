@@ -12,11 +12,14 @@ from app import db
 from app.config import BOOKING_LEAD_HOURS, TZ
 from app.llm import ToolSpec
 from app.scheduling import (
+    doctor_matches_specialty,
     doctor_works_on,
     find_doctor,
     find_service,
     parse_clock,
     parse_date,
+    service_requires_doctor,
+    service_specialty,
 )
 
 log = logging.getLogger(__name__)
@@ -110,6 +113,43 @@ def _now() -> datetime:
     return datetime.now(TZ)
 
 
+def _service_names(ctx: AgentContext) -> list:
+    return [s["name"] for s in ctx.services]
+
+
+def _eligible_doctors(ctx: AgentContext, service: dict | None) -> list[dict]:
+    """Doctors who can perform `service`: those whose specialty matches the service's
+    declared specialty, or all doctors when the service declares none."""
+    spec = service_specialty(service) if service else ""
+    if not spec:
+        return list(ctx.doctors)
+    matched = [d for d in ctx.doctors if doctor_matches_specialty(d, spec)]
+    return matched or list(ctx.doctors)
+
+
+def _wrong_specialty(ctx: AgentContext, service: dict, doctor: dict) -> dict | None:
+    """Error dict if `doctor` can't perform `service` (specialty mismatch), else None."""
+    spec = service_specialty(service)
+    if spec and service_requires_doctor(service) and not doctor_matches_specialty(doctor, spec):
+        return {"error": "wrong_specialty", "service": service["name"],
+                "doctor": doctor["name"], "needed_specialty": spec,
+                "suggested_doctors": [d["name"] for d in _eligible_doctors(ctx, service)],
+                "hint": "This doctor's specialty doesn't match the service. Offer a suggested "
+                        "doctor instead — do NOT book this service with this doctor."}
+    return None
+
+
+def _union_slots(ctx: AgentContext, doctors: list[dict], on, duration_min: int, now):
+    """Merged, de-duped, sorted bookable start times across `doctors` for one day — used
+    for services that need no specific clinician (the slot is open if anyone can do it)."""
+    conn = _conn(ctx)
+    seen: dict = {}
+    for d in doctors:
+        for s in conn.available_slots(d, on, duration_min, now):
+            seen.setdefault(s.strftime("%H:%M"), s)
+    return [seen[k] for k in sorted(seen)]
+
+
 def _conn(ctx: AgentContext):
     """The tenant's clinic connector — defaults to NativeConnector (our DB) when unset,
     so direct AgentContext construction (e.g. in tests) still works."""
@@ -132,23 +172,28 @@ TOOL_SPECS: list[ToolSpec] = [
              {"type": "object", "properties": {
                  "specialty": {"type": "string", "description": "Optional filter, e.g. 'dentist'."}}}),
     ToolSpec("check_availability",
-             "Return bookable start times for a doctor on a date. Call before offering any time.",
+             "Return bookable start times on a date. Call before offering any time. Pass the "
+             "service so the slot length and doctor rules are right. For lab/imaging services "
+             "that need no specific doctor, omit `doctor` and the tool returns clinic-wide slots.",
              {"type": "object", "properties": {
-                 "doctor": {"type": "string", "description": "Doctor name or fragment, e.g. 'Khalid'."},
+                 "doctor": {"type": "string", "description": "Doctor name or fragment, e.g. "
+                            "'Khalid'. Omit for lab/imaging services that need no doctor."},
                  "date": {"type": "string", "description": "YYYY-MM-DD, or 'today'/'tomorrow'."},
                  "service": {"type": "string", "description": "Service name (sets the slot length)."}},
-              "required": ["doctor", "date"]}),
+              "required": ["date"]}),
     ToolSpec("find_next_availability",
-             "Find a doctor's NEXT open days, scanning up to a month ahead. Use when the "
-             "patient wants the soonest appointment, asks 'when is he/she available?', or the "
-             "day they wanted is full. Returns the next working days that have free times. "
-             "Always prefer this over guessing or checking days one at a time.",
+             "Find the NEXT open days, scanning up to a month ahead. Use when the patient wants "
+             "the soonest appointment, asks 'when is he/she available?', or the day they wanted "
+             "is full. Returns the next working days that have free times. Always prefer this "
+             "over guessing or checking days one at a time. Omit `doctor` for lab/imaging "
+             "services that need no specific doctor.",
              {"type": "object", "properties": {
-                 "doctor": {"type": "string", "description": "Doctor name or fragment, e.g. 'Khalid'."},
+                 "doctor": {"type": "string", "description": "Doctor name or fragment. Omit for "
+                            "lab/imaging services that need no doctor."},
                  "service": {"type": "string", "description": "Service name (sets the slot length)."},
                  "from_date": {"type": "string", "description": "Optional start of the search "
                                "(YYYY-MM-DD or 'today'/'tomorrow'); defaults to today."}},
-              "required": ["doctor"]}),
+              "required": []}),
     ToolSpec("book_appointment",
              "Reserve a specific slot. Only use a time confirmed free by check_availability. "
              "Collect the patient's name and contact phone number before calling.",
@@ -157,13 +202,14 @@ TOOL_SPECS: list[ToolSpec] = [
                  "phone": {"type": "string", "description": "ONLY if the patient gives a "
                            "different contact number; otherwise leave empty and their "
                            "WhatsApp number is used automatically."},
-                 "doctor": {"type": "string"},
+                 "doctor": {"type": "string", "description": "Omit for lab/imaging services "
+                            "that need no specific doctor — one is assigned automatically."},
                  "service": {"type": "string"},
                  "date": {"type": "string", "description": "YYYY-MM-DD or 'today'/'tomorrow'."},
                  "time": {"type": "string", "description": "Start time, e.g. '17:00' or '5:00 PM'."},
                  "extra": {"type": "object", "description": "Clinic-specific intake fields "
                            "(keys/labels listed in the system prompt), e.g. payment method."}},
-              "required": ["patient_name", "doctor", "service", "date", "time"]}),
+              "required": ["patient_name", "service", "date", "time"]}),
     ToolSpec("find_branch",
              "Route a patient to the right clinic branch. Call when they mention a city, "
              "district or area, or ask which location to visit. Returns matching branches "
@@ -239,23 +285,44 @@ def _list_doctors(args: dict, ctx: AgentContext) -> dict:
 
 
 def _check_availability(args: dict, ctx: AgentContext) -> dict:
-    doctor = find_doctor(args.get("doctor", ""), ctx.doctors)
-    if not doctor:
-        return {"error": "doctor_not_found",
-                "available_doctors": [d["name"] for d in ctx.doctors]}
     on = parse_date(args.get("date", ""), _now().date())
     if not on:
         return {"error": "bad_date", "hint": "Use YYYY-MM-DD or 'today'/'tomorrow'."}
+
     service = find_service(args.get("service", ""), ctx.services) if args.get("service") else None
+    if args.get("service") and not service:
+        # Surface the real catalogue so the model re-maps (esp. an Arabic name) instead of
+        # telling the patient a service it just quoted "doesn't exist".
+        return {"error": "service_not_found", "available_services": _service_names(ctx)}
     duration = service["duration_min"] if service else DEFAULT_DURATION_MIN
+    no_doctor = service is not None and not service_requires_doctor(service)
+
+    doctor = find_doctor(args.get("doctor", ""), ctx.doctors) if args.get("doctor") else None
+    if args.get("doctor") and not doctor:
+        return {"error": "doctor_not_found",
+                "available_doctors": [d["name"] for d in ctx.doctors]}
+    if doctor and service and (mismatch := _wrong_specialty(ctx, service, doctor)):
+        return mismatch
 
     now = _now()
-    slots = _conn(ctx).available_slots(doctor, on, duration, now)
+    if no_doctor:
+        # Lab/imaging: no specific clinician — show when the clinic can do it (any eligible).
+        eligible = _eligible_doctors(ctx, service)
+        slots = _union_slots(ctx, eligible, on, duration, now)
+        chosen = None
+    else:
+        if not doctor:
+            return {"error": "doctor_required",
+                    "available_doctors": [d["name"] for d in ctx.doctors]}
+        slots = _conn(ctx).available_slots(doctor, on, duration, now)
+        chosen = doctor
+
     # Record the real slots so the reply guard can reject any time the bot invents.
     ctx.availability_checked = True
     ctx.offered_times.update(s.strftime("%H:%M") for s in slots)
     result = {
-        "doctor": doctor["name"],
+        "doctor": chosen["name"] if chosen else None,
+        "no_doctor_needed": no_doctor,
         "date": on.isoformat(),
         "day": on.strftime("%A"),          # weekday name — use this, don't compute it
         "date_label": on.strftime("%A, %d %B %Y"),
@@ -264,13 +331,13 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
         "available_times": [s.strftime("%H:%M") for s in slots[:12]],
         "more_available": len(slots) > 12,
         "note": None if slots else ("No free slots that day — call find_next_availability "
-                                    "to find the doctor's next open day, don't stop here."),
+                                    "to find the next open day, don't stop here."),
         "booking_lead_hours": BOOKING_LEAD_HOURS,
     }
     # Today only: times before now + lead-time can't be booked even though the clinic is
     # open then. Surface this so the bot explains "that's too soon" instead of wrongly
     # telling the patient the clinic/doctor isn't available at that hour.
-    if on == now.date() and doctor_works_on(doctor, on):
+    if chosen and on == now.date() and doctor_works_on(chosen, on):
         earliest = (now + timedelta(hours=BOOKING_LEAD_HOURS)).strftime("%H:%M")
         result["earliest_bookable_today"] = earliest
         result["lead_time_note"] = (
@@ -283,12 +350,21 @@ def _check_availability(args: dict, ctx: AgentContext) -> dict:
 
 
 def _find_next_availability(args: dict, ctx: AgentContext) -> dict:
-    doctor = find_doctor(args.get("doctor", ""), ctx.doctors)
-    if not doctor:
+    service = find_service(args.get("service", ""), ctx.services) if args.get("service") else None
+    if args.get("service") and not service:
+        return {"error": "service_not_found", "available_services": _service_names(ctx)}
+    duration = service["duration_min"] if service else DEFAULT_DURATION_MIN
+    no_doctor = service is not None and not service_requires_doctor(service)
+
+    doctor = find_doctor(args.get("doctor", ""), ctx.doctors) if args.get("doctor") else None
+    if args.get("doctor") and not doctor:
         return {"error": "doctor_not_found",
                 "available_doctors": [d["name"] for d in ctx.doctors]}
-    service = find_service(args.get("service", ""), ctx.services) if args.get("service") else None
-    duration = service["duration_min"] if service else DEFAULT_DURATION_MIN
+    if doctor and service and (mismatch := _wrong_specialty(ctx, service, doctor)):
+        return mismatch
+    if not no_doctor and not doctor:
+        return {"error": "doctor_required",
+                "available_doctors": [d["name"] for d in ctx.doctors]}
 
     now = _now()
     raw_from = (args.get("from_date") or "").strip()
@@ -296,7 +372,18 @@ def _find_next_availability(args: dict, ctx: AgentContext) -> dict:
     if not start:
         return {"error": "bad_date", "hint": "Use YYYY-MM-DD or 'today'/'tomorrow'."}
 
-    days = _conn(ctx).next_available(doctor, duration, now, start=start)
+    if no_doctor:
+        # Scan the union of eligible clinicians' calendars (no specific doctor needed).
+        eligible = _eligible_doctors(ctx, service)
+        days, off = [], 0
+        while off <= 30 and len(days) < 3:
+            on = start + timedelta(days=off)
+            slots = _union_slots(ctx, eligible, on, duration, now)
+            if slots:
+                days.append((on, slots))
+            off += 1
+    else:
+        days = _conn(ctx).next_available(doctor, duration, now, start=start)
     # Same guard bookkeeping as check_availability: the reply may only offer times the
     # tool actually surfaced, across every day we return here.
     ctx.availability_checked = True
@@ -310,47 +397,73 @@ def _find_next_availability(args: dict, ctx: AgentContext) -> dict:
         "more_available": len(slots) > 12,
     } for on, slots in days]
     return {
-        "doctor": doctor["name"],
+        "doctor": doctor["name"] if doctor else None,
+        "no_doctor_needed": no_doctor,
         "service": service["name"] if service else None,
         "slot_duration_min": duration,
         "searched_from": start.isoformat(),
         "searched_through": (start + timedelta(days=30)).isoformat(),
         "next_available": options,
-        "note": None if options else ("No openings for this doctor in the next month. Suggest "
-                                      "another doctor or offer to have staff follow up."),
+        "note": None if options else ("No openings in the next month. Suggest another doctor "
+                                      "or offer to have staff follow up."),
     }
 
 
 def _resolve_slot(args: dict, ctx: AgentContext):
-    """Shared validation for book/reschedule -> (doctor, service, start, end) or error dict."""
-    doctor = find_doctor(args.get("doctor", ""), ctx.doctors)
-    if not doctor:
-        return {"error": "doctor_not_found"}
+    """Shared validation for book/reschedule.
+    Returns (doctor_or_None, service, no_doctor, start, end) or an error dict."""
     service = find_service(args.get("service", ""), ctx.services)
     if not service:
-        return {"error": "service_not_found"}
+        return {"error": "service_not_found", "available_services": _service_names(ctx)}
     on = parse_date(args.get("date", ""), _now().date())
     clock = parse_clock(args.get("time", ""))
     if not on or not clock:
         return {"error": "bad_datetime", "hint": "Need a valid date and time."}
     start = datetime.combine(on, clock, tzinfo=TZ)
     end = start + timedelta(minutes=service["duration_min"])
-    return doctor, service, start, end
+
+    no_doctor = not service_requires_doctor(service)
+    doctor = find_doctor(args.get("doctor", ""), ctx.doctors) if args.get("doctor") else None
+    if args.get("doctor") and not doctor:
+        return {"error": "doctor_not_found",
+                "available_doctors": [d["name"] for d in ctx.doctors]}
+    if doctor and (mismatch := _wrong_specialty(ctx, service, doctor)):
+        return mismatch
+    if not no_doctor and not doctor:
+        return {"error": "doctor_required",
+                "available_doctors": [d["name"] for d in _eligible_doctors(ctx, service)]}
+    return doctor, service, no_doctor, start, end
 
 
 def _book_appointment(args: dict, ctx: AgentContext) -> dict:
     resolved = _resolve_slot(args, ctx)
     if isinstance(resolved, dict):
         return resolved
-    doctor, service, start, end = resolved
+    doctor, service, no_doctor, start, end = resolved
 
     conn = _conn(ctx)
-    valid = conn.available_slots(doctor, start.date(), service["duration_min"], _now())
-    ctx.availability_checked = True
-    ctx.offered_times.update(s.strftime("%H:%M") for s in valid)
-    if start not in valid:
-        return {"error": "slot_unavailable",
-                "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
+    if no_doctor and doctor is None:
+        # Lab/imaging: auto-assign the first eligible clinician actually free at this slot,
+        # so the booking still lands on a real doctor + the double-booking guard holds.
+        eligible = _eligible_doctors(ctx, service)
+        valid = _union_slots(ctx, eligible, start.date(), service["duration_min"], _now())
+        ctx.availability_checked = True
+        ctx.offered_times.update(s.strftime("%H:%M") for s in valid)
+        if start not in valid:
+            return {"error": "slot_unavailable",
+                    "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
+        doctor = next((d for d in eligible if start in
+                       conn.available_slots(d, start.date(), service["duration_min"], _now())), None)
+        if doctor is None:
+            return {"error": "slot_unavailable",
+                    "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
+    else:
+        valid = conn.available_slots(doctor, start.date(), service["duration_min"], _now())
+        ctx.availability_checked = True
+        ctx.offered_times.update(s.strftime("%H:%M") for s in valid)
+        if start not in valid:
+            return {"error": "slot_unavailable",
+                    "available_times": [s.strftime("%H:%M") for s in valid[:12]]}
 
     # Clinic-specific intake fields (device code, insurance, payment method, ...).
     extra = args.get("extra") if isinstance(args.get("extra"), dict) else {}

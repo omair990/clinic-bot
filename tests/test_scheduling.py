@@ -119,3 +119,54 @@ def test_next_available_empty_when_no_working_day_in_horizon():
         start += timedelta(days=1)
     now = datetime.combine(start, time(7, 0), tzinfo=TZ)
     assert s.next_available_days(doctor, 20, [], now, start=start, horizon_days=0) == []
+
+
+# --- fuzzy / alias matching, specialty + lab helpers ----------------------------------
+
+_SERVICES = [
+    {"name": "Dental Cleaning", "price_sar": 400, "duration_min": 45, "specialty": "Dentist"},
+    {"name": "Lab Test - Blood Sugar", "price_sar": 50, "duration_min": 15,
+     "aliases": ["فحص السكر", "سكر"]},
+]
+_DOCTORS = [
+    {"name": "Dr. Khalid Al-Otaibi", "specialty": "General Medicine",
+     "available_days": ["Sunday"], "available_hours": "10:00 AM - 1:00 PM"},
+    {"name": "Dr. Hassan Al-Qahtani", "specialty": "Dentist",
+     "available_days": ["Monday"], "available_hours": "10:00 AM - 1:00 PM",
+     "aliases": ["حسن القحطاني"]},
+]
+
+
+def test_find_service_fuzzy_partial_and_typo():
+    assert s.find_service("cleaning", _SERVICES)["name"] == "Dental Cleaning"
+    assert s.find_service("dental cleaaning", _SERVICES)["name"] == "Dental Cleaning"  # typo
+    assert s.find_service("rocket science", _SERVICES) is None                          # no match
+
+
+def test_find_matches_via_alias_and_cross_script():
+    assert s.find_service("فحص السكر", _SERVICES)["name"] == "Lab Test - Blood Sugar"
+    assert s.find_doctor("حسن القحطاني", _DOCTORS)["name"] == "Dr. Hassan Al-Qahtani"
+
+
+def test_find_doctor_strips_honorifics_and_tolerates_typos():
+    assert s.find_doctor("dr. khalid", _DOCTORS)["name"] == "Dr. Khalid Al-Otaibi"
+    assert s.find_doctor("kalid", _DOCTORS)["name"] == "Dr. Khalid Al-Otaibi"   # token typo
+    assert s.find_doctor("nobody xyz", _DOCTORS) is None
+
+
+def test_service_requires_doctor_inference_and_override():
+    assert s.service_requires_doctor({"name": "Dental Cleaning"}) is True
+    assert s.service_requires_doctor({"name": "Lab Test - Blood Sugar"}) is False
+    assert s.service_requires_doctor({"name": "فحص السكر"}) is False
+    assert s.service_requires_doctor({"name": "Lab Test", "requires_doctor": True}) is True
+    assert s.service_requires_doctor({"name": "Consultation", "requires_doctor": False}) is False
+
+
+def test_specialty_compatibility():
+    dentist, gp = _DOCTORS[1], _DOCTORS[0]
+    assert s.service_specialty(_SERVICES[0]) == "Dentist"
+    assert s.service_specialty(_SERVICES[1]) == ""
+    assert s.doctor_matches_specialty(dentist, "Dentist")
+    assert s.doctor_matches_specialty({"specialty": "Dentistry"}, "Dentist")  # substring
+    assert not s.doctor_matches_specialty(gp, "Dentist")
+    assert s.doctor_matches_specialty(gp, "")   # no requirement -> always compatible

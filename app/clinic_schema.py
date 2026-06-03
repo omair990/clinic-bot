@@ -119,6 +119,16 @@ def normalize(data) -> dict:
                 row["price_sar"] = n
             if (n := _num(s.get("duration_min"))) is not None:
                 row["duration_min"] = n
+            # Optional booking hints (all pass through if absent):
+            #  specialty       — which doctor specialty performs it (enables the right-doctor check)
+            #  requires_doctor — false for lab/imaging services so no clinician is chosen
+            #  aliases         — alternate names (e.g. Arabic) to help matching
+            if "specialty" in s:
+                row["specialty"] = _s(s.get("specialty"))
+            if "requires_doctor" in s and (b := _as_bool(s.get("requires_doctor"))) is not None:
+                row["requires_doctor"] = b
+            if "aliases" in s:
+                row["aliases"] = _str_list(s.get("aliases"))
             svcs.append(row)
         out["services"] = svcs
 
@@ -139,6 +149,8 @@ def normalize(data) -> dict:
                                      for x in _str_list(d.get("available_days"))]
             if "languages" in d:
                 row["languages"] = _str_list(d.get("languages"))
+            if "aliases" in d:  # alternate names (e.g. Arabic) to help matching
+                row["aliases"] = _str_list(d.get("aliases"))
             docs.append(row)
         out["doctors"] = docs
 
