@@ -1290,6 +1290,23 @@ def list_appointments(status: str | None = None, limit: int = 200,
     return rows
 
 
+def appointments_in_range(since: datetime, until: datetime, tenant_id: int | None = None,
+                          limit: int = 5000) -> list[dict]:
+    """Appointments whose visit falls in [since, until), newest first — the row source for
+    the operations report. Scope-aware: a clinic id filters to one clinic, None spans all."""
+    sql = ("SELECT id, tenant_id, wa_user, patient_name, phone, doctor, service, start_at, "
+           "end_at, status, created_at FROM appointments "
+           "WHERE start_at >= %s AND start_at < %s")
+    params: list = [since, until]
+    if tenant_id is not None:
+        sql += " AND tenant_id = %s"
+        params.append(tenant_id)
+    sql += " ORDER BY start_at DESC LIMIT %s"
+    params.append(limit)
+    with get_conn() as conn:
+        return conn.execute(sql, tuple(params)).fetchall()
+
+
 def stats(tenant_id: int | None = None) -> dict:
     w = "WHERE tenant_id = %s" if tenant_id is not None else ""
     wa = "AND tenant_id = %s" if tenant_id is not None else ""
@@ -1434,6 +1451,24 @@ def list_reviews(tenant_id: int | None = None, limit: int = 200) -> list[dict]:
     params: list = []
     if tenant_id is not None:
         sql += " WHERE r.tenant_id = %s"
+        params.append(tenant_id)
+    sql += " ORDER BY r.created_at DESC LIMIT %s"
+    params.append(limit)
+    with get_conn() as conn:
+        return conn.execute(sql, tuple(params)).fetchall()
+
+
+def reviews_in_range(since: datetime, until: datetime, tenant_id: int | None = None,
+                     limit: int = 5000) -> list[dict]:
+    """Reviews requested in [since, until), newest first — the report's review section.
+    Scope-aware like :func:`list_reviews` (a clinic id filters to one clinic, None spans all)."""
+    sql = ("SELECT r.id, r.tenant_id, r.wa_user, r.rating, r.comment, r.stage, r.responded_at, "
+           "r.created_at, a.doctor, a.service, a.patient_name "
+           "FROM reviews r JOIN appointments a ON a.id = r.appointment_id "
+           "WHERE r.created_at >= %s AND r.created_at < %s")
+    params: list = [since, until]
+    if tenant_id is not None:
+        sql += " AND r.tenant_id = %s"
         params.append(tenant_id)
     sql += " ORDER BY r.created_at DESC LIMIT %s"
     params.append(limit)

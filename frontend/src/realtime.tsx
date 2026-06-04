@@ -46,6 +46,7 @@ interface Live {
   connected: boolean;
   notes: Note[];
   unread: number;
+  unreadByCat: Record<string, number>;
   activity: Activity[];
   typing: Set<string>;
   markAllRead: () => void;
@@ -69,6 +70,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [unread, setUnread] = useState(0);
+  // Per-category unread counts drive the contextual badges on the sidebar nav items.
+  const [unreadByCat, setUnreadByCat] = useState<Record<string, number>>({});
   const [activity, setActivity] = useState<Activity[]>([]);
   const [typing, setTyping] = useState<Set<string>>(new Set());
 
@@ -86,6 +89,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // Persist "seen" so the unread badge stays cleared across refreshes and other sessions.
   const markAllRead = useCallback(() => {
     setUnread(0);
+    setUnreadByCat({});
     apiPost("/notifications/seen").catch(() => {});
   }, []);
   const clear = useCallback(() => { setNotes([]); markAllRead(); }, [markAllRead]);
@@ -95,8 +99,22 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     // Seed the bell with durable history + the durable unread count (survives refresh/restart).
+    // The unread notifications are exactly the newest `unread` entries (the "seen" marker
+    // advances monotonically), so we can derive per-category counts for the contextual badges.
     apiGet<{ notifications: Note[]; unread: number }>("/notifications")
-      .then((d) => { if (!cancelled) { setNotes(d.notifications || []); setUnread(d.unread || 0); } })
+      .then((d) => {
+        if (cancelled) return;
+        const list = d.notifications || [];
+        const u = d.unread || 0;
+        setNotes(list);
+        setUnread(u);
+        const cat: Record<string, number> = {};
+        for (const n of list.slice(0, u)) {
+          const c = n.category || "general";
+          cat[c] = (cat[c] || 0) + 1;
+        }
+        setUnreadByCat(cat);
+      })
       .catch(() => {});
 
     const es = new EventSource("/api/stream");
@@ -111,6 +129,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         const note = ev as Note;
         setNotes((prev) => [note, ...prev].slice(0, MAX_NOTES));
         setUnread((u) => u + 1);
+        setUnreadByCat((prev) => {
+          const c = note.category || "general";
+          return { ...prev, [c]: (prev[c] || 0) + 1 };
+        });
         enqueueSnackbar(note.title, { variant: variantFor[note.level] ?? "info" });
         scheduleRefresh();
       } else if (ev.type === "message") {
@@ -144,7 +166,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   }, [me, enqueueSnackbar, scheduleRefresh]);
 
   return (
-    <LiveCtx.Provider value={{ connected, notes, unread, activity, typing, markAllRead, clear }}>
+    <LiveCtx.Provider value={{ connected, notes, unread, unreadByCat, activity, typing, markAllRead, clear }}>
       {children}
     </LiveCtx.Provider>
   );

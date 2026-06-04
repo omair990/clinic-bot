@@ -11,6 +11,8 @@ import Appointments from "./pages/Appointments";
 import NoShows from "./pages/NoShows";
 import Reviews from "./pages/Reviews";
 import Insights from "./pages/Insights";
+import Reports from "./pages/Reports";
+import Notifications from "./pages/Notifications";
 import Usage from "./pages/Usage";
 import Plans from "./pages/Plans";
 import CostCalculator from "./pages/CostCalculator";
@@ -52,6 +54,8 @@ export default function App() {
         <Route path="/appointments" element={<Appointments />} />
         <Route path="/no-shows" element={<NoShows />} />
         <Route path="/insights" element={<Insights />} />
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/notifications" element={<Notifications />} />
         <Route path="/reviews" element={<Reviews />} />
         {!isSuper && <Route path="/usage" element={<Usage />} />}
         {isSuper && <Route path="/plans" element={<Plans />} />}
