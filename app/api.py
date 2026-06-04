@@ -20,6 +20,7 @@ from app import connectors as connectors_mod
 from app import db
 from app import insights as insights_mod
 from app import no_show as no_show_mod
+from app import reports as reports_mod
 from app.auth import hash_password, verify_password
 from app.events import publish
 from app.config import (
@@ -443,6 +444,18 @@ async def insights(request: Request, period: str = Query("day"), lang: str = Que
     lang = "ar" if lang == "ar" else "en"
     report = await _to_thread(insights_mod.report, scope, period, str(TZ), None, lang)
     return {"report": report, "period": period, **_filter_meta(request)}
+
+
+# --------------------------------------------------------------------------- reports
+@router.get("/reports")
+async def reports(request: Request, date_from: str = Query("", alias="from"),
+                  date_to: str = Query("", alias="to")):
+    """Date-range operations report for the current scope (a clinic, or all clinics for the
+    super-admin). The SPA turns the JSON into the on-screen view + the CSV/PDF exports."""
+    scope = _view_scope(request)
+    since, until = reports_mod.parse_range(date_from, date_to)
+    report = await _to_thread(reports_mod.build_report, scope, since, until, str(TZ))
+    return {"report": report, **_filter_meta(request)}
 
 
 # --------------------------------------------------------------------------- usage (clinic)

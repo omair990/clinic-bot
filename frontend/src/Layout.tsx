@@ -4,6 +4,7 @@ import {
   Box, Drawer, AppBar, Toolbar, Typography, List, ListItemButton, ListItemIcon,
   ListItemText, Divider, IconButton, Tooltip, Avatar, Menu, MenuItem, Breadcrumbs, Link,
   Fade, alpha, useMediaQuery, useTheme, Paper, BottomNavigation, BottomNavigationAction,
+  Badge,
 } from "@mui/material";
 import DashboardIcon from "@mui/icons-material/SpaceDashboard";
 import ChatIcon from "@mui/icons-material/ForumOutlined";
@@ -16,6 +17,8 @@ import LayersIcon from "@mui/icons-material/LayersOutlined";
 import CalculateIcon from "@mui/icons-material/CalculateOutlined";
 import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
 import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
+import AssessmentIcon from "@mui/icons-material/AssessmentOutlined";
+import NotificationsIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import SettingsIcon from "@mui/icons-material/SettingsOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import MoreHorizIcon from "@mui/icons-material/MoreHorizRounded";
@@ -28,6 +31,7 @@ import { useAuth } from "./auth";
 import { useColorMode } from "./ColorMode";
 import { useI18n, useT } from "./i18n";
 import NotificationBell from "./NotificationBell";
+import { useLive } from "./realtime";
 
 const FULL = 248;
 const MINI = 76;
@@ -35,6 +39,7 @@ const MOBILE_W = 280;
 
 export default function Layout() {
   const { me, logout } = useAuth();
+  const { unread, unreadByCat } = useLive();
   const { mode, toggle } = useColorMode();
   const { lang, dir, setLang } = useI18n();
   const t = useT();
@@ -48,16 +53,18 @@ export default function Layout() {
   const isSuper = me?.role === "super";
   const W = open ? FULL : MINI;
 
-  const items: { label: string; short?: string; to: string; icon: ReactNode }[] = [
+  const items: { label: string; short?: string; to: string; icon: ReactNode; badge?: number }[] = [
     { label: t(isSuper ? "nav.overview" : "nav.dashboard"), short: t("nav.shortOverview"), to: "/", icon: <DashboardIcon /> },
-    { label: t("nav.conversations"), short: t("nav.shortChats"), to: "/conversations", icon: <ChatIcon /> },
-    { label: t("nav.appointments"), short: t("nav.shortAppointments"), to: "/appointments", icon: <EventIcon /> },
-    { label: t("nav.no-shows"), short: t("nav.shortMissed"), to: "/no-shows", icon: <EventBusyIcon /> },
+    { label: t("nav.conversations"), short: t("nav.shortChats"), to: "/conversations", icon: <ChatIcon />, badge: unreadByCat.handover },
+    { label: t("nav.appointments"), short: t("nav.shortAppointments"), to: "/appointments", icon: <EventIcon />, badge: unreadByCat.booking },
+    { label: t("nav.no-shows"), short: t("nav.shortMissed"), to: "/no-shows", icon: <EventBusyIcon />, badge: unreadByCat.no_show },
     { label: t("nav.insights"), to: "/insights", icon: <InsightsIcon /> },
-    { label: t("nav.reviews"), to: "/reviews", icon: <StarIcon /> },
+    { label: t("nav.reports"), to: "/reports", icon: <AssessmentIcon /> },
+    { label: t("nav.reviews"), to: "/reviews", icon: <StarIcon />, badge: unreadByCat.review },
+    { label: t("nav.notifications"), to: "/notifications", icon: <NotificationsIcon />, badge: unread },
     ...(!isSuper ? [{ label: t("nav.usage"), to: "/usage", icon: <SpeedIcon /> }] : []),
     ...(isSuper ? [
-      { label: t("nav.issues"), to: "/issues", icon: <ReportProblemIcon /> },
+      { label: t("nav.issues"), to: "/issues", icon: <ReportProblemIcon />, badge: unreadByCat.incident },
       { label: t("nav.plans"), to: "/plans", icon: <LayersIcon /> },
       { label: t("nav.calculator"), to: "/calculator", icon: <CalculateIcon /> },
       { label: t("nav.capacity"), to: "/capacity", icon: <SpeedOutlinedIcon /> },
@@ -109,8 +116,18 @@ export default function Layout() {
                 "&.Mui-selected:hover": { background: "linear-gradient(90deg, rgba(20,184,166,.32), rgba(99,102,241,.24))" },
                 "&:hover": { background: alpha("#fff", 0.06) },
               }}>
-              <ListItemIcon>{it.icon}</ListItemIcon>
+              <ListItemIcon>
+                {/* In mini mode the label is hidden, so the count rides on the icon; when
+                    expanded the icon stays clean and the count shows at the row's end. */}
+                <Badge color="error" max={99} overlap="circular"
+                  badgeContent={expanded ? 0 : (it.badge || 0)}>{it.icon}</Badge>
+              </ListItemIcon>
               {expanded && <ListItemText primaryTypographyProps={{ fontSize: 14, fontWeight: 600 }} primary={it.label} />}
+              {expanded && !!it.badge && (
+                <Box sx={{ ml: 1, minWidth: 20, height: 20, px: 0.75, borderRadius: 5,
+                  display: "grid", placeItems: "center", bgcolor: "error.main", color: "#fff",
+                  fontSize: 11, fontWeight: 700 }}>{it.badge > 99 ? "99+" : it.badge}</Box>
+              )}
             </ListItemButton>
           </Tooltip>
         ))}
