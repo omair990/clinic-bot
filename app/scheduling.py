@@ -51,30 +51,40 @@ def _best_match(query: str, rows: list[dict], extra_keys: tuple = ()) -> dict | 
     if not q:
         return None
 
-    def cands(row: dict) -> list[str]:
+    def whole_cands(row: dict) -> list[str]:
+        """Full normalized name + aliases(+extra_keys) only — the identity of the row."""
         vals = [row.get("name", "")] + _aliases(row) + [row.get(k, "") for k in extra_keys]
-        out: list[str] = []
+        return [w for v in vals if (w := _norm(v))]
+
+    def fuzzy_cands(row: dict) -> list[str]:
+        """Whole names plus individual words, so a typo on part of a name ("kalid" for the
+        "Khalid" in "Dr. Khalid Al-Otaibi") still resolves. Skip tiny tokens ("al")."""
+        out = whole_cands(row)
+        vals = [row.get("name", "")] + _aliases(row) + [row.get(k, "") for k in extra_keys]
         for v in vals:
-            whole = _norm(v)
-            if whole:
-                out.append(whole)
-            # Also match individual words, so a typo on part of a name ("kalid" for the
-            # "Khalid" in "Dr. Khalid Al-Otaibi") still resolves. Skip tiny tokens ("al").
             for tok in str(v).split():
                 t = _norm(tok)
                 if len(t) >= 3:
                     out.append(t)
         return out
 
-    for row in rows:                                   # exact
-        if q in cands(row):
+    for row in rows:                                   # exact (full name/alias)
+        if q in whole_cands(row):
             return row
-    for row in rows:                                   # substring either direction
-        if any(q in c or c in q for c in cands(row)):
-            return row
+    # Substring either direction, but ONLY against whole names — never split word-tokens.
+    # Matching a token would let a generic shared word (e.g. "تحليل"/"test", "lab") resolve
+    # to the first service that contains it, ignoring the distinguishing word. Pick the most
+    # specific (longest) matching name so a name that is a prefix of another never wins.
+    best_sub, best_len = None, 0
+    for row in rows:
+        for c in whole_cands(row):
+            if (q in c or c in q) and len(c) > best_len:
+                best_sub, best_len = row, len(c)
+    if best_sub is not None:
+        return best_sub
     best, best_score = None, 0.0                       # fuzzy fallback (same-script typos)
     for row in rows:
-        score = max((SequenceMatcher(None, q, c).ratio() for c in cands(row)), default=0.0)
+        score = max((SequenceMatcher(None, q, c).ratio() for c in fuzzy_cands(row)), default=0.0)
         if score > best_score:
             best, best_score = row, score
     return best if best_score >= _FUZZY_MIN else None
