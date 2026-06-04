@@ -148,6 +148,28 @@ def test_find_matches_via_alias_and_cross_script():
     assert s.find_doctor("حسن القحطاني", _DOCTORS)["name"] == "Dr. Hassan Al-Qahtani"
 
 
+# Regression: two services sharing a generic leading word ("تحليل" = test/analysis) must NOT
+# both collapse onto whichever is listed first. The patient asked for "تحليل سكر" (Blood
+# Sugar) but the booking was recorded as "تحليل دم شامل" (CBC) because a shared word-token
+# substring-matched the earlier-listed service. Resolve on the distinguishing word instead.
+_AR_SERVICES = [
+    {"name": "تحليل دم شامل", "price_sar": 80},   # CBC — listed first
+    {"name": "تحليل سكر", "price_sar": 50},        # Blood Sugar
+]
+
+
+def test_shared_category_word_resolves_to_distinguishing_service():
+    assert s.find_service("تحليل سكر", _AR_SERVICES)["name"] == "تحليل سكر"
+    assert s.find_service("تحليل دم شامل", _AR_SERVICES)["name"] == "تحليل دم شامل"
+    assert s.find_service("سكر", _AR_SERVICES)["name"] == "تحليل سكر"
+
+
+def test_prefix_name_does_not_beat_more_specific_one():
+    # A service whose name is a prefix word of another must not win the longer query.
+    rows = [{"name": "استشارة"}, {"name": "استشارة أطفال"}]
+    assert s.find_service("استشارة أطفال", rows)["name"] == "استشارة أطفال"
+
+
 def test_find_doctor_strips_honorifics_and_tolerates_typos():
     assert s.find_doctor("dr. khalid", _DOCTORS)["name"] == "Dr. Khalid Al-Otaibi"
     assert s.find_doctor("kalid", _DOCTORS)["name"] == "Dr. Khalid Al-Otaibi"   # token typo
