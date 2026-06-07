@@ -77,3 +77,31 @@ def test_doctor_required_for_clinical_service_when_omitted():
                    {"service": "Dental Cleaning", "date": _SLOT.date().isoformat()}, _ctx())
     assert out.get("error") == "doctor_required", out
     assert "Dr. Hassan Al-Qahtani" in out["available_doctors"]
+
+
+def test_list_doctors_for_service_returns_only_eligible_doctors():
+    # The core fix: offering doctors for a service must not include doctors who can't do it,
+    # so we never suggest a doctor and then tell the patient they can't perform the service.
+    out = dispatch("list_doctors", {"service": "Dental Cleaning"}, _ctx())
+    assert "error" not in out, out
+    names = [d["name"] for d in out["doctors"]]
+    assert names == ["Dr. Hassan Al-Qahtani"], names
+    assert "Dr. Khalid Al-Otaibi" not in names
+
+
+def test_list_doctors_for_lab_service_needs_no_doctor():
+    out = dispatch("list_doctors", {"service": "Lab Test - Blood Sugar"}, _ctx())
+    assert out.get("no_doctor_needed") is True, out
+    assert out["doctors"] == []
+
+
+def test_list_doctors_for_unknown_service_returns_catalogue():
+    out = dispatch("list_doctors", {"service": "teleportation"}, _ctx())
+    assert out.get("error") == "service_not_found", out
+    assert "Dental Cleaning" in out["available_services"]
+
+
+def test_list_doctors_without_service_lists_everyone():
+    out = dispatch("list_doctors", {}, _ctx())
+    names = {d["name"] for d in out["doctors"]}
+    assert names == {"Dr. Khalid Al-Otaibi", "Dr. Hassan Al-Qahtani"}, names
