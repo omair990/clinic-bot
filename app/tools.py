@@ -179,9 +179,16 @@ def _fmt(dt: datetime) -> str:
 TOOL_SPECS: list[ToolSpec] = [
     ToolSpec("list_services", "List clinic services with prices (SAR) and durations.",
              {"type": "object", "properties": {}}),
-    ToolSpec("list_doctors", "List doctors, their specialty, and the days they work.",
+    ToolSpec("list_doctors",
+             "List doctors, their specialty, and the days they work. When the patient wants a "
+             "specific service, ALWAYS pass `service` so you only get doctors who can perform "
+             "it — never offer a doctor for a service without this.",
              {"type": "object", "properties": {
-                 "specialty": {"type": "string", "description": "Optional filter, e.g. 'dentist'."}}}),
+                 "service": {"type": "string", "description": "Service the patient wants (e.g. "
+                             "'Cavity Filling'). Returns only doctors eligible for it, or "
+                             "no_doctor_needed for lab/imaging services."},
+                 "specialty": {"type": "string", "description": "Optional filter, e.g. 'dentist'. "
+                               "Prefer `service` when a service is known."}}}),
     ToolSpec("check_availability",
              "Return bookable start times on a date. Call before offering any time. Pass the "
              "service so the slot length and doctor rules are right. For lab/imaging services "
@@ -285,14 +292,33 @@ def _list_services(args: dict, ctx: AgentContext) -> dict:
 
 
 def _list_doctors(args: dict, ctx: AgentContext) -> dict:
+    # Service-scoped listing comes first: when the patient wants a specific service, only
+    # surface doctors who can actually perform it. This is what stops us offering a doctor
+    # and then telling the patient that doctor can't do the service (specialty mismatch).
+    svc_arg = (args.get("service") or "").strip()
+    if svc_arg:
+        service = find_service(svc_arg, ctx.services)
+        if not service:
+            return {"error": "service_not_found", "available_services": _service_names(ctx)}
+        if not service_requires_doctor(service):
+            return {"service": service["name"], "no_doctor_needed": True, "doctors": [],
+                    "hint": "This service needs no specific doctor — don't ask the patient to "
+                            "pick one. Offer times and book directly."}
+        docs = _eligible_doctors(ctx, service)
+        return {"service": service["name"],
+                "doctors": [_doctor_row(d) for d in docs],
+                "hint": "These are the ONLY doctors who can perform this service. Offer one of "
+                        "them — never suggest a doctor that isn't in this list."}
     spec = (args.get("specialty") or "").lower().strip()
     docs = ctx.doctors
     if spec:
         docs = [d for d in ctx.doctors if spec in d["specialty"].lower()] or ctx.doctors
-    return {"doctors": [
-        {"name": d["name"], "specialty": d["specialty"],
-         "available_days": d["available_days"], "available_hours": d["available_hours"]}
-        for d in docs]}
+    return {"doctors": [_doctor_row(d) for d in docs]}
+
+
+def _doctor_row(d: dict) -> dict:
+    return {"name": d["name"], "specialty": d["specialty"],
+            "available_days": d["available_days"], "available_hours": d["available_hours"]}
 
 
 def _check_availability(args: dict, ctx: AgentContext) -> dict:
