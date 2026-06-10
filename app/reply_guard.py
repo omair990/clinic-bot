@@ -418,6 +418,66 @@ def localize(user_text: str, en: str, ar: str, ur: str | None = None, hi: str | 
     return localize_lang(detect_language(user_text), en, ar, ur, hi)
 
 
+# --------------------------------------------------------------------------- explicit lang switch
+# A patient may ASK the bot to use a particular language ("can you speak Urdu?", "reply in
+# Arabic", "اردو please"). The request is the language to answer in — overriding the language the
+# request itself happens to be written in. Scoped to the four languages we detect reliably
+# (en/ar/ur/hi); requests for other languages are left to normal same-language mirroring.
+_LATIN_LANG_NAMES = {
+    "english": "en", "angrezi": "en", "angreji": "en", "inglisi": "en", "ingreji": "en",
+    "arabic": "ar", "arabi": "ar",
+    "urdu": "ur",
+    "hindi": "hi",
+}
+_NONLATIN_LANG_NAMES = {
+    "إنجليزي": "en", "إنجليزية": "en", "انجليزي": "en", "انجليزية": "en", "الإنجليزية": "en",
+    "الانجليزية": "en", "الانكليزية": "en", "إنكليزي": "en", "انگریزی": "en", "अंग्रेजी": "en",
+    "عربي": "ar", "عربى": "ar", "العربية": "ar", "عربية": "ar", "عربی": "ar",
+    "اردو": "ur", "اُردو": "ur", "उर्दू": "ur",
+    "हिंदी": "hi", "हिन्दी": "hi", "ہندی": "hi",
+}
+_NAMES_ALT = "|".join(sorted(_LATIN_LANG_NAMES, key=len, reverse=True))
+# A verb/preposition right before a language name marks a request to USE it; a trailing "please"
+# does too; and a name joined by or/and to such a list is an additional named option (so "english
+# or urdu?" names two → ambiguous → no switch).
+_LANG_SWITCH_RE = re.compile(
+    r"(?:\b(?:speak|spk|talk|reply|respond|answer|write|chat|converse|message|msg|text|say|use|"
+    r"switch(?:\s+to)?|prefer|know|understand|in)\b[\s,]*(?:in\s+|to\s+)?)"
+    r"(" + _NAMES_ALT + r")\b"
+    r"|\b(" + _NAMES_ALT + r")\b[\s,]*(?:please|pls|plz)\b"
+    r"|\b(?:or|and)\s+(?:in\s+)?(" + _NAMES_ALT + r")\b",
+    re.IGNORECASE,
+)
+# Arabic-script request cues ("do you speak…", "write in…", "please", "language").
+_AR_SWITCH_CUE_RE = re.compile(
+    "تتكلم|بتتكلم|تكلم|اتكلم|تحكي|احكي|اكتب|بالـ|من فضلك|لو سمحت|لغة|تقدر|ممكن")
+_PUNCT_STRIP_RE = re.compile(r"[\s\?\.!،؟,:؛'\"]+")
+
+
+def requested_language(text: str) -> str | None:
+    """ISO code (en/ar/ur/hi) of a language the patient explicitly asked the bot to USE — e.g.
+    'can you speak Urdu?', 'reply in Arabic', 'urdu please', a bare 'Urdu?', or Arabic 'تتكلم
+    اردو؟'. None when no clear request. This is the language to answer in, overriding the language
+    the request was written in. Returns None if two different languages are named (ambiguous)."""
+    t = (text or "").strip()
+    if not t:
+        return None
+    codes: set[str] = set()
+    for m in _LANG_SWITCH_RE.finditer(t):           # Latin: verb+name, name+please, or or/and-name
+        name = m.group(1) or m.group(2) or m.group(3)
+        codes.add(_LATIN_LANG_NAMES[name.lower()])
+    bare = _PUNCT_STRIP_RE.sub("", t).lower()        # whole message is just a language name
+    if bare in _LATIN_LANG_NAMES:
+        codes.add(_LATIN_LANG_NAMES[bare])
+    if _PUNCT_STRIP_RE.sub("", t) in _NONLATIN_LANG_NAMES:
+        codes.add(_NONLATIN_LANG_NAMES[_PUNCT_STRIP_RE.sub("", t)])
+    if _AR_SWITCH_CUE_RE.search(t):                  # non-Latin name + an explicit request cue
+        for name, code in _NONLATIN_LANG_NAMES.items():
+            if name in t:
+                codes.add(code)
+    return next(iter(codes)) if len(codes) == 1 else None
+
+
 def language_mismatch(user_text: str, reply: str) -> bool:
     """True when the reply clearly answers in the wrong language for the patient — for any
     language. Asymmetric and lenient so a correct reply quoting foreign names/codes is never

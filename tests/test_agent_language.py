@@ -67,6 +67,21 @@ def test_matching_hindi_reply_is_not_regenerated(monkeypatch):
     assert ctx.reply == "हम सुबह 9 बजे खुलते हैं।"
 
 
+def test_explicit_switch_request_regenerates_in_requested_language(monkeypatch):
+    # Patient asks IN ENGLISH for Urdu; model first answers in English → guard switches to Urdu.
+    _replies(monkeypatch, "Yes, of course! How can I help you today?",
+             "جی ہاں، بالکل! میں آپ کی کیا مدد کر سکتا ہوں؟")
+    ctx = agent.run_agent(None, "966500000000", "Can you speak urdu?", history=[])
+    assert ctx.reply == "جی ہاں، بالکل! میں آپ کی کیا مدد کر سکتا ہوں؟"
+
+
+def test_explicit_switch_request_kept_when_already_in_target(monkeypatch):
+    # Model already replied in Urdu → no needless regeneration (iterator would raise if it did).
+    _replies(monkeypatch, "جی ہاں، بالکل! میں آپ کی کیا مدد کر سکتا ہوں؟")
+    ctx = agent.run_agent(None, "966500000000", "Can you speak urdu?", history=[])
+    assert ctx.reply == "جی ہاں، بالکل! میں آپ کی کیا مدد کر سکتا ہوں؟"
+
+
 def test_spanish_patient_english_reply_is_regenerated(monkeypatch):
     # Any language: Spanish patient, model drifts to English → rewrite in Spanish.
     _replies(monkeypatch, "We are open from 9 AM to 11 PM every day.",
