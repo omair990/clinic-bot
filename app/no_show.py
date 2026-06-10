@@ -25,7 +25,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from app import db, incidents
+from app import db, incidents, reply_guard
 from app.config import (
     NO_SHOW_AUTO_SEND,
     NO_SHOW_FOLLOWUP_HOURS,
@@ -105,15 +105,22 @@ def risk_for_appointment(appt: dict, stats: dict) -> tuple[int, str]:
 
 
 # --- Message copy ---
+#
+# Proactive (business-initiated) messages are sent before the patient says anything *this*
+# session, so they don't pass through the agent's live language mirroring. We instead localise
+# them to the patient's preferred language — see `_patient_lang` — so an Arabic-speaking patient
+# gets Arabic copy. Only the canned languages below are translated; everything else falls back
+# to English. Service/doctor names are stored in English and stay as-is inside the subject.
 
-def _subject(service: str | None, doctor: str | None) -> str:
+def _subject(service: str | None, doctor: str | None, lang: str | None = None) -> str:
     if service and doctor:
-        return f"{service} with {doctor}"
-    return "your appointment"
+        sep = " مع " if lang == "ar" else " with "
+        return f"{service}{sep}{doctor}"
+    return "موعدك" if lang == "ar" else "your appointment"
 
 
-def no_show_message(service: str | None, doctor: str | None) -> str:
-    return (
+def no_show_message(service: str | None, doctor: str | None, lang: str | None = None) -> str:
+    en = (
         f"Hi, we noticed you missed {_subject(service, doctor)} today and we hope "
         "everything's okay. Would you like to:\n"
         "1️⃣ Reschedule\n"
@@ -121,21 +128,42 @@ def no_show_message(service: str | None, doctor: str | None) -> str:
         "3️⃣ Cancel treatment\n\n"
         "Just reply 1, 2 or 3 — and if you don't mind sharing, what made you miss it?"
     )
+    ar = (
+        f"مرحباً، لاحظنا أنك فاتك {_subject(service, doctor, 'ar')} اليوم ونتمنى أن تكون بخير. "
+        "هل ترغب في:\n"
+        "1️⃣ إعادة جدولة الموعد\n"
+        "2️⃣ طلب اتصال هاتفي\n"
+        "3️⃣ إلغاء العلاج\n\n"
+        "فقط رد بـ 1 أو 2 أو 3 — وإن لم تمانع المشاركة، ما الذي جعلك تفوّت الموعد؟"
+    )
+    return reply_guard.localize_lang(lang, en, ar)
 
 
-def followup_message(service: str | None, doctor: str | None) -> str:
-    return (
+def followup_message(service: str | None, doctor: str | None, lang: str | None = None) -> str:
+    en = (
         f"Just following up about {_subject(service, doctor)} that you missed. "
         "We'd love to help — reply 1 to see available times, 2 for a call back, "
         "or 3 to cancel. We're here whenever you're ready."
     )
+    ar = (
+        f"نتابع معك بخصوص {_subject(service, doctor, 'ar')} الذي فاتك. يسعدنا مساعدتك — "
+        "رد بـ 1 لعرض الأوقات المتاحة، أو 2 لمعاودة الاتصال بك، أو 3 للإلغاء. "
+        "نحن هنا متى ما كنت مستعداً."
+    )
+    return reply_guard.localize_lang(lang, en, ar)
 
 
-def reminder_message(service: str | None, doctor: str | None, when: str) -> str:
-    return (
+def reminder_message(service: str | None, doctor: str | None, when: str,
+                     lang: str | None = None) -> str:
+    en = (
         f"Reminder: you have {_subject(service, doctor)} on {when}. Will you be able to "
         "attend? Please reply 1 to confirm, 2 to reschedule, or 3 to cancel. See you then!"
     )
+    ar = (
+        f"تذكير: لديك {_subject(service, doctor, 'ar')} في {when}. هل ستتمكن من الحضور؟ "
+        "يرجى الرد بـ 1 للتأكيد، أو 2 لإعادة الجدولة، أو 3 للإلغاء. نراك حينها!"
+    )
+    return reply_guard.localize_lang(lang, en, ar)
 
 
 # --- Orchestration ---
@@ -147,6 +175,28 @@ def _now() -> datetime:
 def _creds(tenant: dict) -> dict:
     return {"phone_number_id": tenant.get("wa_phone_number_id"),
             "access_token": tenant.get("wa_access_token")}
+
+
+# Clinic default_language is a display name ("Arabic"); map it to the ISO codes our copy speaks.
+_DEFAULT_LANG_CODES = {"arabic": "ar", "english": "en", "urdu": "ur", "hindi": "hi"}
+
+
+def _patient_lang(tenant_id: int, wa_user: str, tenant: dict | None) -> str | None:
+    """Best-effort ISO language code for proactive copy: the language of the patient's most
+    recent inbound message, else the clinic's configured default, else None (→ English)."""
+    try:
+        history = db.recent_history(tenant_id, wa_user, limit=10)
+    except Exception:  # noqa: BLE001 — language is best-effort; never block the send
+        log.warning("recent_history failed for %s", wa_user, exc_info=True)
+        history = []
+    for h in reversed(history):                       # newest first
+        if h.get("direction") == "in":
+            lang = reply_guard.detect_language(h.get("message") or "")
+            if lang:
+                return lang
+    name = (((tenant or {}).get("clinic_data") or {}).get("clinic") or {}).get(
+        "default_language") or ""
+    return _DEFAULT_LANG_CODES.get(name.strip().lower())
 
 
 # Fallback template names from env, by message kind.
@@ -194,7 +244,8 @@ async def send_no_show_notification(*, to: str, service: str | None, doctor: str
     """Send the initial recovery message. Used by both the sweep (auto-send) and the
     dashboard's manual 'Send'/'Resend'. `advance=True` moves the follow-up to 'notified'."""
     template = resolve_template("no_show", tenant)
-    await _send_and_log(to, no_show_message(service, doctor), creds, tenant_id,
+    lang = await asyncio.to_thread(_patient_lang, tenant_id, to, tenant)
+    await _send_and_log(to, no_show_message(service, doctor, lang), creds, tenant_id,
                         template=template, params=[_subject(service, doctor)])
     if advance:
         await asyncio.to_thread(db.set_followup_stage, followup_id, "notified",
@@ -243,7 +294,8 @@ async def _send_followups(now: datetime, tenants: dict[int, dict]) -> int:
         if not tenant:
             continue
         try:
-            await _send_and_log(f["wa_user"], followup_message(f["service"], f["doctor"]),
+            lang = await asyncio.to_thread(_patient_lang, f["tenant_id"], f["wa_user"], tenant)
+            await _send_and_log(f["wa_user"], followup_message(f["service"], f["doctor"], lang),
                                 _creds(tenant), f["tenant_id"],
                                 template=resolve_template("followup", tenant),
                                 params=[_subject(f["service"], f["doctor"])])
@@ -289,7 +341,9 @@ async def _send_confirmations(now: datetime, tenants: dict[int, dict]) -> int:
             continue
         when = a["start_at"].astimezone(TZ).strftime("%A %d %B, %I:%M %p")
         try:
-            await _send_and_log(a["wa_user"], reminder_message(a["service"], a["doctor"], when),
+            lang = await asyncio.to_thread(_patient_lang, a["tenant_id"], a["wa_user"], tenant)
+            await _send_and_log(a["wa_user"],
+                                reminder_message(a["service"], a["doctor"], when, lang),
                                 _creds(tenant), a["tenant_id"],
                                 template=resolve_template("reminder", tenant),
                                 params=[_subject(a["service"], a["doctor"]), when])

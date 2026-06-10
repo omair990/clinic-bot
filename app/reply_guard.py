@@ -393,10 +393,10 @@ def detect_language(text: str) -> str | None:
     return roman if roman != "en" else _latin_lang(text)
 
 
-def localize(user_text: str, en: str, ar: str, ur: str | None = None, hi: str | None = None) -> str:
-    """Localise a canned reply to the patient's language. Only English/Arabic/Urdu/Hindi have
-    canned translations; every other language falls back to English."""
-    lang = detect_language(user_text)
+def localize_lang(lang: str | None, en: str, ar: str, ur: str | None = None,
+                  hi: str | None = None) -> str:
+    """Pick a canned translation by ISO code. Only English/Arabic/Urdu/Hindi have canned
+    translations; every other language (or None) falls back to English."""
     if lang == "ar":
         return ar
     if lang == "ur":
@@ -404,6 +404,11 @@ def localize(user_text: str, en: str, ar: str, ur: str | None = None, hi: str | 
     if lang == "hi":
         return hi if hi is not None else en
     return en
+
+
+def localize(user_text: str, en: str, ar: str, ur: str | None = None, hi: str | None = None) -> str:
+    """Localise a canned reply to the patient's language, detected from their own text."""
+    return localize_lang(detect_language(user_text), en, ar, ur, hi)
 
 
 def language_mismatch(user_text: str, reply: str) -> bool:
