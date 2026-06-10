@@ -37,6 +37,21 @@ def test_claims_booking_ignores_generic_completion_and_possessive_phrases():
         assert not reply_guard.claims_booking(t), t
 
 
+def test_claims_booking_ignores_offer_phrasing():
+    # Regression (seen live): an OFFER to book ("do you want to book an appointment?") must NOT
+    # read as a completed booking. Mirrors how bare English "book an appointment" is excluded.
+    for t in ["کیا آپ کو اپوائنٹمنٹ بک کرنی ہے یا کوئی اور معلومات چاہیے؟",  # "want to book one?"
+              "Would you like to book an appointment?",
+              "آپ اپوائنٹمنٹ بک کرنا چاہتے ہیں؟"]:
+        assert not reply_guard.claims_booking(t), t
+
+
+def test_claims_booking_still_detects_urdu_completed_booking():
+    for t in ["آپ کی اپوائنٹمنٹ بک ہو گئی ہے۔",      # "your appointment got booked"
+              "اپوائنٹمنٹ بک ہو گیا"]:
+        assert reply_guard.claims_booking(t), t
+
+
 # --- blocking decision (no DB needed: backed this turn) -----------------------
 def test_backed_by_this_turn_booking_is_allowed():
     c = _ctx("Your appointment is booked for 5 PM.", booked=[42])
