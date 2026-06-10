@@ -51,26 +51,41 @@ _SCRIPT_NAME = {
 
 def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: str,
                       ctx=None) -> str:
-    """Strong language guard: the reply MUST be in the patient's language (any language). The
-    system prompt already asks for this, but models occasionally drift — so when the reply
-    clearly answers in the wrong language we ask the model, once, to rewrite the SAME answer in
-    the right one. We only accept the rewrite if it actually fixes the language; else keep it."""
-    if not reply_guard.language_mismatch(user_text, reply):
-        return reply
-    want = reply_guard.detect_language(user_text)
-    target = _LANG_NAME.get(want) or _SCRIPT_NAME.get(reply_guard._dominant_script(user_text))
+    """Strong language guard: the reply MUST be in the language the patient wants. Normally that's
+    the language of their last message, but if they EXPLICITLY ask the bot to use another language
+    ('can you speak Urdu?'), that request wins. The system prompt already asks for this, but models
+    occasionally drift — so when the reply is in the wrong language we ask the model, once, to
+    rewrite the SAME answer in the right one. We only accept the rewrite if it actually fixes the
+    language; else keep the original."""
+    req = reply_guard.requested_language(user_text)
+    if req:
+        # Explicit switch request: enforce the REQUESTED language, not the question's language.
+        if reply_guard.detect_language(reply) in (req, None):
+            return reply                          # already in (or can't disprove) the requested lang
+        want, target = req, _LANG_NAME.get(req)
+        reason = f"The patient asked you to reply in {target}."
+        accept = lambda new: reply_guard.detect_language(new) == req  # noqa: E731
+    else:
+        if not reply_guard.language_mismatch(user_text, reply):
+            return reply
+        want = reply_guard.detect_language(user_text)
+        target = _LANG_NAME.get(want) or _SCRIPT_NAME.get(reply_guard._dominant_script(user_text))
+        if not target:
+            return reply
+        # Urdu and Hindi can be written in their own script or in Roman/Latin — keep the patient's.
+        if want == "ur" and not reply_guard._has_urdu_script(user_text):
+            target = "Urdu written in Roman/Latin script (as the patient used)"
+        elif want == "hi" and not reply_guard._has_devanagari(user_text):
+            target = "Hindi written in Roman/Latin script (as the patient used)"
+        reason = f"Your previous reply was in the wrong language; the patient wrote in {target}."
+        accept = lambda new: not reply_guard.language_mismatch(user_text, new)  # noqa: E731
     if not target:
         return reply
-    # Urdu and Hindi can be written in their own script or in Roman/Latin — keep the patient's.
-    if want == "ur" and not reply_guard._has_urdu_script(user_text):
-        target = "Urdu written in Roman/Latin script (as the patient used)"
-    elif want == "hi" and not reply_guard._has_devanagari(user_text):
-        target = "Hindi written in Roman/Latin script (as the patient used)"
-    log.warning("Reply language mismatch (patient=%s) — regenerating in %s", want, target)
+    log.warning("Reply language %s — regenerating in %s",
+                "switch requested" if req else "mismatch (patient=%s)" % want, target)
     nudge = (
-        f"Your previous reply was in the wrong language. The patient wrote in {target}, so you "
-        f"MUST answer in {target}. Rewrite your previous answer entirely in {target}, keeping "
-        "the same meaning. Keep doctor names, service names and codes exactly as they are. "
+        f"{reason} You MUST answer in {target}. Rewrite your previous answer entirely in {target}, "
+        "keeping the same meaning. Keep doctor names, service names and codes exactly as they are. "
         "Output only the message for the patient — nothing else.")
     retry = messages + [
         Msg(role="assistant", content=reply),
@@ -86,9 +101,9 @@ def _enforce_language(system: str, messages: list[Msg], user_text: str, reply: s
     if ctx is not None:
         ctx.add_usage(result.usage)
     new = (result.text or "").strip()
-    if new and not reply_guard.language_mismatch(user_text, new):
+    if new and accept(new):
         return new
-    log.warning("Language regeneration did not resolve the mismatch; keeping original reply")
+    log.warning("Language regeneration did not resolve the target language; keeping original reply")
     return reply
 
 

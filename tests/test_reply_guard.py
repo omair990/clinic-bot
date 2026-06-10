@@ -188,6 +188,42 @@ def test_language_mismatch_allows_matching_and_mixed():
     assert reply_guard.language_mismatch("12345", "whatever the reply is") is False
 
 
+# --- explicit language-switch request -----------------------------------------
+def test_requested_language_detects_explicit_requests():
+    cases = {
+        "Can you speak urdu ?": "ur",
+        "can you speak Arabic?": "ar",
+        "Please reply in Hindi": "hi",
+        "talk in english please": "en",
+        "urdu please": "ur",
+        "Urdu?": "ur",
+        "switch to arabic": "ar",
+        "reply in arabic please": "ar",
+        "can you write in hindi": "hi",
+        "تتكلم اردو؟": "ur",           # Arabic-script "do you speak Urdu?"
+        "اردو": "ur",                   # bare language name
+        "ممكن بالعربي": "ar",          # "can you, in Arabic"
+    }
+    for t, exp in cases.items():
+        assert reply_guard.requested_language(t) == exp, t
+
+
+def test_requested_language_ignores_non_requests():
+    # A language merely MENTIONED (not requested of the bot) must not trigger a switch.
+    for t in ["Do you have an Arabic-speaking doctor?",
+              "I want to book an appointment",
+              "How much is a cleaning?",
+              "I don't know much about this",
+              "english breakfast please",        # 'english' + 'please' but not adjacent
+              ""]:
+        assert reply_guard.requested_language(t) is None, t
+
+
+def test_requested_language_none_when_two_languages_named():
+    # Ambiguous ("switch from English to Urdu") → defer to normal mirroring.
+    assert reply_guard.requested_language("should I write in english or urdu?") is None
+
+
 def test_localize_picks_arabic_only_for_arabic_patient():
     assert reply_guard.localize("book me", "EN", "AR") == "EN"
     assert reply_guard.localize("احجزلي موعد", "EN", "AR") == "AR"
