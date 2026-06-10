@@ -243,6 +243,21 @@ CREATE TABLE IF NOT EXISTS notification_seen (
     last_seen_id BIGINT NOT NULL DEFAULT 0,
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Demo / booking requests submitted from the public marketing landing page. Platform-level
+-- leads (no tenant), surfaced to the super-admin with a live notification + unread badge.
+CREATE TABLE IF NOT EXISTS booking_requests (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    phone       TEXT NOT NULL,
+    clinic_name TEXT,
+    message     TEXT,
+    lang        TEXT,                                -- the page language they submitted in
+    status      TEXT NOT NULL DEFAULT 'new',         -- new | contacted | converted | rejected
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_booking_requests_created ON booking_requests(created_at DESC);
 """
 
 # (name, text_quota, voice_enabled, voice_quota, is_trial, trial_days, price_sar)
@@ -859,6 +874,56 @@ def mark_notifications_seen(scope: int | None = None) -> None:
             "updated_at = now()",
             (viewer_key(scope), top),
         )
+
+
+# --- Booking / demo requests (public landing-page leads) -------------------------------------
+
+BOOKING_STATUSES = ("new", "contacted", "converted", "rejected")
+
+
+def record_booking_request(name: str, phone: str, clinic_name: str | None,
+                           message: str | None, lang: str | None = None) -> dict:
+    """Store a demo request from the public landing form; return its row (id + created_at)."""
+    with get_conn() as conn:
+        return conn.execute(
+            "INSERT INTO booking_requests (name, phone, clinic_name, message, lang) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at",
+            (name[:120], phone[:40], (clinic_name or None) and clinic_name[:160],
+             (message or None) and message[:2000], (lang or None) and lang[:8]),
+        ).fetchone()
+
+
+def list_booking_requests(status: str | None = None, limit: int = 200) -> list[dict]:
+    """Newest-first booking requests, optionally filtered by status."""
+    where, params = ("WHERE status = %s", (status,)) if status else ("", ())
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT * FROM booking_requests {where} ORDER BY id DESC LIMIT %s",
+            (*params, limit),
+        ).fetchall()
+
+
+def booking_request_counts() -> dict:
+    """Counts by status (plus 'total') for the dashboard header."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM booking_requests GROUP BY status"
+        ).fetchall()
+    counts = {r["status"]: r["n"] for r in rows}
+    counts["total"] = sum(counts.values())
+    return counts
+
+
+def set_booking_request_status(request_id: int, status: str) -> bool:
+    """Update a request's status. Returns False for an unknown status or missing row."""
+    if status not in BOOKING_STATUSES:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "UPDATE booking_requests SET status = %s, updated_at = now() WHERE id = %s RETURNING id",
+            (status, request_id),
+        ).fetchone()
+    return row is not None
 
 
 def admin_set_appointment_status(appointment_id: int, status: str) -> None:

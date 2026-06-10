@@ -21,6 +21,8 @@ import Issues from "./pages/Issues";
 import TenantEdit from "./pages/TenantEdit";
 import Connector from "./pages/Connector";
 import Settings from "./pages/Settings";
+import Requests from "./pages/Requests";
+import LandingCms from "./pages/LandingCms";
 
 function Splash() {
   return (
@@ -62,6 +64,8 @@ export default function App() {
         {isSuper && <Route path="/calculator" element={<CostCalculator />} />}
         {isSuper && <Route path="/capacity" element={<Capacity />} />}
         {isSuper && <Route path="/issues" element={<Issues />} />}
+        {isSuper && <Route path="/requests" element={<Requests />} />}
+        {isSuper && <Route path="/landing-cms" element={<LandingCms />} />}
         {isSuper && <Route path="/settings" element={<Settings />} />}
         {isSuper && <Route path="/tenants/:id" element={<TenantEdit />} />}
         {isSuper && <Route path="/tenants/:id/connector" element={<Connector />} />}

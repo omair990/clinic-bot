@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api import router as api_router
@@ -117,14 +117,26 @@ def health() -> JSONResponse:
 
 
 # --- Public marketing landing page -----------------------------------------------------------
-# A self-contained (zero-dependency) static page served on its own route, so it never touches
-# the Railway healthcheck at "/" nor the React console at /admin. BASE_DIR is app/.
+# A self-contained (zero-dependency) page served on its own route, so it never touches the
+# Railway healthcheck at "/" nor the React console at /admin. BASE_DIR is app/. The page renders
+# entirely from `window.__LANDING__`, which we inject here as merged(defaults, CMS overrides) so
+# the super-admin's edits appear immediately with no redeploy.
 _LANDING_PAGE = BASE_DIR / "static" / "landing.html"
+_LANDING_MARKER = "<!--__LANDING_CONTENT__-->"
 
 
 @app.get("/landing", include_in_schema=False)
-def landing() -> FileResponse:
-    return FileResponse(_LANDING_PAGE, media_type="text/html")
+def landing() -> HTMLResponse:
+    import json
+    from app import landing_content
+    html = _LANDING_PAGE.read_text(encoding="utf-8")
+    try:
+        payload = json.dumps(landing_content.merged_content(), ensure_ascii=False)
+    except Exception:  # noqa: BLE001 — never let content break the page
+        log.exception("landing content merge failed")
+        payload = "{}"
+    inject = f"<script>window.__LANDING__ = {payload};</script>"
+    return HTMLResponse(html.replace(_LANDING_MARKER, inject))
 
 
 app.include_router(webhook_router)
