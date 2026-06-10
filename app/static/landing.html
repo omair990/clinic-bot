@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
   <!-- ===================== SEO ===================== -->
-  <title>Clinic AI — The WhatsApp AI Receptionist for Clinics | Booking, No-Show Recovery & Insights</title>
-  <meta name="description" content="Clinic AI is a WhatsApp AI agent that books, reschedules and cancels appointments end-to-end, recovers no-shows automatically, and replies in 40+ languages. No spreadsheets, no bots to babysit." />
-  <meta name="keywords" content="clinic AI, WhatsApp appointment booking, AI receptionist, no-show recovery, dental clinic software, medical chatbot, Arabic clinic assistant, healthcare automation, appointment reminders" />
+  <title>Clinic AI — موظف الاستقبال الذكي للعيادات على واتساب | حجز المواعيد واستعادة الفائتة ورؤى ذكية</title>
+  <meta name="description" content="Clinic AI مساعد ذكي على واتساب يحجز المواعيد ويعيد جدولتها ويلغيها من البداية للنهاية، ويستعيد المواعيد الفائتة تلقائياً، ويرد بأكثر من 40 لغة. بلا جداول وبلا روبوتات تحتاج متابعة." />
+  <meta name="keywords" content="مساعد عيادة ذكي, حجز مواعيد واتساب, موظف استقبال ذكي, استعادة المواعيد الفائتة, برنامج عيادة أسنان, شات بوت طبي, مساعد عيادة عربي, أتمتة الرعاية الصحية, تذكير المواعيد, clinic AI, WhatsApp appointment booking" />
   <meta name="author" content="Clinic AI" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <link rel="canonical" href="https://web-production-25d4e.up.railway.app/landing" />
@@ -15,29 +15,37 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Clinic AI — The WhatsApp AI Receptionist for Clinics" />
-  <meta property="og:description" content="Books appointments end-to-end, recovers no-shows, and replies in 40+ languages — right inside WhatsApp." />
+  <meta property="og:title" content="Clinic AI — موظف الاستقبال الذكي للعيادات على واتساب" />
+  <meta property="og:description" content="يحجز المواعيد من البداية للنهاية، ويستعيد المواعيد الفائتة، ويرد بأكثر من 40 لغة — داخل واتساب مباشرةً." />
   <meta property="og:url" content="https://web-production-25d4e.up.railway.app/landing" />
   <meta property="og:site_name" content="Clinic AI" />
+  <meta property="og:locale" content="ar_AR" />
+  <meta property="og:locale:alternate" content="en_US" />
   <meta property="og:image" content="https://web-production-25d4e.up.railway.app/admin/icon-512.png" />
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Clinic AI — The WhatsApp AI Receptionist for Clinics" />
-  <meta name="twitter:description" content="Books appointments end-to-end, recovers no-shows, and replies in 40+ languages — right inside WhatsApp." />
+  <meta name="twitter:title" content="Clinic AI — موظف الاستقبال الذكي للعيادات على واتساب" />
+  <meta name="twitter:description" content="يحجز المواعيد من البداية للنهاية، ويستعيد المواعيد الفائتة، ويرد بأكثر من 40 لغة — داخل واتساب." />
   <meta name="twitter:image" content="https://web-production-25d4e.up.railway.app/admin/icon-512.png" />
 
   <link rel="icon" type="image/png" href="/admin/favicon.png" />
   <link rel="apple-touch-icon" href="/admin/apple-touch-icon.png" />
 
-  <!-- Set theme before paint (no flash): saved choice → system preference → dark default -->
+  <!-- Set theme + language before paint (no flash): saved choice → system/Arabic default -->
   <script>
     (function(){
       try{
-        var saved = localStorage.getItem('clinicai-theme');
+        var savedTheme = localStorage.getItem('clinicai-theme');
         var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-        document.documentElement.setAttribute('data-theme', saved || (prefersLight ? 'light' : 'dark'));
-      }catch(e){ document.documentElement.setAttribute('data-theme','dark'); }
+        document.documentElement.setAttribute('data-theme', savedTheme || (prefersLight ? 'light' : 'dark'));
+        var lang = localStorage.getItem('clinicai-lang') || 'ar';
+        document.documentElement.lang = lang;
+        document.documentElement.dir = (lang === 'en') ? 'ltr' : 'rtl';
+      }catch(e){
+        document.documentElement.setAttribute('data-theme','dark');
+        document.documentElement.lang='ar'; document.documentElement.dir='rtl';
+      }
     })();
   </script>
 
@@ -54,8 +62,8 @@
     "name": "Clinic AI",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web, WhatsApp",
-    "description": "A WhatsApp AI agent for clinics that books, reschedules and cancels appointments end-to-end, recovers no-shows, and replies in 40+ languages.",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free pilot" },
+    "description": "مساعد ذكي على واتساب للعيادات يحجز المواعيد ويعيد جدولتها ويلغيها من البداية للنهاية، ويستعيد المواعيد الفائتة، ويرد بأكثر من 40 لغة.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "تجربة مجانية" },
     "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.9", "ratingCount": "120" }
   }
   </script>
@@ -64,10 +72,10 @@
     "@context": "https://schema.org",
     "@type": "FAQPage",
     "mainEntity": [
-      { "@type": "Question", "name": "Does it work inside WhatsApp?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Patients message your existing WhatsApp Business number and the AI handles the conversation end-to-end — no app to install." } },
-      { "@type": "Question", "name": "Which languages are supported?", "acceptedAnswer": { "@type": "Answer", "text": "Over 40 languages including Arabic, English, Urdu, Hindi, Spanish and French. The assistant always replies in the patient's own language and script." } },
-      { "@type": "Question", "name": "Can it really book appointments on its own?", "acceptedAnswer": { "@type": "Answer", "text": "Yes — it checks live doctor availability and books, reschedules or cancels without staff involvement, while escalating anything sensitive to a human." } },
-      { "@type": "Question", "name": "How does no-show recovery work?", "acceptedAnswer": { "@type": "Answer", "text": "When a confirmed patient never checks in, Clinic AI messages them to reschedule, request a call or cancel, then follows up a day later — capturing the reason they missed." } }
+      { "@type": "Question", "name": "هل يعمل داخل واتساب؟", "acceptedAnswer": { "@type": "Answer", "text": "نعم. يراسل المرضى رقم واتساب للأعمال الحالي ويتولى المساعد المحادثة كاملةً — دون أي تطبيق لتثبيته." } },
+      { "@type": "Question", "name": "ما اللغات المدعومة؟", "acceptedAnswer": { "@type": "Answer", "text": "أكثر من 40 لغة تشمل العربية والإنجليزية والأردية والهندية والإسبانية والفرنسية. يرد المساعد دائماً بلغة المريض وكتابته." } },
+      { "@type": "Question", "name": "هل يحجز المواعيد بنفسه فعلاً؟", "acceptedAnswer": { "@type": "Answer", "text": "نعم — يتحقق من توفر الأطباء مباشرةً ويحجز ويعيد الجدولة ويلغي دون تدخل الموظفين، مع تحويل أي أمر حساس إلى موظف بشري." } },
+      { "@type": "Question", "name": "كيف تعمل استعادة المواعيد الفائتة؟", "acceptedAnswer": { "@type": "Answer", "text": "عندما لا يحضر مريض مؤكد، يراسله Clinic AI لإعادة الجدولة أو طلب اتصال أو الإلغاء، ثم يتابع بعد يوم — مع تسجيل سبب التغيّب." } }
     ]
   }
   </script>
@@ -87,8 +95,8 @@
       --nav-bg:rgba(7,13,27,.72);
       --ghost-bg:rgba(255,255,255,.04); --ghost-bg-hover:rgba(255,255,255,.08);
       --li-text:#cdd7e6; --grid-opacity:.5;
-      --accent-ink:var(--teal-light);       /* readable accent for text/icons on the canvas */
-      --grad-a:#5eead4; --grad-b:#a5b4fc;    /* gradient-text endpoints */
+      --accent-ink:var(--teal-light);
+      --grad-a:#5eead4; --grad-b:#a5b4fc;
     }
     :root[data-theme="light"]{
       --bg:#f5f7fb; --bg-2:#e9eef7; --panel:#ffffff; --panel-2:#f4f7fc;
@@ -104,7 +112,7 @@
     html{scroll-behavior:smooth}
     body{
       margin:0; font-family:var(--font); color:var(--text); background:var(--bg);
-      -webkit-font-smoothing:antialiased; line-height:1.6; overflow-x:hidden;
+      -webkit-font-smoothing:antialiased; line-height:1.7; overflow-x:hidden;
       transition:background .3s ease, color .3s ease;
     }
     a{color:inherit;text-decoration:none}
@@ -112,19 +120,20 @@
     .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
     .eyebrow{
       display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;
-      letter-spacing:.04em;text-transform:uppercase;color:var(--accent-ink);
+      letter-spacing:.02em;color:var(--accent-ink);
       background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.28);
       padding:7px 14px;border-radius:999px;
     }
     .dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(16,185,129,.2);animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-    h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.02em;line-height:1.1}
-    h1{font-size:clamp(34px,5.2vw,60px);font-weight:900}
+    h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.01em;line-height:1.25}
+    h1{font-size:clamp(34px,5.2vw,58px);font-weight:900}
     h2{font-size:clamp(28px,3.6vw,42px)}
-    .lead{color:var(--muted);font-size:clamp(16px,1.6vw,19px);max-width:620px}
+    .lead{color:var(--muted);font-size:clamp(16px,1.6vw,19px);max-width:640px}
     .btn{
       display:inline-flex;align-items:center;gap:10px;font-weight:700;font-size:16px;
       padding:14px 26px;border-radius:12px;cursor:pointer;border:1px solid transparent;
+      font-family:var(--font);
       transition:transform .15s ease,box-shadow .2s ease,background .2s ease;
     }
     .btn:hover{transform:translateY(-2px)}
@@ -136,19 +145,20 @@
     /* ===== Nav ===== */
     header.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
       background:var(--nav-bg);border-bottom:1px solid var(--line)}
-    .nav-inner{display:flex;align-items:center;justify-content:space-between;height:72px}
+    .nav-inner{display:flex;align-items:center;justify-content:space-between;height:72px;gap:18px}
     .brand{display:flex;align-items:center;gap:11px;font-weight:900;font-size:19px;letter-spacing:-.02em}
     .logo{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
       background:linear-gradient(135deg,var(--teal),var(--indigo));box-shadow:0 8px 20px -8px rgba(20,184,166,.7)}
-    .nav-links{display:flex;align-items:center;gap:30px;font-size:15px;color:var(--muted);font-weight:600}
+    .nav-links{display:flex;align-items:center;gap:28px;font-size:15px;color:var(--muted);font-weight:600}
     .nav-links a:hover{color:var(--text)}
-    .nav-cta{display:flex;align-items:center;gap:14px}
-    @media(max-width:860px){.nav-links{display:none}.nav-cta .btn-ghost{display:none}}
-    .theme-toggle{width:42px;height:42px;flex:none;border-radius:11px;border:1px solid var(--line);
+    .nav-cta{display:flex;align-items:center;gap:12px}
+    @media(max-width:900px){.nav-links{display:none}.nav-cta .btn-ghost{display:none}}
+    .icon-btn{height:42px;min-width:42px;padding:0 12px;flex:none;border-radius:11px;border:1px solid var(--line);
       background:var(--ghost-bg);color:var(--text);display:grid;place-items:center;cursor:pointer;
+      font-family:var(--font);font-weight:800;font-size:14px;
       transition:background .2s ease,transform .15s ease}
-    .theme-toggle:hover{background:var(--ghost-bg-hover);transform:translateY(-2px)}
-    .theme-toggle svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    .icon-btn:hover{background:var(--ghost-bg-hover);transform:translateY(-2px)}
+    .icon-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
     .theme-toggle .moon{display:none}
     :root[data-theme="light"] .theme-toggle .sun{display:none}
     :root[data-theme="light"] .theme-toggle .moon{display:block}
@@ -170,44 +180,46 @@
     .hero-cta{display:flex;gap:14px;margin:30px 0 18px;flex-wrap:wrap}
     .hero-note{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
     .avatars{display:flex}
-    .avatars span{width:28px;height:28px;border-radius:50%;border:2px solid var(--bg);margin-left:-8px;
+    .avatars span{width:28px;height:28px;border-radius:50%;border:2px solid var(--bg);margin-inline-start:-8px;
       background:linear-gradient(135deg,var(--teal),var(--indigo))}
-    .avatars span:first-child{margin-left:0}
+    .avatars span:first-child{margin-inline-start:0}
 
-    /* ===== Phone mockup ===== */
+    /* ===== Phone mockup — always a dark "device", fixed colors & LTR layout ===== */
     .phone{position:relative;justify-self:center;width:330px;max-width:100%;
       border-radius:42px;padding:14px;background:linear-gradient(160deg,#1e293b,#0b1120);
       border:1px solid rgba(148,163,184,.18);box-shadow:var(--shadow);animation:float 6s ease-in-out infinite}
     @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
-    .phone-screen{border-radius:30px;overflow:hidden;background:#0b141a;height:540px;display:flex;flex-direction:column}
+    .phone-screen{border-radius:30px;overflow:hidden;background:#0b141a;height:540px;display:flex;flex-direction:column;
+      direction:ltr;color:#e9edf0}
     .wa-top{display:flex;align-items:center;gap:11px;padding:14px;background:#1f2c33}
     .wa-ava{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--teal-dark));display:grid;place-items:center;font-weight:800;color:#022}
-    .wa-name{font-size:14px;font-weight:700}.wa-sub{font-size:11px;color:#8aa}
+    .wa-name{font-size:14px;font-weight:700;color:#f3f6f8}.wa-sub{font-size:11px;color:#9fb6bd}
     .wa-body{flex:1;padding:16px 12px;display:flex;flex-direction:column;gap:9px;overflow:hidden;
       background:#0b141a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle cx='4' cy='4' r='1' fill='%23ffffff10'/%3E%3C/svg%3E")}
-    .bubble{max-width:82%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.5;opacity:0;transform:translateY(8px);animation:rise .5s forwards}
+    .bubble{max-width:82%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.6;color:#e9edf0;opacity:0;transform:translateY(8px);animation:rise .5s forwards}
     .bubble.in{align-self:flex-start;background:#202c33;border-top-left-radius:4px}
-    .bubble.out{align-self:flex-end;background:#005c4b;border-top-right-radius:4px}
+    .bubble.out{align-self:flex-end;background:#075e54;border-top-right-radius:4px;color:#eafff8}
     .bubble.rtl{direction:rtl;text-align:right}
-    .bubble .t{display:block;font-size:9px;color:#ffffff80;margin-top:3px;text-align:right}
+    .bubble .t{display:block;font-size:9px;color:#ffffff85;margin-top:3px;text-align:left}
+    .bubble.rtl .t{text-align:left}
     .b1{animation-delay:.2s}.b2{animation-delay:.9s}.b3{animation-delay:1.7s}.b4{animation-delay:2.5s}
     @keyframes rise{to{opacity:1;transform:translateY(0)}}
-    .badge-float{position:absolute;background:var(--panel);border:1px solid var(--line);
-      border-radius:14px;padding:10px 14px;font-size:13px;font-weight:700;box-shadow:var(--shadow);display:flex;align-items:center;gap:8px}
-    .badge-float.b-a{top:24px;left:-38px;animation:float 5s ease-in-out infinite}
-    .badge-float.b-b{bottom:60px;right:-34px;animation:float 7s ease-in-out infinite}
+    .badge-float{position:absolute;background:var(--panel);color:var(--text);border:1px solid var(--line);
+      border-radius:14px;padding:10px 14px;font-size:13px;font-weight:700;box-shadow:var(--shadow);display:flex;align-items:center;gap:8px;z-index:2}
+    .badge-float.b-a{top:24px;inset-inline-start:-30px;animation:float 5s ease-in-out infinite}
+    .badge-float.b-b{bottom:60px;inset-inline-end:-26px;animation:float 7s ease-in-out infinite}
     @media(max-width:520px){.badge-float{display:none}}
 
     /* ===== Stats ===== */
     .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin:18px 0 0}
     @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
     .stat{padding:22px;border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(180deg,var(--panel),var(--panel-2))}
-    .stat b{display:block;font-size:30px;font-weight:900;background:linear-gradient(120deg,var(--grad-a),var(--grad-b));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .stat b{display:block;font-size:30px;font-weight:900;background:linear-gradient(120deg,var(--grad-a),var(--grad-b));-webkit-background-clip:text;background-clip:text;color:transparent;direction:ltr}
     .stat span{color:var(--muted);font-size:14px}
 
     /* ===== Section ===== */
     section{padding:84px 0}
-    .sec-head{text-align:center;max-width:680px;margin:0 auto 52px}
+    .sec-head{text-align:center;max-width:700px;margin:0 auto 52px}
     .sec-head .lead{margin:14px auto 0}
 
     /* ===== Features ===== */
@@ -228,7 +240,7 @@
     .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;counter-reset:s}
     @media(max-width:820px){.steps{grid-template-columns:1fr}}
     .step{padding:28px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel-2);position:relative}
-    .step::before{counter-increment:s;content:counter(s);position:absolute;top:-18px;left:24px;
+    .step::before{counter-increment:s;content:counter(s);position:absolute;top:-18px;inset-inline-start:24px;
       width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-weight:900;color:#022;
       background:linear-gradient(135deg,var(--teal),var(--indigo))}
     .step h3{font-size:18px;margin:14px 0 8px}.step p{color:var(--muted);font-size:14.5px;margin:0}
@@ -236,7 +248,7 @@
     /* ===== Languages marquee ===== */
     .marquee{overflow:hidden;border-block:1px solid var(--line);padding:26px 0;
       mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
-    .track{display:flex;gap:14px;width:max-content;animation:scroll 32s linear infinite}
+    .track{display:flex;gap:14px;width:max-content;animation:scroll 32s linear infinite;direction:ltr}
     @keyframes scroll{to{transform:translateX(-50%)}}
     .lang{padding:9px 18px;border:1px solid var(--line);border-radius:999px;font-weight:700;font-size:15px;color:var(--muted);white-space:nowrap;background:var(--panel-2)}
 
@@ -245,18 +257,19 @@
     @media(max-width:900px){.price-grid{grid-template-columns:1fr;max-width:440px;margin:0 auto}}
     .plan{padding:32px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(180deg,var(--panel),var(--panel-2));display:flex;flex-direction:column}
     .plan.feat{border-color:rgba(20,184,166,.55);box-shadow:0 0 0 1px rgba(20,184,166,.2),var(--shadow);position:relative}
-    .plan.feat::after{content:"Most popular";position:absolute;top:-13px;left:50%;transform:translateX(-50%);
-      background:linear-gradient(135deg,var(--teal),var(--indigo));color:#022;font-size:12px;font-weight:800;padding:5px 14px;border-radius:999px}
+    .plan.feat::after{content:attr(data-badge);position:absolute;top:-13px;inset-inline-start:50%;transform:translateX(50%);
+      background:linear-gradient(135deg,var(--teal),var(--indigo));color:#022;font-size:12px;font-weight:800;padding:5px 14px;border-radius:999px;white-space:nowrap}
     .plan h3{font-size:20px}
-    .plan .amt{font-size:40px;font-weight:900;margin:14px 0 4px}
+    .plan .amt{font-size:38px;font-weight:900;margin:14px 0 4px;direction:ltr;unicode-bidi:plaintext}
     .plan .amt span{font-size:15px;font-weight:600;color:var(--muted)}
+    .plan .desc{color:var(--muted);margin:0}
     .plan ul{list-style:none;padding:0;margin:22px 0;display:flex;flex-direction:column;gap:12px;flex:1}
     .plan li{display:flex;gap:10px;color:var(--li-text);font-size:14.5px}
-    .plan li svg{width:19px;height:19px;flex:none;stroke:var(--accent-ink);fill:none;stroke-width:2.4;margin-top:2px}
+    .plan li svg{width:19px;height:19px;flex:none;stroke:var(--accent-ink);fill:none;stroke-width:2.4;margin-top:3px}
     .plan .btn{justify-content:center;width:100%}
 
     /* ===== FAQ ===== */
-    .faq{max-width:760px;margin:0 auto}
+    .faq{max-width:780px;margin:0 auto}
     details{border:1px solid var(--line);border-radius:14px;background:var(--panel-2);margin-bottom:12px;padding:0 20px;transition:border-color .2s}
     details[open]{border-color:rgba(20,184,166,.4)}
     summary{cursor:pointer;list-style:none;padding:18px 0;font-weight:700;font-size:16.5px;display:flex;justify-content:space-between;align-items:center;gap:14px}
@@ -295,19 +308,20 @@
         Clinic AI
       </a>
       <nav class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#how">How it works</a>
-        <a href="#languages">Languages</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#faq">FAQ</a>
+        <a href="#features" data-i18n="nav_features">المميزات</a>
+        <a href="#how" data-i18n="nav_how">كيف يعمل</a>
+        <a href="#languages" data-i18n="nav_langs">اللغات</a>
+        <a href="#pricing" data-i18n="nav_pricing">الأسعار</a>
+        <a href="#faq" data-i18n="nav_faq">الأسئلة الشائعة</a>
       </nav>
       <div class="nav-cta">
-        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark and light mode" title="Toggle theme">
+        <button class="icon-btn" id="langToggle" type="button" aria-label="Switch language / تبديل اللغة">EN</button>
+        <button class="icon-btn theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark and light mode" title="Toggle theme">
           <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
           <svg class="moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         </button>
-        <a class="btn btn-ghost" href="/admin">Sign in</a>
-        <a class="btn btn-primary" href="#pricing">Book a demo</a>
+        <a class="btn btn-ghost" href="/admin" data-i18n="nav_signin">تسجيل الدخول</a>
+        <a class="btn btn-primary" href="#pricing" data-i18n="nav_demo">احجز عرضاً توضيحياً</a>
       </div>
     </div>
   </header>
@@ -317,23 +331,23 @@
     <section class="hero">
       <div class="wrap hero-grid">
         <div>
-          <span class="eyebrow"><span class="dot"></span> Live on WhatsApp · 40+ languages</span>
-          <h1>The AI receptionist that <span class="grad">books patients while you sleep</span></h1>
-          <p class="lead">Clinic AI talks to your patients on WhatsApp — typed or voice — checks live availability, and books, reschedules or cancels appointments end-to-end. It recovers no-shows automatically and replies in every patient's own language.</p>
+          <span class="eyebrow"><span class="dot"></span> <span data-i18n="hero_eyebrow">مباشر على واتساب · أكثر من 40 لغة</span></span>
+          <h1 data-i18n="hero_h1">موظف استقبال ذكي <span class="grad">يحجز المواعيد بينما تنام</span></h1>
+          <p class="lead" data-i18n="hero_lead">يتحدث Clinic AI إلى مرضاك على واتساب — كتابةً أو صوتاً — يتحقق من المواعيد المتاحة فوراً، ويحجز ويعيد الجدولة ويلغي المواعيد من البداية للنهاية. يستعيد المواعيد الفائتة تلقائياً ويرد على كل مريض بلغته.</p>
           <div class="hero-cta">
-            <a class="btn btn-primary" href="#pricing">Start free pilot →</a>
-            <a class="btn btn-ghost" href="#how">See how it works</a>
+            <a class="btn btn-primary" href="#pricing" data-i18n="hero_cta1">ابدأ تجربة مجانية</a>
+            <a class="btn btn-ghost" href="#how" data-i18n="hero_cta2">شاهد كيف يعمل</a>
           </div>
           <div class="hero-note">
             <div class="avatars"><span></span><span></span><span></span><span></span></div>
-            Trusted by modern clinics · No app for patients to install
+            <span data-i18n="hero_note">موثوق من العيادات الحديثة · لا حاجة لتطبيق على المرضى</span>
           </div>
         </div>
 
         <!-- WhatsApp phone mockup (mirrors a real Arabic conversation) -->
         <div class="phone">
-          <div class="badge-float b-a">🗓️ Appointment booked</div>
-          <div class="badge-float b-b">🌐 Auto-detected: Arabic</div>
+          <div class="badge-float b-a" data-i18n="badge_booked">🗓️ تم حجز الموعد</div>
+          <div class="badge-float b-b" data-i18n="badge_lang">🌐 اللغة المكتشفة: العربية</div>
           <div class="phone-screen">
             <div class="wa-top">
               <div class="wa-ava">ع</div>
@@ -351,10 +365,10 @@
 
       <div class="wrap" style="margin-top:64px">
         <div class="stats">
-          <div class="stat reveal"><b>40+</b><span>Languages, replied in the patient's own script</span></div>
-          <div class="stat reveal"><b>24/7</b><span>Always-on booking, even after hours</span></div>
-          <div class="stat reveal"><b>100%</b><span>End-to-end booking with zero staff touch</span></div>
-          <div class="stat reveal"><b>&lt;3s</b><span>Average reply time on WhatsApp</span></div>
+          <div class="stat reveal"><b>40+</b><span data-i18n="stat1">لغة، بالرد بنفس كتابة المريض</span></div>
+          <div class="stat reveal"><b>24/7</b><span data-i18n="stat2">حجز دائم، حتى بعد ساعات العمل</span></div>
+          <div class="stat reveal"><b>100%</b><span data-i18n="stat3">حجز كامل دون تدخل الموظفين</span></div>
+          <div class="stat reveal"><b>&lt;3s</b><span data-i18n="stat4">متوسط زمن الرد على واتساب</span></div>
         </div>
       </div>
     </section>
@@ -363,56 +377,56 @@
     <section id="features">
       <div class="wrap">
         <div class="sec-head reveal">
-          <span class="eyebrow">Everything your front desk does — automated</span>
-          <h2 style="margin-top:16px">One assistant. The whole patient journey.</h2>
-          <p class="lead">From the first “hello” to the follow-up after a missed visit, Clinic AI handles it inside WhatsApp — backed by your real schedule and data.</p>
+          <span class="eyebrow" data-i18n="feat_eyebrow">كل ما يفعله مكتب الاستقبال — آلياً</span>
+          <h2 style="margin-top:16px" data-i18n="feat_h2">مساعد واحد. رحلة المريض كاملة.</h2>
+          <p class="lead" data-i18n="feat_lead">من أول «مرحباً» إلى المتابعة بعد موعد فائت، يتولى Clinic AI كل ذلك داخل واتساب — مدعوماً بجدولك وبياناتك الحقيقية.</p>
         </div>
 
         <div class="feat-grid">
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-            <h3>Conversational booking</h3>
-            <p>Understands free-text and voice notes, checks live doctor availability, and books, reschedules or cancels — no menus, no forms.</p>
+            <h3 data-i18n="f1_t">الحجز عبر المحادثة</h3>
+            <p data-i18n="f1_d">يفهم النصوص الحرة والرسائل الصوتية، ويتحقق من توفر الأطباء مباشرةً، ويحجز ويعيد الجدولة ويلغي — دون قوائم أو نماذج.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg></div>
-            <h3>Automatic no-show recovery</h3>
-            <p>Detects missed visits and reaches out to reschedule, request a call or cancel — then follows up a day later and logs why they missed.</p>
+            <h3 data-i18n="f2_t">استعادة المواعيد الفائتة تلقائياً</h3>
+            <p data-i18n="f2_d">يكتشف المواعيد الفائتة ويتواصل لإعادة الجدولة أو طلب اتصال أو الإلغاء — ثم يتابع بعد يوم ويسجّل سبب التغيّب.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></div>
-            <h3>No-show risk prediction</h3>
-            <p>Scores every upcoming appointment from patient history and sends high-risk patients an extra reminder before they ghost.</p>
+            <h3 data-i18n="f3_t">التنبؤ بخطر التغيّب</h3>
+            <p data-i18n="f3_d">يقيّم كل موعد قادم بناءً على سجل المريض ويرسل تذكيراً إضافياً للأكثر عرضةً للتغيّب قبل أن يختفوا.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>
-            <h3>Speaks every patient's language</h3>
-            <p>Auto-detects and replies in 40+ languages and scripts — Arabic, English, Urdu, Hindi, Spanish and more — matching the patient exactly.</p>
+            <h3 data-i18n="f4_t">يتحدث لغة كل مريض</h3>
+            <p data-i18n="f4_d">يكتشف لغة المريض ويرد بنفس اللغة والكتابة — أكثر من 40 لغة تشمل العربية والإنجليزية والأردية والهندية والإسبانية وغيرها.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10a7 7 0 0 1-14 0M12 19v4"/></svg></div>
-            <h3>Voice notes, understood</h3>
-            <p>Patients can send voice messages — transcribed accurately through a resilient fallback chain — and even get spoken replies back.</p>
+            <h3 data-i18n="f5_t">رسائل صوتية مفهومة</h3>
+            <p data-i18n="f5_d">يمكن للمرضى إرسال رسائل صوتية — تُحوَّل إلى نص بدقة عبر سلسلة احتياطية موثوقة — بل ويردّ صوتياً أيضاً.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-            <h3>AI business insights</h3>
-            <p>Daily and weekly digests on WhatsApp: bookings, conversion, no-shows, peak hours, top doctors and patient sentiment — with what to do next.</p>
+            <h3 data-i18n="f6_t">رؤى عمل ذكية</h3>
+            <p data-i18n="f6_d">ملخصات يومية وأسبوعية على واتساب: الحجوزات، نسبة التحويل، المواعيد الفائتة، ساعات الذروة، أفضل الأطباء ومشاعر المرضى — مع توصيات للخطوة التالية.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 1 1-9-9"/></svg></div>
-            <h3>Human escalation, instantly</h3>
-            <p>Emergencies and out-of-scope requests hand off to your staff on WhatsApp in real time — the AI knows its limits.</p>
+            <h3 data-i18n="f7_t">تحويل فوري لموظف بشري</h3>
+            <p data-i18n="f7_d">الحالات الطارئة والطلبات خارج النطاق تُحوَّل إلى فريقك على واتساب فوراً — المساعد يعرف حدوده.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
-            <h3>Multi-branch routing</h3>
-            <p>Run several locations from one number — Clinic AI steers each patient to the right branch based on the area they mention.</p>
+            <h3 data-i18n="f8_t">توجيه متعدد الفروع</h3>
+            <p data-i18n="f8_d">أدِر عدة فروع من رقم واحد — يوجّه Clinic AI كل مريض إلى الفرع المناسب حسب المنطقة المذكورة.</p>
           </div>
           <div class="card reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg></div>
-            <h3>Plugs into your systems</h3>
-            <p>Connect Cliniko, Google Calendar, FHIR-based HIS or a custom ERP — Clinic AI books where your appointments truly live.</p>
+            <h3 data-i18n="f9_t">يتكامل مع أنظمتك</h3>
+            <p data-i18n="f9_d">اربط Cliniko أو Google Calendar أو أنظمة HIS المتوافقة مع FHIR أو نظام ERP مخصص — يحجز Clinic AI حيث توجد مواعيدك فعلاً.</p>
           </div>
         </div>
       </div>
@@ -422,21 +436,21 @@
     <section id="how" style="background:linear-gradient(180deg,transparent,rgba(99,102,241,.05),transparent)">
       <div class="wrap">
         <div class="sec-head reveal">
-          <span class="eyebrow">Live in days, not months</span>
-          <h2 style="margin-top:16px">Three steps to an automated front desk</h2>
+          <span class="eyebrow" data-i18n="how_eyebrow">جاهز خلال أيام، لا أشهر</span>
+          <h2 style="margin-top:16px" data-i18n="how_h2">ثلاث خطوات لمكتب استقبال آلي</h2>
         </div>
         <div class="steps">
           <div class="step reveal">
-            <h3>Connect your WhatsApp</h3>
-            <p>Link your existing WhatsApp Business number and import your services, doctors and schedule. No new app for patients.</p>
+            <h3 data-i18n="s1_t">اربط واتساب</h3>
+            <p data-i18n="s1_d">اربط رقم واتساب للأعمال الحالي واستورد خدماتك وأطباءك وجدولك. لا تطبيق جديد على المرضى.</p>
           </div>
           <div class="step reveal">
-            <h3>Train on your clinic</h3>
-            <p>We load your pricing, policies, branches and booking rules so every answer is grounded in your real data.</p>
+            <h3 data-i18n="s2_t">درّبه على عيادتك</h3>
+            <p data-i18n="s2_d">نحمّل أسعارك وسياساتك وفروعك وقواعد الحجز ليكون كل رد مبنياً على بياناتك الحقيقية.</p>
           </div>
           <div class="step reveal">
-            <h3>Go live & watch it work</h3>
-            <p>Patients book, reschedule and get reminders automatically. Your team watches the live dashboard and steps in only when needed.</p>
+            <h3 data-i18n="s3_t">انطلق وراقبه يعمل</h3>
+            <p data-i18n="s3_d">يحجز المرضى ويعيدون الجدولة ويتلقون التذكيرات تلقائياً. يراقب فريقك اللوحة المباشرة ويتدخل عند الحاجة فقط.</p>
           </div>
         </div>
       </div>
@@ -445,63 +459,61 @@
     <!-- ===================== LANGUAGES ===================== -->
     <section id="languages" style="padding-bottom:40px">
       <div class="wrap sec-head reveal">
-        <span class="eyebrow">No language left behind</span>
-        <h2 style="margin-top:16px">Every patient, in their own words</h2>
-        <p class="lead">Clinic AI mirrors each patient's language and script automatically — even in voice notes.</p>
+        <span class="eyebrow" data-i18n="lang_eyebrow">لا لغة مهملة</span>
+        <h2 style="margin-top:16px" data-i18n="lang_h2">كل مريض، بكلماته هو</h2>
+        <p class="lead" data-i18n="lang_lead">يحاكي Clinic AI لغة كل مريض وكتابته تلقائياً — حتى في الرسائل الصوتية.</p>
       </div>
     </section>
     <div class="marquee">
-      <div class="track" id="langTrack">
-        <!-- duplicated in JS for seamless loop -->
-      </div>
+      <div class="track" id="langTrack"></div>
     </div>
 
     <!-- ===================== PRICING ===================== -->
     <section id="pricing">
       <div class="wrap">
         <div class="sec-head reveal">
-          <span class="eyebrow">Simple, transparent pricing</span>
-          <h2 style="margin-top:16px">Plans that scale with your clinic</h2>
-          <p class="lead">Start with a free pilot. Upgrade when the bookings roll in.</p>
+          <span class="eyebrow" data-i18n="price_eyebrow">أسعار بسيطة وشفافة</span>
+          <h2 style="margin-top:16px" data-i18n="price_h2">باقات تنمو مع عيادتك</h2>
+          <p class="lead" data-i18n="price_lead">ابدأ بتجربة مجانية. ترقَّ عندما تتدفق الحجوزات.</p>
         </div>
         <div class="price-grid">
           <div class="plan reveal">
-            <h3>Starter</h3>
-            <div class="amt">Free<span> · pilot</span></div>
-            <p style="color:var(--muted);margin:0">For a single clinic testing the waters.</p>
+            <h3 data-i18n="p1_name">المبتدئة</h3>
+            <div class="amt" data-i18n="p1_price">مجاناً<span> · تجريبي</span></div>
+            <p class="desc" data-i18n="p1_desc">لعيادة واحدة تختبر الفكرة.</p>
             <ul>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Conversational booking on WhatsApp</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> 40+ languages & voice notes</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Live staff dashboard</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Up to 500 conversations / mo</li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p1_l1">الحجز عبر المحادثة على واتساب</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p1_l2">أكثر من 40 لغة ورسائل صوتية</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p1_l3">لوحة تحكم مباشرة للموظفين</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p1_l4">حتى 500 محادثة شهرياً</span></li>
             </ul>
-            <a class="btn btn-ghost" href="/admin">Start free</a>
+            <a class="btn btn-ghost" href="/admin" data-i18n="p1_btn">ابدأ مجاناً</a>
           </div>
-          <div class="plan feat reveal">
-            <h3>Growth</h3>
-            <div class="amt">$249<span> / mo</span></div>
-            <p style="color:var(--muted);margin:0">For busy clinics that want fewer no-shows.</p>
+          <div class="plan feat reveal" data-badge="الأكثر شيوعاً">
+            <h3 data-i18n="p2_name">النمو</h3>
+            <div class="amt" data-i18n="p2_price">249$<span> / شهرياً</span></div>
+            <p class="desc" data-i18n="p2_desc">للعيادات المزدحمة التي تريد تقليل التغيّب.</p>
             <ul>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Everything in Starter</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Automatic no-show recovery</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> No-show risk prediction & reminders</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Daily & weekly AI insight digests</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Unlimited conversations</li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p2_l1">كل ما في الباقة المبتدئة</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p2_l2">استعادة المواعيد الفائتة تلقائياً</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p2_l3">التنبؤ بالتغيّب وتذكيرات إضافية</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p2_l4">ملخصات رؤى يومية وأسبوعية</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p2_l5">محادثات غير محدودة</span></li>
             </ul>
-            <a class="btn btn-primary" href="#top">Book a demo</a>
+            <a class="btn btn-primary" href="#top" data-i18n="p2_btn">احجز عرضاً توضيحياً</a>
           </div>
           <div class="plan reveal">
-            <h3>Enterprise</h3>
-            <div class="amt">Custom</div>
-            <p style="color:var(--muted);margin:0">For groups & multi-location networks.</p>
+            <h3 data-i18n="p3_name">المؤسسات</h3>
+            <div class="amt" data-i18n="p3_price">مخصص</div>
+            <p class="desc" data-i18n="p3_desc">للمجموعات والشبكات متعددة الفروع.</p>
             <ul>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Everything in Growth</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Multi-branch & multi-tenant</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Cliniko / Google Calendar / HIS / ERP</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Custom intake fields & SLAs</li>
-              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Dedicated support</li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p3_l1">كل ما في باقة النمو</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p3_l2">متعدد الفروع ومتعدد المستأجرين</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p3_l3">Cliniko / Google Calendar / HIS / ERP</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p3_l4">حقول إدخال مخصصة واتفاقيات مستوى خدمة</span></li>
+              <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> <span data-i18n="p3_l5">دعم مخصص</span></li>
             </ul>
-            <a class="btn btn-ghost" href="#top">Talk to sales</a>
+            <a class="btn btn-ghost" href="#top" data-i18n="p3_btn">تواصل مع المبيعات</a>
           </div>
         </div>
       </div>
@@ -511,15 +523,15 @@
     <section id="faq">
       <div class="wrap">
         <div class="sec-head reveal">
-          <span class="eyebrow">Good to know</span>
-          <h2 style="margin-top:16px">Frequently asked questions</h2>
+          <span class="eyebrow" data-i18n="faq_eyebrow">معلومات مفيدة</span>
+          <h2 style="margin-top:16px" data-i18n="faq_h2">الأسئلة الشائعة</h2>
         </div>
         <div class="faq reveal">
-          <details open><summary>Does it work inside WhatsApp?</summary><p>Yes. Patients simply message your existing WhatsApp Business number — there's nothing for them to install. Clinic AI handles the whole conversation, and your staff watch it live from the dashboard.</p></details>
-          <details><summary>Which languages are supported?</summary><p>Over 40, including Arabic, English, Urdu, Hindi, Spanish and French. The assistant detects the patient's language and replies in the same language <em>and</em> script — even responding to voice notes.</p></details>
-          <details><summary>Can it really book appointments on its own?</summary><p>Yes. It checks live doctor availability and books, reschedules or cancels end-to-end. Anything sensitive — emergencies or out-of-scope requests — is escalated to a human instantly.</p></details>
-          <details><summary>How does no-show recovery work?</summary><p>When a confirmed patient never checks in, Clinic AI messages them to reschedule, request a call, or cancel, then nudges again a day later — capturing the reason they missed so you can act on it.</p></details>
-          <details><summary>Does it connect to our existing system?</summary><p>It can. Clinic AI runs natively or plugs into Cliniko, Google Calendar, FHIR-based hospital systems, or a custom ERP — so appointments live where you already manage them.</p></details>
+          <details open><summary data-i18n="q1">هل يعمل داخل واتساب؟</summary><p data-i18n="a1">نعم. يراسل المرضى ببساطة رقم واتساب للأعمال الحالي — لا شيء يحتاجون لتثبيته. يتولى Clinic AI المحادثة كاملةً، ويراقبها فريقك مباشرةً من اللوحة.</p></details>
+          <details><summary data-i18n="q2">ما اللغات المدعومة؟</summary><p data-i18n="a2">أكثر من 40 لغة، تشمل العربية والإنجليزية والأردية والهندية والإسبانية والفرنسية. يكتشف المساعد لغة المريض ويرد بنفس اللغة والكتابة — حتى على الرسائل الصوتية.</p></details>
+          <details><summary data-i18n="q3">هل يحجز المواعيد بنفسه فعلاً؟</summary><p data-i18n="a3">نعم. يتحقق من توفر الأطباء مباشرةً ويحجز ويعيد الجدولة ويلغي من البداية للنهاية. وأي أمر حساس — حالة طارئة أو خارج النطاق — يُحوَّل إلى موظف بشري فوراً.</p></details>
+          <details><summary data-i18n="q4">كيف تعمل استعادة المواعيد الفائتة؟</summary><p data-i18n="a4">عندما لا يحضر مريض مؤكد، يراسله Clinic AI لإعادة الجدولة أو طلب اتصال أو الإلغاء، ثم يذكّره مجدداً بعد يوم — مع تسجيل سبب التغيّب لتتمكن من التصرف.</p></details>
+          <details><summary data-i18n="q5">هل يتكامل مع نظامنا الحالي؟</summary><p data-i18n="a5">نعم. يعمل Clinic AI أصلياً أو يتكامل مع Cliniko أو Google Calendar أو أنظمة المستشفيات المتوافقة مع FHIR أو نظام ERP مخصص — لتبقى المواعيد حيث تديرها بالفعل.</p></details>
         </div>
       </div>
     </section>
@@ -528,12 +540,12 @@
     <section style="padding-top:20px">
       <div class="wrap">
         <div class="cta-band reveal">
-          <span class="eyebrow"><span class="dot"></span> Ready when you are</span>
-          <h2 style="margin-top:16px">Turn every WhatsApp message into a booked appointment</h2>
-          <p class="lead" style="margin:14px auto 0">Launch a free pilot and see your front desk run itself — in your patients' language, around the clock.</p>
+          <span class="eyebrow"><span class="dot"></span> <span data-i18n="cta_eyebrow">جاهزون متى استعددت</span></span>
+          <h2 style="margin-top:16px" data-i18n="cta_h2">حوّل كل رسالة واتساب إلى موعد محجوز</h2>
+          <p class="lead" style="margin:14px auto 0" data-i18n="cta_lead">أطلق تجربة مجانية وشاهد مكتب استقبالك يدير نفسه — بلغة مرضاك، على مدار الساعة.</p>
           <div class="hero-cta">
-            <a class="btn btn-primary" href="/admin">Start free pilot →</a>
-            <a class="btn btn-ghost" href="#features">Explore features</a>
+            <a class="btn btn-primary" href="/admin" data-i18n="cta_btn1">ابدأ تجربة مجانية</a>
+            <a class="btn btn-ghost" href="#features" data-i18n="cta_btn2">استكشف المميزات</a>
           </div>
         </div>
       </div>
@@ -550,14 +562,14 @@
           </span>
           Clinic AI
         </div>
-        © <span id="year"></span> Clinic AI · The WhatsApp AI receptionist for clinics.
+        © <span id="year"></span> Clinic AI · <span data-i18n="foot_tag">موظف الاستقبال الذكي للعيادات على واتساب.</span>
       </div>
       <div class="foot-links">
-        <a href="#features">Features</a>
-        <a href="#how">How it works</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#faq">FAQ</a>
-        <a href="/admin">Sign in</a>
+        <a href="#features" data-i18n="nav_features">المميزات</a>
+        <a href="#how" data-i18n="nav_how">كيف يعمل</a>
+        <a href="#pricing" data-i18n="nav_pricing">الأسعار</a>
+        <a href="#faq" data-i18n="nav_faq">الأسئلة الشائعة</a>
+        <a href="/admin" data-i18n="nav_signin">تسجيل الدخول</a>
       </div>
     </div>
   </footer>
@@ -566,25 +578,155 @@
     // Footer year
     document.getElementById('year').textContent = new Date().getFullYear();
 
-    // Theme toggle (persists to localStorage; keeps the browser UI theme-color in sync)
+    // Languages marquee (duplicated for a seamless loop)
+    const langs = ["العربية","English","اردو","हिन्दी","Español","Français","Português","Türkçe","Bahasa","Tagalog","বাংলা","தமிழ்","తెలుగు","Deutsch","Italiano","Русский","中文","日本語","한국어","ไทย","Tiếng Việt","فارسی","עברית","Ελληνικά","Kiswahili","नेपाली"];
+    document.getElementById('langTrack').innerHTML = [...langs, ...langs].map(l => `<span class="lang">${l}</span>`).join('');
+
+    // ---------- i18n (Arabic default, English on toggle) ----------
+    const I18N = {
+      _title: { ar: "Clinic AI — موظف الاستقبال الذكي للعيادات على واتساب | حجز المواعيد واستعادة الفائتة ورؤى ذكية",
+                en: "Clinic AI — The WhatsApp AI Receptionist for Clinics | Booking, No-Show Recovery & Insights" },
+      _desc:  { ar: "Clinic AI مساعد ذكي على واتساب يحجز المواعيد ويعيد جدولتها ويلغيها من البداية للنهاية، ويستعيد المواعيد الفائتة تلقائياً، ويرد بأكثر من 40 لغة.",
+                en: "Clinic AI is a WhatsApp AI agent that books, reschedules and cancels appointments end-to-end, recovers no-shows automatically, and replies in 40+ languages." },
+      nav_features:{ar:"المميزات",en:"Features"}, nav_how:{ar:"كيف يعمل",en:"How it works"},
+      nav_langs:{ar:"اللغات",en:"Languages"}, nav_pricing:{ar:"الأسعار",en:"Pricing"},
+      nav_faq:{ar:"الأسئلة الشائعة",en:"FAQ"}, nav_signin:{ar:"تسجيل الدخول",en:"Sign in"},
+      nav_demo:{ar:"احجز عرضاً توضيحياً",en:"Book a demo"},
+
+      hero_eyebrow:{ar:"مباشر على واتساب · أكثر من 40 لغة",en:"Live on WhatsApp · 40+ languages"},
+      hero_h1:{ar:`موظف استقبال ذكي <span class="grad">يحجز المواعيد بينما تنام</span>`,
+               en:`The AI receptionist that <span class="grad">books patients while you sleep</span>`},
+      hero_lead:{ar:"يتحدث Clinic AI إلى مرضاك على واتساب — كتابةً أو صوتاً — يتحقق من المواعيد المتاحة فوراً، ويحجز ويعيد الجدولة ويلغي المواعيد من البداية للنهاية. يستعيد المواعيد الفائتة تلقائياً ويرد على كل مريض بلغته.",
+                 en:"Clinic AI talks to your patients on WhatsApp — typed or voice — checks live availability, and books, reschedules or cancels appointments end-to-end. It recovers no-shows automatically and replies in every patient's own language."},
+      hero_cta1:{ar:"ابدأ تجربة مجانية",en:"Start free pilot"}, hero_cta2:{ar:"شاهد كيف يعمل",en:"See how it works"},
+      hero_note:{ar:"موثوق من العيادات الحديثة · لا حاجة لتطبيق على المرضى",en:"Trusted by modern clinics · No app for patients to install"},
+
+      badge_booked:{ar:"🗓️ تم حجز الموعد",en:"🗓️ Appointment booked"},
+      badge_lang:{ar:"🌐 اللغة المكتشفة: العربية",en:"🌐 Auto-detected: Arabic"},
+
+      stat1:{ar:"لغة، بالرد بنفس كتابة المريض",en:"Languages, replied in the patient's own script"},
+      stat2:{ar:"حجز دائم، حتى بعد ساعات العمل",en:"Always-on booking, even after hours"},
+      stat3:{ar:"حجز كامل دون تدخل الموظفين",en:"End-to-end booking with zero staff touch"},
+      stat4:{ar:"متوسط زمن الرد على واتساب",en:"Average reply time on WhatsApp"},
+
+      feat_eyebrow:{ar:"كل ما يفعله مكتب الاستقبال — آلياً",en:"Everything your front desk does — automated"},
+      feat_h2:{ar:"مساعد واحد. رحلة المريض كاملة.",en:"One assistant. The whole patient journey."},
+      feat_lead:{ar:"من أول «مرحباً» إلى المتابعة بعد موعد فائت، يتولى Clinic AI كل ذلك داخل واتساب — مدعوماً بجدولك وبياناتك الحقيقية.",
+                 en:"From the first “hello” to the follow-up after a missed visit, Clinic AI handles it inside WhatsApp — backed by your real schedule and data."},
+
+      f1_t:{ar:"الحجز عبر المحادثة",en:"Conversational booking"},
+      f1_d:{ar:"يفهم النصوص الحرة والرسائل الصوتية، ويتحقق من توفر الأطباء مباشرةً، ويحجز ويعيد الجدولة ويلغي — دون قوائم أو نماذج.",en:"Understands free-text and voice notes, checks live doctor availability, and books, reschedules or cancels — no menus, no forms."},
+      f2_t:{ar:"استعادة المواعيد الفائتة تلقائياً",en:"Automatic no-show recovery"},
+      f2_d:{ar:"يكتشف المواعيد الفائتة ويتواصل لإعادة الجدولة أو طلب اتصال أو الإلغاء — ثم يتابع بعد يوم ويسجّل سبب التغيّب.",en:"Detects missed visits and reaches out to reschedule, request a call or cancel — then follows up a day later and logs why they missed."},
+      f3_t:{ar:"التنبؤ بخطر التغيّب",en:"No-show risk prediction"},
+      f3_d:{ar:"يقيّم كل موعد قادم بناءً على سجل المريض ويرسل تذكيراً إضافياً للأكثر عرضةً للتغيّب قبل أن يختفوا.",en:"Scores every upcoming appointment from patient history and sends high-risk patients an extra reminder before they ghost."},
+      f4_t:{ar:"يتحدث لغة كل مريض",en:"Speaks every patient's language"},
+      f4_d:{ar:"يكتشف لغة المريض ويرد بنفس اللغة والكتابة — أكثر من 40 لغة تشمل العربية والإنجليزية والأردية والهندية والإسبانية وغيرها.",en:"Auto-detects and replies in 40+ languages and scripts — Arabic, English, Urdu, Hindi, Spanish and more — matching the patient exactly."},
+      f5_t:{ar:"رسائل صوتية مفهومة",en:"Voice notes, understood"},
+      f5_d:{ar:"يمكن للمرضى إرسال رسائل صوتية — تُحوَّل إلى نص بدقة عبر سلسلة احتياطية موثوقة — بل ويردّ صوتياً أيضاً.",en:"Patients can send voice messages — transcribed accurately through a resilient fallback chain — and even get spoken replies back."},
+      f6_t:{ar:"رؤى عمل ذكية",en:"AI business insights"},
+      f6_d:{ar:"ملخصات يومية وأسبوعية على واتساب: الحجوزات، نسبة التحويل، المواعيد الفائتة، ساعات الذروة، أفضل الأطباء ومشاعر المرضى — مع توصيات للخطوة التالية.",en:"Daily and weekly digests on WhatsApp: bookings, conversion, no-shows, peak hours, top doctors and patient sentiment — with what to do next."},
+      f7_t:{ar:"تحويل فوري لموظف بشري",en:"Human escalation, instantly"},
+      f7_d:{ar:"الحالات الطارئة والطلبات خارج النطاق تُحوَّل إلى فريقك على واتساب فوراً — المساعد يعرف حدوده.",en:"Emergencies and out-of-scope requests hand off to your staff on WhatsApp in real time — the AI knows its limits."},
+      f8_t:{ar:"توجيه متعدد الفروع",en:"Multi-branch routing"},
+      f8_d:{ar:"أدِر عدة فروع من رقم واحد — يوجّه Clinic AI كل مريض إلى الفرع المناسب حسب المنطقة المذكورة.",en:"Run several locations from one number — Clinic AI steers each patient to the right branch based on the area they mention."},
+      f9_t:{ar:"يتكامل مع أنظمتك",en:"Plugs into your systems"},
+      f9_d:{ar:"اربط Cliniko أو Google Calendar أو أنظمة HIS المتوافقة مع FHIR أو نظام ERP مخصص — يحجز Clinic AI حيث توجد مواعيدك فعلاً.",en:"Connect Cliniko, Google Calendar, FHIR-based HIS or a custom ERP — Clinic AI books where your appointments truly live."},
+
+      how_eyebrow:{ar:"جاهز خلال أيام، لا أشهر",en:"Live in days, not months"},
+      how_h2:{ar:"ثلاث خطوات لمكتب استقبال آلي",en:"Three steps to an automated front desk"},
+      s1_t:{ar:"اربط واتساب",en:"Connect your WhatsApp"},
+      s1_d:{ar:"اربط رقم واتساب للأعمال الحالي واستورد خدماتك وأطباءك وجدولك. لا تطبيق جديد على المرضى.",en:"Link your existing WhatsApp Business number and import your services, doctors and schedule. No new app for patients."},
+      s2_t:{ar:"درّبه على عيادتك",en:"Train on your clinic"},
+      s2_d:{ar:"نحمّل أسعارك وسياساتك وفروعك وقواعد الحجز ليكون كل رد مبنياً على بياناتك الحقيقية.",en:"We load your pricing, policies, branches and booking rules so every answer is grounded in your real data."},
+      s3_t:{ar:"انطلق وراقبه يعمل",en:"Go live & watch it work"},
+      s3_d:{ar:"يحجز المرضى ويعيدون الجدولة ويتلقون التذكيرات تلقائياً. يراقب فريقك اللوحة المباشرة ويتدخل عند الحاجة فقط.",en:"Patients book, reschedule and get reminders automatically. Your team watches the live dashboard and steps in only when needed."},
+
+      lang_eyebrow:{ar:"لا لغة مهملة",en:"No language left behind"},
+      lang_h2:{ar:"كل مريض، بكلماته هو",en:"Every patient, in their own words"},
+      lang_lead:{ar:"يحاكي Clinic AI لغة كل مريض وكتابته تلقائياً — حتى في الرسائل الصوتية.",en:"Clinic AI mirrors each patient's language and script automatically — even in voice notes."},
+
+      price_eyebrow:{ar:"أسعار بسيطة وشفافة",en:"Simple, transparent pricing"},
+      price_h2:{ar:"باقات تنمو مع عيادتك",en:"Plans that scale with your clinic"},
+      price_lead:{ar:"ابدأ بتجربة مجانية. ترقَّ عندما تتدفق الحجوزات.",en:"Start with a free pilot. Upgrade when the bookings roll in."},
+      p1_name:{ar:"المبتدئة",en:"Starter"}, p1_price:{ar:`مجاناً<span> · تجريبي</span>`,en:`Free<span> · pilot</span>`},
+      p1_desc:{ar:"لعيادة واحدة تختبر الفكرة.",en:"For a single clinic testing the waters."},
+      p1_l1:{ar:"الحجز عبر المحادثة على واتساب",en:"Conversational booking on WhatsApp"},
+      p1_l2:{ar:"أكثر من 40 لغة ورسائل صوتية",en:"40+ languages & voice notes"},
+      p1_l3:{ar:"لوحة تحكم مباشرة للموظفين",en:"Live staff dashboard"},
+      p1_l4:{ar:"حتى 500 محادثة شهرياً",en:"Up to 500 conversations / mo"},
+      p1_btn:{ar:"ابدأ مجاناً",en:"Start free"},
+      p2_name:{ar:"النمو",en:"Growth"}, p2_price:{ar:`249$<span> / شهرياً</span>`,en:`$249<span> / mo</span>`},
+      p2_desc:{ar:"للعيادات المزدحمة التي تريد تقليل التغيّب.",en:"For busy clinics that want fewer no-shows."},
+      p2_l1:{ar:"كل ما في الباقة المبتدئة",en:"Everything in Starter"},
+      p2_l2:{ar:"استعادة المواعيد الفائتة تلقائياً",en:"Automatic no-show recovery"},
+      p2_l3:{ar:"التنبؤ بالتغيّب وتذكيرات إضافية",en:"No-show risk prediction & reminders"},
+      p2_l4:{ar:"ملخصات رؤى يومية وأسبوعية",en:"Daily & weekly AI insight digests"},
+      p2_l5:{ar:"محادثات غير محدودة",en:"Unlimited conversations"},
+      p2_btn:{ar:"احجز عرضاً توضيحياً",en:"Book a demo"},
+      p3_name:{ar:"المؤسسات",en:"Enterprise"}, p3_price:{ar:"مخصص",en:"Custom"},
+      p3_desc:{ar:"للمجموعات والشبكات متعددة الفروع.",en:"For groups & multi-location networks."},
+      p3_l1:{ar:"كل ما في باقة النمو",en:"Everything in Growth"},
+      p3_l2:{ar:"متعدد الفروع ومتعدد المستأجرين",en:"Multi-branch & multi-tenant"},
+      p3_l3:{ar:"Cliniko / Google Calendar / HIS / ERP",en:"Cliniko / Google Calendar / HIS / ERP"},
+      p3_l4:{ar:"حقول إدخال مخصصة واتفاقيات مستوى خدمة",en:"Custom intake fields & SLAs"},
+      p3_l5:{ar:"دعم مخصص",en:"Dedicated support"},
+      p3_btn:{ar:"تواصل مع المبيعات",en:"Talk to sales"},
+
+      faq_eyebrow:{ar:"معلومات مفيدة",en:"Good to know"}, faq_h2:{ar:"الأسئلة الشائعة",en:"Frequently asked questions"},
+      q1:{ar:"هل يعمل داخل واتساب؟",en:"Does it work inside WhatsApp?"},
+      a1:{ar:"نعم. يراسل المرضى ببساطة رقم واتساب للأعمال الحالي — لا شيء يحتاجون لتثبيته. يتولى Clinic AI المحادثة كاملةً، ويراقبها فريقك مباشرةً من اللوحة.",en:"Yes. Patients simply message your existing WhatsApp Business number — there's nothing for them to install. Clinic AI handles the whole conversation, and your staff watch it live from the dashboard."},
+      q2:{ar:"ما اللغات المدعومة؟",en:"Which languages are supported?"},
+      a2:{ar:"أكثر من 40 لغة، تشمل العربية والإنجليزية والأردية والهندية والإسبانية والفرنسية. يكتشف المساعد لغة المريض ويرد بنفس اللغة والكتابة — حتى على الرسائل الصوتية.",en:"Over 40, including Arabic, English, Urdu, Hindi, Spanish and French. The assistant detects the patient's language and replies in the same language and script — even responding to voice notes."},
+      q3:{ar:"هل يحجز المواعيد بنفسه فعلاً؟",en:"Can it really book appointments on its own?"},
+      a3:{ar:"نعم. يتحقق من توفر الأطباء مباشرةً ويحجز ويعيد الجدولة ويلغي من البداية للنهاية. وأي أمر حساس — حالة طارئة أو خارج النطاق — يُحوَّل إلى موظف بشري فوراً.",en:"Yes. It checks live doctor availability and books, reschedules or cancels end-to-end. Anything sensitive — emergencies or out-of-scope requests — is escalated to a human instantly."},
+      q4:{ar:"كيف تعمل استعادة المواعيد الفائتة؟",en:"How does no-show recovery work?"},
+      a4:{ar:"عندما لا يحضر مريض مؤكد، يراسله Clinic AI لإعادة الجدولة أو طلب اتصال أو الإلغاء، ثم يذكّره مجدداً بعد يوم — مع تسجيل سبب التغيّب لتتمكن من التصرف.",en:"When a confirmed patient never checks in, Clinic AI messages them to reschedule, request a call, or cancel, then nudges again a day later — capturing the reason they missed so you can act on it."},
+      q5:{ar:"هل يتكامل مع نظامنا الحالي؟",en:"Does it connect to our existing system?"},
+      a5:{ar:"نعم. يعمل Clinic AI أصلياً أو يتكامل مع Cliniko أو Google Calendar أو أنظمة المستشفيات المتوافقة مع FHIR أو نظام ERP مخصص — لتبقى المواعيد حيث تديرها بالفعل.",en:"It can. Clinic AI runs natively or plugs into Cliniko, Google Calendar, FHIR-based hospital systems, or a custom ERP — so appointments live where you already manage them."},
+
+      cta_eyebrow:{ar:"جاهزون متى استعددت",en:"Ready when you are"},
+      cta_h2:{ar:"حوّل كل رسالة واتساب إلى موعد محجوز",en:"Turn every WhatsApp message into a booked appointment"},
+      cta_lead:{ar:"أطلق تجربة مجانية وشاهد مكتب استقبالك يدير نفسه — بلغة مرضاك، على مدار الساعة.",en:"Launch a free pilot and see your front desk run itself — in your patients' language, around the clock."},
+      cta_btn1:{ar:"ابدأ تجربة مجانية",en:"Start free pilot"}, cta_btn2:{ar:"استكشف المميزات",en:"Explore features"},
+
+      foot_tag:{ar:"موظف الاستقبال الذكي للعيادات على واتساب.",en:"The WhatsApp AI receptionist for clinics."},
+      _badge:{ar:"الأكثر شيوعاً",en:"Most popular"}
+    };
+
     const root = document.documentElement;
+    const langBtn = document.getElementById('langToggle');
+    function applyLang(lang){
+      root.lang = lang;
+      root.dir = (lang === 'en') ? 'ltr' : 'rtl';
+      try { localStorage.setItem('clinicai-lang', lang); } catch (e) {}
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const v = I18N[el.getAttribute('data-i18n')];
+        if (v && v[lang] != null) el.innerHTML = v[lang];
+      });
+      const feat = document.querySelector('.plan.feat');
+      if (feat) feat.setAttribute('data-badge', I18N._badge[lang]);
+      document.title = I18N._title[lang];
+      const md = document.querySelector('meta[name="description"]');
+      if (md) md.setAttribute('content', I18N._desc[lang]);
+      langBtn.textContent = (lang === 'en') ? 'ع' : 'EN';
+    }
+    applyLang(root.lang === 'en' ? 'en' : 'ar');
+    langBtn.addEventListener('click', () => applyLang(root.lang === 'en' ? 'ar' : 'en'));
+
+    // ---------- Theme ----------
     const themeMeta = document.querySelector('meta[name="theme-color"]');
     function applyTheme(t){
       root.setAttribute('data-theme', t);
       try { localStorage.setItem('clinicai-theme', t); } catch (e) {}
       if (themeMeta) themeMeta.setAttribute('content', t === 'light' ? '#f5f7fb' : '#0f766e');
     }
-    applyTheme(root.getAttribute('data-theme') || 'dark');   // sync meta with the pre-paint choice
+    applyTheme(root.getAttribute('data-theme') || 'dark');
     document.getElementById('themeToggle').addEventListener('click', () => {
       applyTheme(root.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
     });
 
-    // Languages marquee (duplicated for a seamless loop)
-    const langs = ["العربية","English","اردو","हिन्दी","Español","Français","Português","Türkçe","Bahasa","Tagalog","বাংলা","தமிழ்","తెలుగు","Deutsch","Italiano","Русский","中文","日本語","한국어","ไทย","Tiếng Việt","فارسی","עברית","Ελληνικά","Kiswahili","नेपाली"];
-    const track = document.getElementById('langTrack');
-    track.innerHTML = [...langs, ...langs].map(l => `<span class="lang">${l}</span>`).join('');
-
-    // Reveal on scroll
+    // ---------- Reveal on scroll ----------
     const io = new IntersectionObserver((entries) => {
       entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('show'); io.unobserve(e.target); } });
     }, { threshold: 0.12 });
