@@ -124,6 +124,7 @@
     .btn{
       display:inline-flex;align-items:center;justify-content:center;gap:10px;font-weight:700;font-size:16px;
       padding:14px 26px;border-radius:12px;cursor:pointer;border:1px solid transparent;font-family:var(--font);
+      white-space:nowrap;
       transition:transform .15s ease,box-shadow .2s ease,background .2s ease;
     }
     .btn:hover{transform:translateY(-2px)}
@@ -136,7 +137,7 @@
     header.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
       background:var(--nav-bg);border-bottom:1px solid var(--line)}
     .nav-inner{display:flex;align-items:center;justify-content:space-between;height:72px;gap:18px}
-    .brand{display:flex;align-items:center;gap:11px;font-weight:900;font-size:19px;letter-spacing:-.02em}
+    .brand{display:flex;align-items:center;gap:11px;font-weight:900;font-size:19px;letter-spacing:-.02em;white-space:nowrap}
     .logo{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
       background:linear-gradient(135deg,var(--teal),var(--indigo));box-shadow:0 8px 20px -8px rgba(20,184,166,.7)}
     .nav-links{display:flex;align-items:center;gap:28px;font-size:15px;color:var(--muted);font-weight:600}
@@ -298,10 +299,37 @@
     .form-msg.ok{color:var(--success)}
     .form-msg.err{color:#f87171}
 
+    .stats-wrap{margin-top:64px}
+
     /* reveal-on-scroll */
     .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s ease}
     .reveal.show{opacity:1;transform:none}
     @media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none}.phone,.badge-float,.bubble,.track{animation:none}}
+
+    /* ===== Mobile refinements (tighter spacing + a nav that fits one line) ===== */
+    @media(max-width:760px){
+      section{padding:52px 0}
+      .hero{padding:46px 0 40px}
+      .hero h1{margin:18px 0 14px}
+      .sec-head{margin-bottom:34px}
+      .stats-wrap{margin-top:40px}
+      .stats{gap:12px}
+      .hero-cta{gap:10px;margin:24px 0 16px}
+      .cta-band{padding:40px 24px}
+    }
+    @media(max-width:600px){
+      .wrap{padding:0 16px}
+      .nav-inner{gap:10px;height:62px}
+      .brand{font-size:16px;gap:8px}
+      .brand .logo{width:30px;height:30px}
+      .nav-cta{gap:8px}
+      .icon-btn{height:38px;min-width:38px;padding:0 9px}
+      .nav-cta .btn-primary{padding:9px 14px;font-size:13.5px}
+      .btn{font-size:15px;padding:13px 20px}
+      h1{font-size:clamp(29px,7.6vw,40px)}
+      h2{font-size:clamp(24px,6.4vw,34px)}
+      section{padding:46px 0}
+    }
   </style>
 </head>
 <body>
@@ -370,7 +398,7 @@
         </div>
       </div>
 
-      <div class="wrap" style="margin-top:64px">
+      <div class="wrap stats-wrap">
         <div class="stats">
           <div class="stat reveal"><b data-i18n="stat1_num">40+</b><span data-i18n="stat1">لغة، بالرد بنفس كتابة المريض</span></div>
           <div class="stat reveal"><b data-i18n="stat2_num">24/7</b><span data-i18n="stat2">حجز دائم، حتى بعد ساعات العمل</span></div>
