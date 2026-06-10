@@ -20,6 +20,8 @@ import ReportProblemIcon from "@mui/icons-material/ReportProblemOutlined";
 import AssessmentIcon from "@mui/icons-material/AssessmentOutlined";
 import NotificationsIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import SettingsIcon from "@mui/icons-material/SettingsOutlined";
+import MoveToInboxIcon from "@mui/icons-material/MoveToInboxOutlined";
+import WebIcon from "@mui/icons-material/WebOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import MoreHorizIcon from "@mui/icons-material/MoreHorizRounded";
 import LightModeIcon from "@mui/icons-material/LightModeOutlined";
@@ -64,8 +66,10 @@ export default function Layout() {
     { label: t("nav.notifications"), to: "/notifications", icon: <NotificationsIcon />, badge: unread },
     ...(!isSuper ? [{ label: t("nav.usage"), to: "/usage", icon: <SpeedIcon /> }] : []),
     ...(isSuper ? [
+      { label: t("nav.requests"), to: "/requests", icon: <MoveToInboxIcon />, badge: unreadByCat.booking_request },
       { label: t("nav.issues"), to: "/issues", icon: <ReportProblemIcon />, badge: unreadByCat.incident },
       { label: t("nav.plans"), to: "/plans", icon: <LayersIcon /> },
+      { label: t("nav.landing-cms"), to: "/landing-cms", icon: <WebIcon /> },
       { label: t("nav.calculator"), to: "/calculator", icon: <CalculateIcon /> },
       { label: t("nav.capacity"), to: "/capacity", icon: <SpeedOutlinedIcon /> },
       { label: t("nav.settings"), to: "/settings", icon: <SettingsIcon /> },

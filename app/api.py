@@ -22,7 +22,7 @@ from app import insights as insights_mod
 from app import no_show as no_show_mod
 from app import reports as reports_mod
 from app.auth import hash_password, verify_password
-from app.events import publish
+from app.events import notify, publish
 from app.config import (
     ADMIN_ACCOUNTS,
     ADMIN_PASSWORD,
@@ -878,6 +878,64 @@ async def save_settings(request: Request, body: dict = Body(...)):
     for key in settings_mod.EDITABLE:
         if key in values:
             settings_mod.set_value(key, (values.get(key) or "").strip() or None)
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- booking requests
+@router.post("/booking-request")
+async def booking_request(request: Request, body: dict = Body(...)):
+    """PUBLIC (no auth) — a demo/booking request from the marketing landing page.
+
+    Stores the lead and raises a live staff notification (badge + bell) for the admin."""
+    name = (body.get("name") or "").strip()
+    phone = (body.get("phone") or "").strip()
+    if not name or not phone:
+        raise HTTPException(400, "name and phone are required")
+    clinic_name = (body.get("clinic_name") or "").strip()
+    message = (body.get("message") or "").strip()
+    lang = (body.get("lang") or "").strip()
+    row = await _to_thread(db.record_booking_request, name, phone, clinic_name, message, lang)
+    summary = " · ".join([p for p in (clinic_name, phone) if p]) or phone
+    notify(f"New demo request · {name}", f"{summary}\n{message}"[:500],
+           level="success", category="booking_request", tenant_id=None, link="/requests")
+    return {"ok": True, "id": row["id"]}
+
+
+@router.get("/requests")
+async def list_requests(request: Request):
+    """Booking/demo requests inbox (super-admin — these are platform-level leads)."""
+    _require_super(request)
+    status = (request.query_params.get("status") or "").strip() or None
+    rows = await _to_thread(db.list_booking_requests, status)
+    counts = await _to_thread(db.booking_request_counts)
+    return {"rows": rows, "counts": counts, "statuses": list(db.BOOKING_STATUSES)}
+
+
+@router.post("/requests/{request_id}/status")
+async def set_request_status(request: Request, request_id: int, body: dict = Body(...)):
+    _require_super(request)
+    status = (body.get("status") or "").strip()
+    ok = await _to_thread(db.set_booking_request_status, request_id, status)
+    if not ok:
+        raise HTTPException(400, "unknown request or status")
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- landing CMS
+@router.get("/landing/cms")
+async def landing_cms_get(request: Request):
+    """Section/field schema + current (merged) en/ar values for the landing-page editor."""
+    _require_super(request)
+    from app import landing_content
+    return landing_content.cms_schema()
+
+
+@router.post("/landing/cms")
+async def landing_cms_save(request: Request, body: dict = Body(...)):
+    """Persist landing-page content overrides (only values differing from defaults are kept)."""
+    _require_super(request)
+    from app import landing_content
+    await _to_thread(landing_content.save_overrides, body.get("values") or {})
     return {"ok": True}
 
 
