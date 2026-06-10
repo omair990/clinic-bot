@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api import router as api_router
@@ -114,6 +114,17 @@ def health() -> JSONResponse:
         {"status": "ok" if db_ok else "degraded", "db": db_ok, "version": COMMIT_SHA},
         status_code=200 if db_ok else 503,
     )
+
+
+# --- Public marketing landing page -----------------------------------------------------------
+# A self-contained (zero-dependency) static page served on its own route, so it never touches
+# the Railway healthcheck at "/" nor the React console at /admin. BASE_DIR is app/.
+_LANDING_PAGE = BASE_DIR / "static" / "landing.html"
+
+
+@app.get("/landing", include_in_schema=False)
+def landing() -> FileResponse:
+    return FileResponse(_LANDING_PAGE, media_type="text/html")
 
 
 app.include_router(webhook_router)
