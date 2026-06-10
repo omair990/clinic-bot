@@ -27,6 +27,16 @@ def test_claims_booking_ignores_non_confirmations():
         assert not reply_guard.claims_booking(t), t
 
 
+def test_claims_booking_ignores_generic_completion_and_possessive_phrases():
+    # Regression: generic "is done" / "your appointment" phrases must NOT read as a booking
+    # confirmation — they fire on ordinary replies (e.g. answering "can you speak Urdu?").
+    for t in ["جی ہاں! بالکل۔ بتائیں آپ کا کام کیسے ہو گیا ہے؟",   # Urdu "how was it done?"
+              "Aapka sawal samajh ho gaya hai, bataiye.",            # roman "your question is understood"
+              "Of course, your appointment is something I can help with. What day?",
+              "What time would you like your appointment? موعدك سيكون مناسبًا"]:
+        assert not reply_guard.claims_booking(t), t
+
+
 # --- blocking decision (no DB needed: backed this turn) -----------------------
 def test_backed_by_this_turn_booking_is_allowed():
     c = _ctx("Your appointment is booked for 5 PM.", booked=[42])

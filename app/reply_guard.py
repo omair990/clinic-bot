@@ -27,16 +27,21 @@ log = logging.getLogger(__name__)
 
 # Confirmation phrases (not bare "book", which appears in questions like "to book…").
 # English + Arabic + Urdu/Hindi (incl. roman) — the assistant replies in the patient's language.
+# Each cue must be booking-SPECIFIC. Generic completion/possessive phrases ("ho gaya hai" / "ہو
+# گیا ہے" = "is done", "appointment is …", "موعدك" = "your appointment") are deliberately NOT here:
+# they fire on ordinary non-booking replies (e.g. answering "can you speak Urdu?"), which then get
+# wrongly swapped for SAFE_REPLY and escalated. Real confirmations are still caught by the
+# booking-tied cues below ("is booked", "تم الحجز", "بک ہو گیا", "book ho gaya", …).
 _CONFIRM_CUES = (
     "is booked", "are booked", "you're booked", "youre booked", "have booked", "have been booked",
-    "is confirmed", "appointment is", "appointment has been", "successfully booked",
-    "successfully scheduled", "reserved for you", "see you on", "see you at",
+    "is confirmed", "appointment has been booked", "appointment has been confirmed",
+    "successfully booked", "successfully scheduled", "reserved for you", "see you on", "see you at",
     "booking is confirmed", "all set for",
     # Arabic
-    "تم الحجز", "تم حجز", "تم تأكيد", "موعدك", "محجوز", "حجزت لك", "تم تثبيت",
+    "تم الحجز", "تم حجز", "تم تأكيد", "محجوز", "حجزت لك", "تم تثبيت",
     # Urdu / Hindi (incl. roman transliteration)
-    "اپوائنٹمنٹ بک", "بک ہو گیا", "بک ہو گئی", "کنفرم ہو", "ہو گیا ہے",
-    "book ho gaya", "book ho gayi", "confirm ho gaya", "ho gaya hai", "बुक हो ग",
+    "اپوائنٹمنٹ بک", "بک ہو گیا", "بک ہو گئی", "کنفرم ہو",
+    "book ho gaya", "book ho gayi", "confirm ho gaya", "बुक हो ग",
 )
 
 SAFE_REPLY = (
